@@ -76,9 +76,11 @@ for child in path_to_synth_load.iterdir():
 # save file to json
 synth_load_df.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\synthetic_load_household.json", orient="table")
 
-
-
-
+# Hot water demand profile
+hot_water_path = r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Philipp\inputdata\AUT\Hot_water_profile.xlsx"
+hot_water = pd.read_excel(Path(hot_water_path), engine="openpyxl")
+hot_water = hot_water["Profile"] * 1_000
+hot_water.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\hot_water_demand.json", orient="table")
 
 #%%
 
