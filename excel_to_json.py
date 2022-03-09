@@ -52,8 +52,11 @@ nuts3_frame = pd.DataFrame(np.column_stack([nuts3_country_column, NUTS3]), colum
 # heat_demand_df = pd.read_csv(path_to_file_heat_demand)
 # heat_demand_df.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\heat_demand.json", orient="table")
 
-# path_to_floor_area = r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\inputdata\ground_floor_area_nuts_3.csv"
-# ground_floor_area = pd.read_csv(path_to_floor_area)
+path_to_floor_area = r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\inputdata\ground_floor_area_residential_nuts_3.csv"
+ground_floor_area = pd.read_csv(path_to_floor_area, sep=";")
+ground_floor_area = ground_floor_area.loc[:, ["nuts_id", "sum"]]
+ground_floor_area.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\residential_floor_area.json", orient="table")
+
 
 #%%
 path_to_synth_load = Path(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\inputdata\synthetic_profiles")
