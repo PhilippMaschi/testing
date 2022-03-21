@@ -9,7 +9,7 @@ import pandas as pd
 import zipfile
 import numpy as np
 
-source_path = "E:/projects/2021_RES_HC_Pathways/invert/output_2022_newbuild_newlifetime_reference_renshare"
+source_path = "E:/projects/2021_RES_HC_Pathways/invert/output_2022_newbuild_reference"
 
 country_list = ['AUT',
                 'BEL',
@@ -37,8 +37,7 @@ country_list = ['AUT',
                 'SVK',
                 'SVN',
                 'ESP',
-                'SWE',
-                'GBR']
+                'SWE']
 
 heating_key = {
     1: "no heating",
@@ -111,7 +110,6 @@ df_all_countries = pd.DataFrame(columns=[
     "country"])
 
 for country in country_list:
-
     sub_folder_name = "_scen_"+ country.lower() + "_electrification_ref_final_ab/ADD_RESULTS/"
     # building classes:  
     building_classes_file_name = "001_Building_Classes_2019.csv"
@@ -169,21 +167,20 @@ for country in country_list:
          "energy_carrier_region_index", 
          "heat_supply_system_index"]
         ]
-    
-    
+
     building_df_merged = pd.concat([building_classes, dynamic_data], axis=1)
-    
     # filter out all buildings that are not SFH
-    building_df = building_df_merged.loc[building_df_merged["name"].str.contains("sfh", case=False)]
+    building_df = building_df_merged.loc[(building_df_merged.loc[:, "building_categories_index"] == 1) |
+                                         (building_df_merged.loc[:, "building_categories_index"] == 2), :]
 
     # get the total number of buildings for each bc index and the total number 
     # of buildings using a heat pump
-    building_df.loc[:, "number_of_buildings"] = 0
-    building_df.loc[:,"number_of_buildings_with_HP_ground"] = 0
-    building_df.loc[:,"number_of_buildings_with_HP_air"] = 0
+    building_df["number_of_buildings"] = 0
+    building_df["number_of_buildings_with_HP_ground"] = 0
+    building_df["number_of_buildings_with_HP_air"] = 0
     
     # add country to building_df:
-    building_df.loc[:,"country"] = country
+    building_df["country"] = country
     
     for index, row in building_df.iterrows():
         number_of_buildings = building_segment.loc[
@@ -214,7 +211,8 @@ for country in country_list:
     print(f"added {country}")
 df_all_countries = df_all_countries.reset_index(drop=True).rename(columns={"index": "invert_index"})
  
-df_all_countries.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\SFH_building_data.json", orient="table")
+df_all_countries.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\data\SFH_building_data.json",
+                         orient="table")
 
    
 
