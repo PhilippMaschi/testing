@@ -80,15 +80,23 @@ from pathlib import Path
 # synth_load_df.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\synthetic_load_household.json", orient="table")
 #
 # # Hot water demand profile
-# hot_water_path = r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Philipp\inputdata\AUT\Hot_water_profile.xlsx"
-# hot_water = pd.read_excel(Path(hot_water_path), engine="openpyxl")
-# hot_water = hot_water["Profile"] * 1_000
+hot_water_path = r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Philipp\inputdata\AUT\Hot_water_profile.xlsx"
+hot_water = pd.read_excel(Path(hot_water_path), engine="openpyxl")
+hot_water = hot_water["Profile"] * 1_000
 # hot_water.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\hot_water_demand.json", orient="table")
 
 path_to_prices = r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Philipp\inputdata\Variable_prices\el_prices_2030_AT.xlsx"
 prices = pd.read_excel(path_to_prices, sheet_name="Tabelle1")
 prices = prices.loc[:, [53, 106, 211]].drop(0)
-a=1
+prices = prices.rename(columns={53: "53", 106: "106", 211: "211"})
+# add first day as last day as one day is missing:
+prices = pd.concat([prices, prices.loc[:24, :]], axis=0).reset_index(drop=True)
+prices = prices.apply(pd.to_numeric)
+# von €/MWh into cent/Wh
+prices = prices * 100 / 1_000 / 1_000
+
+prices.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\data\price_profiles.json", orient="table")
+
 # path_to_synth_load = r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\_Refactor\data\inputdata\synthetic_profiles\synthload2017\SynthLoad2017.mdb"
 # driver = "{Microsoft Access Driver (*.mdb)}"
 # PWD = ""
