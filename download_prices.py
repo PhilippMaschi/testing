@@ -53,8 +53,8 @@ def get_entsoe_prices(api_key: str,
 
     client = EntsoePandasClient(api_key=api_key)
 
-    start = pd.Timestamp(start_time, tz='CET')
-    end = pd.Timestamp(end_time, tz='CET')
+    start = pd.Timestamp(electricity_price_config["start"], tz='CET')
+    end = pd.Timestamp(electricity_price_config["end"], tz='CET')
 
     # Get day-ahead prices from ENTSO-E Transparency
     print('Prices in zone ' + country)
@@ -65,8 +65,10 @@ def get_entsoe_prices(api_key: str,
     return prices_total
 
 
-def create_avg_price_from_variable_price(var_price: np.array):
+def create_avg_price_from_variable_price(var_price: np.array) -> np.array:
     avg = var_price.mean()
+    flat_price = np.ones(shape=var_price.shape) * avg
+    return flat_price
 
 
 
@@ -76,8 +78,16 @@ def main():
                                      end_time=electricity_price_config["end"],
                                      country_code=electricity_price_config["country_code"],
                                      grid_fee=electricity_price_config["grid_fee"])
+    # drop the last hour because its already the first hour of the new year
+    entsoe_price = entsoe_price[:-1]
 
     flat_price = create_avg_price_from_variable_price(entsoe_price)
+
+    # save prices to excel
+    df = pd.DataFrame(columns=[f"entsoe {__year}", "flat price"])
+    df.loc[:, f"entsoe {__year}"] = entsoe_price.flatten()
+    df.loc[:, "flat price"] = flat_price.flatten()
+    df.to_csv(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\data\input_operation\prices_D5.2.csv", sep=";", index=False)
 
 
 if __name__ == "__main__":
