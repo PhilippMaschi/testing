@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from entsoe import EntsoePandasClient, Area
+from pathlib import Path
 
 """
 Query data from ENTSO-E transparency portal
@@ -25,8 +26,8 @@ of potential loss or damage.
 """
 
 pd.options.display.max_columns = None
-__year = 2019
-__country = "DE"
+__year = 2021
+__country = "AT"
 
 electricity_price_config = {
     # variable price
@@ -34,7 +35,7 @@ electricity_price_config = {
     "start": f"{__year}0101",
     "end": f"{__year + 1}0101",
     "country_code": __country,
-    "grid_fee": 30,  # ct/kWh
+    "grid_fee": 20,  # ct/kWh
 }
 
 
@@ -87,7 +88,8 @@ def main():
     df = pd.DataFrame(columns=[f"entsoe {__year}", "flat price"])
     df.loc[:, f"entsoe {__year}"] = entsoe_price.flatten()
     df.loc[:, "flat price"] = flat_price.flatten()
-    df.to_csv(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\data\input_operation\prices_D5.2.csv", sep=";", index=False)
+    df.to_csv(Path(f"C:/Users/mascherbauer/PycharmProjects/NewTrends/Prosumager/projects/Variable_Price_impact/prices_{__year}_AT.csv"),
+              sep=";", index=False)
 
 
 if __name__ == "__main__":
