@@ -161,7 +161,12 @@ def read_hdf5(paths: dict, country: str):
             # drop the first column as its only zeros:
             new_array = new_np_array[1:]
 
-            pandas_frame = pd.DataFrame(new_array).rename(columns={i: key for i, key in enumerate(building_classes_columns.keys())})
+            # create pandas df
+            pandas_frame = pd.DataFrame(new_array).rename(columns=
+                                                          {i: key for i, key in enumerate(building_classes_columns.keys())})
+            # change the dtype of the columns in the pandas dataframe (it did not work in numpy, i tried for hours)
+            for name, value in building_classes_columns.items():
+                pandas_frame.loc[:, name] = pandas_frame.loc[:, name].astype(value)
 
             return pandas_frame
 
