@@ -8,6 +8,8 @@ from pathlib import Path
 import pandas as pd
 import zipfile
 import numpy as np
+import h5py
+import cchardet
 
 
 def create_paths(paths: dict, year: int, country: str) -> (Path, Path, Path):
@@ -21,6 +23,10 @@ def create_paths(paths: dict, year: int, country: str) -> (Path, Path, Path):
     path_to_dynamic_data = paths["SOURCE_PATH"] / paths[
         "INVERT_SCNEARIO"] / country / sub_folder / "Dynamic_Calc_Input_Data" / f"001__dynamic_calc_data_bc_{year}.csv"
     return path_to_building_class, building_segment_path, path_to_dynamic_data
+
+
+def create_country_specific_path(paths: dict, country: str):
+    return paths["SOURCE_PATH"] / paths["INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{paths['SUB_SCENARIO']}"
 
 
 def filter_dataframes(df_building_class: pd.DataFrame, df_building_segment: pd.DataFrame,
@@ -102,7 +108,130 @@ def get_number_of_heat_pumps(residential_df: pd.DataFrame, segment_df: pd.DataFr
     return residential_df
 
 
+def find_hdf5_file(directory: Path):
+    for file in directory.rglob('*.hdf5'):
+        return file
+    return None
+
+
+def read_hdf5(paths: dict, country: str):
+    # find list with hdf5 files
+    print("Find hdf5 file.")
+    main_directory = create_country_specific_path(paths=paths, country=country)
+    filename_hdf5 = find_hdf5_file(main_directory)
+
+    with h5py.File(filename_hdf5, 'r') as hdf5_f:
+        #show the strucuter of the hdf file:
+        print(hdf5_f.keys())
+        # get data elements stored in hdf5 container
+        item_names_hdf5 = hdf5_f.items()
+        # Extract simulation periods stored in data container
+        year_list_hdf5 = []
+        for curr_item_name in item_names_hdf5:
+            if curr_item_name[0][:3] == "BC_":
+                year_list_hdf5.append(int(curr_item_name[0][-4:]))
+
+        print(f"Years stored in data container: {year_list_hdf5}")
+
+
+        def hdf5_to_structured_array(hdf5_file, group_name, columns) -> pd.DataFrame:
+            # Get the table from the group
+            table = hdf5_file[group_name]
+
+            # Get the names of the columns (headers)
+            headers = list(table.dtype.names)
+
+            # Select the desired columns and data types
+            dtype = []
+            for name in headers:
+                    if name in columns:
+                        dtype.append((name, table.dtype[name]))
+
+            # Read the data for the selected columns
+            data = np.array(table, dtype=dtype)
+
+            new_np_array = np.zeros(shape=(1, len(np.array(str(data[0]).split(',')))))
+            # Split the data in each cell into multiple cells using the ";" delimiter
+            for i in range(data.shape[0]):
+                a = np.array(str(data[i]).split(','))
+                for j, value in enumerate(a):
+                    a[j] = value.replace("(", "").replace(")", "").replace("b", "").replace("'", "")
+                new_np_array = np.append(new_np_array, np.expand_dims(a, axis=0), axis=0)
+
+            # drop the first column as its only zeros:
+            new_array = new_np_array[1:]
+
+            pandas_frame = pd.DataFrame(new_array).rename(columns={i: key for i, key in enumerate(building_classes_columns.keys())})
+
+            return pandas_frame
+
+        building_classes_columns = {
+            "index": int,
+            "name": str,
+            "construction_period_start": int,
+            "construction_period_end": int,
+            "building_categories_index": int,
+            "number_of_dwellings_per_building": "float32",
+            "number_of_persons_per_dwelling": "float32",
+            "length_of_building": "float32",
+            "width_of_building": "float32",
+            "number_of_floors": "float32",
+            "room_height": "float32",
+            "percentage_of_building_surface_attached_length": "float32",
+            "percentage_of_building_surface_attached_width": "float32",
+            "share_of_window_area_on_gross_surface_area": "float32",
+            "share_of_windows_oriented_to_south": "float32",
+            "share_of_windows_oriented_to_north": "float32",
+            "grossfloor_area": "float32",
+            "heated_area": "float32",
+            "areafloor": "float32",
+            "areawindows": "float32",
+            "area_suitable_solar": "float32",
+            "grossvolume": "float32",
+            "heatedvolume": "float32",
+            "heated_norm_volume": "float32",
+            "hwb": "float32",
+            "hwb_norm": "float32",
+            "u_value_ceiling": "float32",
+            "u_value_exterior_walls": "float32",
+            "u_value_windows1": "float32",
+            "u_value_windows2": "float32",
+            "u_value_roof": "float32",
+            "u_value_floor": "float32",
+            "seam_loss_windows": "float32",
+            "trans_loss_walls": "float32",
+            "trans_loss_ceil": "float32",
+            "trans_loss_wind": "float32",
+            "trans_loss_floor": "float32",
+            "trans_loss_therm_bridge": "float32",
+            "trans_loss_ventilation": "float32",
+            "total_heat_losses": "float32",
+            "average_effective_area_wind_west_east_red_cool": "float32",
+            "average_effective_area_wind_south_red_cool": "float32",
+            "average_effective_area_wind_north_red_cool": "float32",
+            "spec_int_gains_cool_watt": "float32",
+            "attached_surface_area": "float32"
+        }
+        array_np = hdf5_to_structured_array(hdf5_f, "BC_2020", building_classes_columns)
+        # fetch the building classes
+        BC_years = [f"BC_{year}" for year in [2020, 2030, 2050]]
+        bc_header = hdf5_f["BC_2020"].dtype.names
+        bc = hdf5_f["BC_2020"][()].tostring().decode("utf-16", errors="ignore")
+        data = np.genfromtxt(bc, delimiter=',', dtype='float64')
+
+
+
+        # Specify the column names and data types
+        dtype = [(name, 'float32') if name!="name" else (name, "str") for name in bc_header]
+
+        # Transfer the data to a NumPy array
+        array = np.array(data_list, dtype=dtype)
+
+        RESULTS = {}
+
+
 def main(paths: dict, year: int):
+    hdf_filename = "001_buildings.hdf5"
     country_list = ['AUT',
                     'BEL',
                     'BGR',
@@ -205,6 +334,9 @@ def main(paths: dict, year: int):
     df_mfh_all_countries = df_all_countries.copy()
 
     for country in country_list:
+        # load the hdf5 file:
+        country = "CYP"
+        read_hdf5(paths, country)
         building_classes, building_segment, dynamic_data = fetch_data(paths, year, country)
         building_df_merged = pd.concat([building_classes, dynamic_data], axis=1)
 
@@ -244,7 +376,7 @@ def main(paths: dict, year: int):
 
 if __name__ == "__main__":
     paths = {"SOURCE_PATH": Path(r"W:\projects3\2021_RES_HC_Pathways\invert"),
-             "INVERT_SCENARIO": "output_2022_newbuild_reference",
-             "SUB_SCENARIO": "_electrification_ref_final_ab"}  # always has _sce_country before
+             "INVERT_SCENARIO": "output_new_trends_2022_12_20_2050",
+             "SUB_SCENARIO": "_res_hc_pw_alternative_1_ab"}  # always has _sce_country before
     years = [2020, 2030, 2050]
-    main(paths)
+    main(paths, years)
