@@ -16,88 +16,7 @@ import re
 import multiprocessing
 
 
-BUILDING_CLASS_COLUMNS = {
-            "index": int,
-            "name": str,
-            "construction_period_start": int,
-            "construction_period_end": int,
-            "building_categories_index": int,
-            "number_of_dwellings_per_building": "float32",
-            "number_of_persons_per_dwelling": "float32",
-            "length_of_building": "float32",
-            "width_of_building": "float32",
-            "number_of_floors": "float32",
-            "room_height": "float32",
-            "percentage_of_building_surface_attached_length": "float32",
-            "percentage_of_building_surface_attached_width": "float32",
-            "share_of_window_area_on_gross_surface_area": "float32",
-            "share_of_windows_oriented_to_south": "float32",
-            "share_of_windows_oriented_to_north": "float32",
-            "grossfloor_area": "float32",
-            "heated_area": "float32",
-            "areafloor": "float32",
-            "areawindows": "float32",
-            "area_suitable_solar": "float32",
-            "grossvolume": "float32",
-            "heatedvolume": "float32",
-            "heated_norm_volume": "float32",
-            "hwb": "float32",
-            "hwb_norm": "float32",
-            "u_value_ceiling": "float32",
-            "u_value_exterior_walls": "float32",
-            "u_value_windows1": "float32",
-            "u_value_windows2": "float32",
-            "u_value_roof": "float32",
-            "u_value_floor": "float32",
-            "seam_loss_windows": "float32",
-            "trans_loss_walls": "float32",
-            "trans_loss_ceil": "float32",
-            "trans_loss_wind": "float32",
-            "trans_loss_floor": "float32",
-            "trans_loss_therm_bridge": "float32",
-            "trans_loss_ventilation": "float32",
-            "total_heat_losses": "float32",
-            "average_effective_area_wind_west_east_red_cool": "float32",
-            "average_effective_area_wind_south_red_cool": "float32",
-            "average_effective_area_wind_north_red_cool": "float32",
-            "spec_int_gains_cool_watt": "float32",
-            "attached_surface_area": "float32"
-        }
 
-BUILDING_SEGMENT_COLUMNS = {
-    "index": int,
-    "name": str,
-    "building_classes_index": int,
-    "number_of_buildings": "float32",
-    "heat_supply_system_index": int,
-    "installation_year_system_start": "float32",
-    "installation_year_system_end": "float32",
-    "distribution_sh_index": int,
-    "distribution_dhw_index": int,
-    "pv_system_index": int,
-    "energy_carrier": int,
-    "annual_energy_costs_hs": "float32",
-    "total_annual_cost_hs": "float32",
-    "annual_energy_costs_dhw": "float32",
-    "total_annual_cost_dhw": "float32",
-    "hs_efficiency": "float32",
-    "dhw_efficiency": "float32",
-    "size_pv_system": "float32"
-}
-
-HEATING_SYSTEM_COLUMNS = {
-    "index": int,
-    "name": str,
-    "energy_carrier_main_index": int,
-
-    "build_central_system": int,
-
-}
-
-ENERGY_CARRIER_INDEX = {
-    "index": int,
-    "name": str
-}
 
 def create_dict_if_not_exists(path: Path):
     if not path.exists():
@@ -202,7 +121,11 @@ def find_hdf5_file(directory: Path):
     return None
 
 
-def read_hdf5(paths: dict, country: str, output_path: Path, years: list):
+def read_hdf5(paths: dict, country: str, output_path: Path, years: list,
+              building_class_columns: dict,
+              building_segment_columns: dict,
+              heating_system_columns: dict,
+              energy_carrier_index: dict):
     # find list with hdf5 files
     print("Find hdf5 file.")
     # create country specific path
@@ -256,24 +179,24 @@ def read_hdf5(paths: dict, country: str, output_path: Path, years: list):
         # create country dir if it doesnt exist:
         create_dict_if_not_exists(output_path / country)
         for name in BC_years:
-            df = hdf5_to_structured_array(hdf5_f, name, BUILDING_CLASS_COLUMNS)
+            df = hdf5_to_structured_array(hdf5_f, name, building_class_columns)
             # df.to_csv(output_path / country / f"{name}.csv", sep=";", index=False)
             df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
 
         BSSH_years = [f"BSSH_{year}" for year in years]
         for name in BSSH_years:
-            df = hdf5_to_structured_array(hdf5_f, name, BUILDING_SEGMENT_COLUMNS)
+            df = hdf5_to_structured_array(hdf5_f, name, building_segment_columns)
             # df.to_csv(output_path / country / f"{name}.csv", sep=";", index=False)
             df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
 
         energy_carrier_years = [f"EnergyCarrierDefinition_{year}" for year in years]
         for name in energy_carrier_years:
-            df = hdf5_to_structured_array(hdf5_f, name, ENERGY_CARRIER_INDEX)
+            df = hdf5_to_structured_array(hdf5_f, name, energy_carrier_index)
             # df.to_csv(output_path / country / f"{name}.csv", sep=";", index=False)
             df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
 
         # get Heating Systems
-        df = hdf5_to_structured_array(hdf5_f, "HeatingSystems", HEATING_SYSTEM_COLUMNS)
+        df = hdf5_to_structured_array(hdf5_f, "HeatingSystems", heating_system_columns)
         # df.to_csv(output_path / country / f"HeatingSystems.csv", sep=";", index=False)
         df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
 
@@ -283,7 +206,7 @@ def read_hdf5(paths: dict, country: str, output_path: Path, years: list):
 
 
 
-def main(paths: dict, years: list, out_path: Path):
+def main(paths: dict, years: list, out_path: Path, building_class_columns, building_segment_columns, heating_system_columns, energy_carrier_index):
     hdf_filename = "001_buildings.hdf5"
     country_list = ['AUT',
                     'BEL',
@@ -440,7 +363,90 @@ if __name__ == "__main__":
              "INVERT_SCENARIO": "output_new_trends_2022_12_20_2050",
              "SUB_SCENARIO": "_res_hc_pw_alternative_1_ab"}  # always has _sce_country before
     output_folder = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
+
+    BUILDING_CLASS_COLUMNS = {
+        "index": int,
+        "name": str,
+        "construction_period_start": int,
+        "construction_period_end": int,
+        "building_categories_index": int,
+        "number_of_dwellings_per_building": "float32",
+        "number_of_persons_per_dwelling": "float32",
+        "length_of_building": "float32",
+        "width_of_building": "float32",
+        "number_of_floors": "float32",
+        "room_height": "float32",
+        "percentage_of_building_surface_attached_length": "float32",
+        "percentage_of_building_surface_attached_width": "float32",
+        "share_of_window_area_on_gross_surface_area": "float32",
+        "share_of_windows_oriented_to_south": "float32",
+        "share_of_windows_oriented_to_north": "float32",
+        "grossfloor_area": "float32",
+        "heated_area": "float32",
+        "areafloor": "float32",
+        "areawindows": "float32",
+        "area_suitable_solar": "float32",
+        "grossvolume": "float32",
+        "heatedvolume": "float32",
+        "heated_norm_volume": "float32",
+        "hwb": "float32",
+        "hwb_norm": "float32",
+        "u_value_ceiling": "float32",
+        "u_value_exterior_walls": "float32",
+        "u_value_windows1": "float32",
+        "u_value_windows2": "float32",
+        "u_value_roof": "float32",
+        "u_value_floor": "float32",
+        "seam_loss_windows": "float32",
+        "trans_loss_walls": "float32",
+        "trans_loss_ceil": "float32",
+        "trans_loss_wind": "float32",
+        "trans_loss_floor": "float32",
+        "trans_loss_therm_bridge": "float32",
+        "trans_loss_ventilation": "float32",
+        "total_heat_losses": "float32",
+        "average_effective_area_wind_west_east_red_cool": "float32",
+        "average_effective_area_wind_south_red_cool": "float32",
+        "average_effective_area_wind_north_red_cool": "float32",
+        "spec_int_gains_cool_watt": "float32",
+        "attached_surface_area": "float32"
+    }
+
+    BUILDING_SEGMENT_COLUMNS = {
+        "index": int,
+        "name": str,
+        "building_classes_index": int,
+        "number_of_buildings": "float32",
+        "heat_supply_system_index": int,
+        "installation_year_system_start": "float32",
+        "installation_year_system_end": "float32",
+        "distribution_sh_index": int,
+        "distribution_dhw_index": int,
+        "pv_system_index": int,
+        "energy_carrier": int,
+        "annual_energy_costs_hs": "float32",
+        "total_annual_cost_hs": "float32",
+        "annual_energy_costs_dhw": "float32",
+        "total_annual_cost_dhw": "float32",
+        "hs_efficiency": "float32",
+        "dhw_efficiency": "float32",
+        "size_pv_system": "float32"
+    }
+
+    HEATING_SYSTEM_COLUMNS = {
+        "index": int,
+        "name": str,
+        "energy_carrier_main_index": int,
+
+        "build_central_system": int,
+
+    }
+
+    ENERGY_CARRIER_INDEX = {
+        "index": int,
+        "name": str
+    }
     create_dict_if_not_exists(output_folder)
 
     years = [2020, 2030, 2050]
-    main(paths, years, output_folder)
+    main(paths, years, output_folder, BUILDING_CLASS_COLUMNS, BUILDING_SEGMENT_COLUMNS, HEATING_SYSTEM_COLUMNS, ENERGY_CARRIER_INDEX)
