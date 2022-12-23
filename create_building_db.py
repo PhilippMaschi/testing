@@ -11,6 +11,7 @@ import pandas as pd
 import zipfile
 import numpy as np
 import h5py
+import shutil
 import cchardet
 import re
 import multiprocessing
@@ -120,17 +121,24 @@ def find_hdf5_file(directory: Path):
         return file
     return None
 
+def copy_hdf5_to_disc(source: Path, destination: Path):
+    """Copy an HDF5 file from src to dst, creating any missing directories in the destination path."""
+    # Check if the destination file already exists
+    if destination.exists():
+        print(f"{destination} already exists. Skipping copy operation.")
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(source, destination)
+
+
 
 def read_hdf5(paths: dict, country: str, output_path: Path, years: list,
               building_class_columns: dict,
               building_segment_columns: dict,
               heating_system_columns: dict,
               energy_carrier_index: dict):
-    # find list with hdf5 files
-    print("Find hdf5 file.")
-    # create country specific path
-    main_directory = paths["SOURCE_PATH"] / paths["INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{paths['SUB_SCENARIO']}"
-    filename_hdf5 = find_hdf5_file(main_directory)
+
+
 
     with h5py.File(filename_hdf5, 'r') as hdf5_f:
         #show the strucuter of the hdf file:
@@ -138,12 +146,17 @@ def read_hdf5(paths: dict, country: str, output_path: Path, years: list,
         # get data elements stored in hdf5 container
         # item_names_hdf5 = hdf5_f.items()
 
-        def hdf5_to_structured_array(hdf5_file, group_name, columns) -> pd.DataFrame:
+        def hdf5_to_pandas(hdf5_file: Path, group_name, columns) -> pd.DataFrame:
             # Get the table from the group
-            dataset = hdf5_file[group_name]
+            dataset = pd.read_hdf(hdf5_file, group_name)
+            pandas_frame = dataset.loc[:, columns.keys()]
+            return pandas_frame
 
-            # Get the names of the columns (headers)
+           # Get the names of the columns (headers)
             headers = list(dataset.dtype.names)
+
+            # for name in columns.keys():
+
 
             # Select the desired columns and data types
             dtype = []
@@ -155,55 +168,72 @@ def read_hdf5(paths: dict, country: str, output_path: Path, years: list,
 
             data = np.array(dataset, dtype=dtype)
 
-            new_np_array = np.zeros(shape=(1, len(np.array(str(data[0]).split(',')))))
-            # Split the data in each cell into multiple cells using the ";" delimiter
-            for i in range(data.shape[0]):
-                a = np.array(str(data[i]).split(','))
-                for j, value in enumerate(a):
-                    a[j] = value.replace("(", "").replace(")", "").replace("b", "").replace("'", "").replace(" ", "")
-                new_np_array = np.append(new_np_array, np.expand_dims(a, axis=0), axis=0)
-
-            # drop the first column as its only zeros:
-            new_array = new_np_array[1:]
-
-            # create pandas df
-            pandas_frame = pd.DataFrame(new_array).rename(columns=
-                                                          {i: key for i, key in enumerate(columns.keys())})
-            # change the dtype of the columns in the pandas dataframe (it did not work in numpy, i tried for hours)
-            for name, value in columns.items():
-                pandas_frame.loc[:, name] = pandas_frame.loc[:, name].astype(value)
-
-            return pandas_frame
+        # create country specific path
+        main_directory = Path(__file__).parent / "building_data" / "AUT"
+        filename_hdf5 = find_hdf5_file(main_directory)
+        BC_2020 = hdf5_to_pandas(hdf5_f, "BC_2020")
 
         BC_years = [f"BC_{year}" for year in years]
         # create country dir if it doesnt exist:
         create_dict_if_not_exists(output_path / country)
         for name in BC_years:
-            df = hdf5_to_structured_array(hdf5_f, name, building_class_columns)
+            df = hdf5_to_pandas(hdf5_f, name, building_class_columns)
             # df.to_csv(output_path / country / f"{name}.csv", sep=";", index=False)
             df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
+        print(f"BC for {country} downloaded.")
 
         BSSH_years = [f"BSSH_{year}" for year in years]
         for name in BSSH_years:
-            df = hdf5_to_structured_array(hdf5_f, name, building_segment_columns)
+            df = hdf5_to_pandas(hdf5_f, name, building_segment_columns)
             # df.to_csv(output_path / country / f"{name}.csv", sep=";", index=False)
             df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
+        print(f"BSSH for {country} downloaded.")
 
         energy_carrier_years = [f"EnergyCarrierDefinition_{year}" for year in years]
         for name in energy_carrier_years:
-            df = hdf5_to_structured_array(hdf5_f, name, energy_carrier_index)
+            df = hdf5_to_pandas(hdf5_f, name, energy_carrier_index)
             # df.to_csv(output_path / country / f"{name}.csv", sep=";", index=False)
             df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
+        print(f"Energy carriers for {country} downloaded.")
 
         # get Heating Systems
-        df = hdf5_to_structured_array(hdf5_f, "HeatingSystems", heating_system_columns)
+        df = hdf5_to_pandas(hdf5_f, "HeatingSystems", heating_system_columns)
         # df.to_csv(output_path / country / f"HeatingSystems.csv", sep=";", index=False)
         df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
 
         print(f"Finished retrieving data from {country}.")
 
 
+def copy_hdf5_files(out_path: Path, countries: list):
+    for country in countries:
+        source_directory = paths["SOURCE_PATH"] / paths[
+            "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{paths['SUB_SCENARIO']}"
+        source_path = find_hdf5_file(source_directory)
+        destination_path = out_path / country / source_path.name
+        # create_dict_if_not_exists(destination_path)
+        copy_hdf5_to_disc(source_path, destination_path)
+    print("all hdf5 files are copied to local disk")
 
+
+def delete_hdf5(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data"):
+    """Iterate through the given folder and delete all HDF5 files, prompting the user for confirmation at the beginning.
+
+    Parameters
+    ----------
+    folder : str
+        The path to the folder to be searched.
+    """
+    # Prompt the user for confirmation
+    response = input("Do you want to delete all HDF5 files in the given folder? [Y/n] ")
+    if response.lower() != 'y':
+        print("No files were deleted.")
+        return
+
+    # Iterate through the files in the folder
+    for file in Path(folder).glob('*.h5'):
+        # Delete the file
+        file.unlink()
+        print(f"{file} deleted.")
 
 
 def main(paths: dict, years: list, out_path: Path, building_class_columns, building_segment_columns, heating_system_columns, energy_carrier_index):
@@ -235,6 +265,12 @@ def main(paths: dict, years: list, out_path: Path, building_class_columns, build
                     'SVN',
                     'ESP',
                     'SWE']
+    # copy the hdf files
+    copy_hdf5_files(out_path=out_path, countries=country_list)
+
+
+
+
 
     # Define a dict comprehension to generate the heating_key dictionary
     heating_key = {
@@ -284,40 +320,17 @@ def main(paths: dict, years: list, out_path: Path, building_class_columns, build
         44: "electricity"
     }
 
-    # df_all_countries = pd.DataFrame(columns=[
-    #     "index",
-    #     "name",
-    #     "construction_period_start",
-    #     "construction_period_end",
-    #     "bc_index",
-    #     "building_categories_index",
-    #     "Af",
-    #     "Hop",
-    #     "Htr_w",
-    #     "Hve",
-    #     "CM_factor",
-    #     "Am_factor",
-    #     "average_effective_area_wind_west_east_red_cool",
-    #     "average_effective_area_wind_south_red_cool",
-    #     "average_effective_area_wind_north_red_cool",
-    #     "spec_int_gains_cool_watt",
-    #     "hwb_norm",
-    #     "number_of_buildings",
-    #     "number_of_buildings_with_HP_ground",
-    #     "number_of_buildings_with_HP_air",
-    #     "country"])
 
-    # df_mfh_all_countries = df_all_countries.copy()
 
-    arglist = [(paths, country, out_path, years) for country in country_list]
-    with multiprocessing.Pool(4) as pool:
-        pool.starmap(read_hdf5, arglist)
+    arglist = [(paths, country, out_path, years, building_class_columns, building_segment_columns, heating_system_columns, energy_carrier_index) for country in country_list]
+    # with multiprocessing.Pool(4) as pool:
+        # pool.starmap(read_hdf5, arglist)
 
 
     # for country in country_list:
-    #     #load the hdf5 file:
-    #     country = "CYP"
-    #     read_hdf5(paths, country, out_path, years)
+        #load the hdf5 file:
+    # country = "CYP"
+    # read_hdf5(paths, country, out_path, years, building_class_columns, building_segment_columns, heating_system_columns, energy_carrier_index)
 
 
         # building_classes, building_segment, dynamic_data = fetch_data(paths, year, country)
