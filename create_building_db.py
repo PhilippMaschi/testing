@@ -98,63 +98,67 @@ def to_series(col):
     else:
         return col
 
+def remove_multi_index(df: pd.DataFrame) -> pd.DataFrame:
+    if type(df.columns) == pd.core.indexes.multi.MultiIndex:
+        df.columns = df.columns.map(''.join)  # remove the MultiIndex (which has only one layer)
+    return df
+
+def calc_mean(data: dict) -> float:
+    # Multiply each key with its corresponding value and add them
+    sum_products = sum(key * value for key, value in data.items())
+    # Calculate the sum of the values
+    sum_values = sum(value for value in data.values())
+    # Return the mean value
+    return sum_products / sum_values
+
+
 def get_number_of_heat_pumps(residential_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.DataFrame:
     # drop the columns which do not contain numbers:
-    numerics = ["uint64", 'int16', 'int32', 'int64', 'float16', 'float32', 'float64']
+    numerics = ["uint64", 'uint16', 'uint32', 'int64', 'float16', 'float32', 'float64']
+    bssh_df.columns = bssh_df.columns.map(''.join)
     bssh = bssh_df.select_dtypes(include=numerics)
     bssh.columns = bssh.columns.map(''.join)  # remove the MultiIndex (which has only one layer)
-    new_bssh = pd.DataFrame(index=bssh.index, columns=bssh.columns)
     bssh = bssh.apply(to_series)
+    residential_df.columns = residential_df.columns.map(''.join)
+    # only keep residential buildings in bssh frame:
+    bc_indizes = list(residential_df.loc[:, "index"])
+    bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(drop=True)  # 1,2 SFH and 5, 6 are MFH
 
+    # filter out only buildings with heat pumps:
+    bssh_heat_pumps = bssh_residential.loc[bssh_residential['heat_supply_system_index'].isin([42, 43])].reset_index(drop=True)
 
     # Group the rows of bssh_df by building_classes_index
-    grouped = bssh.groupby("building_classes_index")
+    grouped = bssh_heat_pumps.groupby("building_classes_index")
 
-    # Calculate the total number of buildings for each building_classes_index
-    number_of_buildings = grouped["number_of_buildings"].sum()
+    for index, group in grouped:
+        # add number of heat pumps to bc df:
+        total_number_of_air_hp = group.loc[group.loc[:, "heat_supply_system_index"] == 42, "number_of_buildings"].sum()
+        total_number_of_ground_hp = group.loc[group.loc[:, "heat_supply_system_index"] == 43, "number_of_buildings"].sum()
+        residential_df.loc[residential_df.loc[:, "index"]==index, "number_of_buildings_with_HP_air"] = total_number_of_air_hp
+        residential_df.loc[residential_df.loc[:, "index"]==index, "number_of_buildings_with_HP_ground"] = total_number_of_ground_hp
 
-    # Calculate the number of buildings with air heat pumps
-    number_of_air_hp = grouped.apply(
-        lambda x: x.loc[x["heat_supply_system_index"] == 42, "number_of_buildings"].sum()
-    )
+        # add supply temperature to bc df:
+        # check if there are multiple supply temperatures:
+        supply_temperatures = list(group.loc[:, "supply_temperature"].unique())
+        if len(supply_temperatures) > 1:
+            # group by supply temperature
+            supply_temperature_group = group.groupby("supply_temperature")
+            nums = {}
+            for temp in supply_temperatures:
+                number_buildings_sup_temp = supply_temperature_group.get_group(temp)["number_of_buildings"].sum()
+                nums[temp] = number_buildings_sup_temp
+            # calculate the mean:
+            mean_sup_temp = calc_mean(nums)
+        else:
+            mean_sup_temp = supply_temperatures[0]
 
-    # Calculate the number of buildings with ground heat pumps
-    number_of_ground_hp = grouped.apply(
-        lambda x: x.loc[x["heat_supply_system_index"] == 43, "number_of_buildings"].sum()
-    )
+        # add the supply temperature to the BC dataframe:
+        residential_df.loc[residential_df.loc[:, "index"]==index, "supply_temperature"] = mean_sup_temp
 
-    # Join the calculated values to residential_df
-    residential_df = residential_df.join(number_of_buildings, on="index")
-    residential_df = residential_df.join(number_of_air_hp, on="index", rsuffix="_air")
-    residential_df = residential_df.join(number_of_ground_hp, on="index", rsuffix="_ground")
+    # turn nan into zeros in the residential_df (those buildings don't have hps therefore they were not counted:
+    residential_df = residential_df.fillna(0)
 
     return residential_df
-
-
-# def get_number_of_heat_pumps(residential_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.DataFrame:
-#     for index, row in residential_df.iterrows():
-#         number_of_buildings = bssh_df.loc[
-#             bssh_df.loc[:, "building_classes_index"] == row["index"]]
-#         total_number_of_buildings = number_of_buildings.loc[:, "number_of_buildings"].sum()
-#
-#         residential_df.loc[index, "number_of_buildings"] = total_number_of_buildings
-#         # TODO add all heating systems
-#         # filter out number of heat pumps
-#         # Air:
-#         number_of_air_hp = bssh_df.loc[
-#             (bssh_df.loc[:, "building_classes_index"] == row["index"]) &
-#             (bssh_df.loc[:, "heat_supply_system_index"] == 42)]
-#         total_number_of_air_hp = number_of_air_hp.loc[:, "number_of_buildings"].sum()
-#         residential_df.loc[index, "number_of_buildings_with_HP_air"] = total_number_of_air_hp
-#
-#         # Ground:
-#         number_of_ground_hp = bssh_df.loc[
-#             (bssh_df.loc[:, "building_classes_index"] == row["index"]) &
-#             (bssh_df.loc[:, "heat_supply_system_index"] == 43)]
-#         total_number_of_ground_hp = number_of_ground_hp.loc[:, "number_of_buildings"].sum()
-#         residential_df.loc[index, "number_of_buildings_with_HP_ground"] = total_number_of_ground_hp
-#
-#     return residential_df
 
 
 def find_hdf5_file(directory: Path):
