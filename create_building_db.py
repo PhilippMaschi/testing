@@ -5,23 +5,33 @@ Created on Wed Feb 23 16:07:33 2022
 @author: mascherbauer
 """
 from pathlib import Path
-
-# import chardet
+from functools import wraps
+import time
 import pandas as pd
-import zipfile
 import numpy as np
 import h5py
 import shutil
-# import cchardet
 import re
 import multiprocessing
 
 
+def performance_counter(func):
+    @wraps(func)
+    def wrapper(*args):
+        t_start = time.perf_counter()
+        result = func(*args)
+        t_end = time.perf_counter()
+        exe_time = round(t_end - t_start, 3)
+        print(f"Timer: {func.__name__} - {exe_time}s.")
+        return result
+
+    return wrapper
 
 
 def create_dict_if_not_exists(path: Path):
     if not path.exists():
         path.mkdir()
+
 
 def create_paths(paths: dict, year: int, country: str) -> (Path, Path, Path):
     sub_folder = Path(f"_scen_{country.lower()}{paths['SUB_SCENARIO']}") / "ADD_RESULTS"
@@ -34,7 +44,6 @@ def create_paths(paths: dict, year: int, country: str) -> (Path, Path, Path):
     path_to_dynamic_data = paths["SOURCE_PATH"] / paths[
         "INVERT_SCNEARIO"] / country / sub_folder / "Dynamic_Calc_Input_Data" / f"001__dynamic_calc_data_bc_{year}.csv"
     return path_to_building_class, building_segment_path, path_to_dynamic_data
-
 
 
 def filter_dataframes(df_building_class: pd.DataFrame, df_building_segment: pd.DataFrame,
@@ -112,20 +121,29 @@ def calc_mean(data: dict) -> float:
     return sum_products / sum_values
 
 
-def get_number_of_heat_pumps(residential_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.DataFrame:
-    # drop the columns which do not contain numbers:
-    numerics = ["uint64", 'uint16', 'uint32', 'int64', 'float16', 'float32', 'float64']
+def fix_dfs(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> (pd.DataFrame, pd.DataFrame):
+    # remove the multiindex:
     bssh_df.columns = bssh_df.columns.map(''.join)
-    bssh = bssh_df.select_dtypes(include=numerics)
-    bssh.columns = bssh.columns.map(''.join)  # remove the MultiIndex (which has only one layer)
-    bssh = bssh.apply(to_series)
-    residential_df.columns = residential_df.columns.map(''.join)
-    # only keep residential buildings in bssh frame:
-    bc_indizes = list(residential_df.loc[:, "index"])
-    bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(drop=True)  # 1,2 SFH and 5, 6 are MFH
+    bc_df.columns = bc_df.columns.map(''.join)
+    # change columns to series:
+    bssh = bssh_df.apply(to_series)
+    bc = bc_df.apply(to_series)
 
+    # filter out residential buildings:
+    # filter out all buildings that are not SFH or MFH
+    mask = bc["building_categories_index"].isin([1, 2, 5, 6])  # 1,2 SFH and 5, 6 are MFH
+    bc_residential = bc.loc[mask.squeeze(), :]
+
+    # only keep residential buildings in bssh frame:
+    bc_indizes = list(bc_residential.loc[:, "index"])
+    bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(
+        drop=True)  # 1,2 SFH and 5, 6 are MFH
+    return bc_residential, bssh_residential
+
+
+def get_number_of_heat_pumps(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.DataFrame:
     # filter out only buildings with heat pumps:
-    bssh_heat_pumps = bssh_residential.loc[bssh_residential['heat_supply_system_index'].isin([42, 43])].reset_index(drop=True)
+    bssh_heat_pumps = bssh_df.loc[bssh_df['heat_supply_system_index'].isin([42, 43])].reset_index(drop=True)
 
     # Group the rows of bssh_df by building_classes_index
     grouped = bssh_heat_pumps.groupby("building_classes_index")
@@ -134,8 +152,8 @@ def get_number_of_heat_pumps(residential_df: pd.DataFrame, bssh_df: pd.DataFrame
         # add number of heat pumps to bc df:
         total_number_of_air_hp = group.loc[group.loc[:, "heat_supply_system_index"] == 42, "number_of_buildings"].sum()
         total_number_of_ground_hp = group.loc[group.loc[:, "heat_supply_system_index"] == 43, "number_of_buildings"].sum()
-        residential_df.loc[residential_df.loc[:, "index"]==index, "number_of_buildings_with_HP_air"] = total_number_of_air_hp
-        residential_df.loc[residential_df.loc[:, "index"]==index, "number_of_buildings_with_HP_ground"] = total_number_of_ground_hp
+        bc_df.loc[bc_df.loc[:, "index"] == index, "number_of_buildings_with_HP_air"] = total_number_of_air_hp
+        bc_df.loc[bc_df.loc[:, "index"] == index, "number_of_buildings_with_HP_ground"] = total_number_of_ground_hp
 
         # add supply temperature to bc df:
         # check if there are multiple supply temperatures:
@@ -153,13 +171,17 @@ def get_number_of_heat_pumps(residential_df: pd.DataFrame, bssh_df: pd.DataFrame
             mean_sup_temp = supply_temperatures[0]
 
         # add the supply temperature to the BC dataframe:
-        residential_df.loc[residential_df.loc[:, "index"]==index, "supply_temperature"] = mean_sup_temp
+        bc_df.loc[bc_df.loc[:, "index"] == index, "supply_temperature"] = mean_sup_temp
 
     # turn nan into zeros in the residential_df (those buildings don't have hps therefore they were not counted:
-    residential_df = residential_df.fillna(0)
+    bc_df = bc_df.fillna(0)
 
-    return residential_df
+    return bc_df
 
+
+def remove_buildings_without_heatpumps(df: pd.DataFrame) -> pd.DataFrame:
+    df = df[(df["number_of_buildings_with_HP_air"] != 0) | (df["number_of_buildings_with_HP_ground"] != 0)]
+    return df
 
 def find_hdf5_file(directory: Path):
     for file in directory.rglob('*.hdf5'):
@@ -194,7 +216,7 @@ def hdf5_to_pandas(hdf5_file: Path, group_name, columns) -> pd.DataFrame:
     return df
 
 
-def read_hdf5(paths: dict, country: str, output_path: Path, years: list,
+def read_hdf5(country: str, output_path: Path, years: list,
               building_class_columns: dict,
               building_segment_columns: dict,
               heating_system_columns: dict,
@@ -249,62 +271,41 @@ def read_hdf5(paths: dict, country: str, output_path: Path, years: list,
         # create country specific path
         main_directory = Path(__file__).parent / "building_data" / country
         hdf5_f = find_hdf5_file(main_directory)
-        BC_2020 = hdf5_to_pandas(hdf5_f, "BC_2020", building_class_columns)
-        BSSH_2020 = hdf5_to_pandas(hdf5_f, "BSSH_2020", building_segment_columns)
-        heating_system = hdf5_to_pandas(hdf5_f, "HeatingSystems", heating_system_columns)
-        energy_carrier = hdf5_to_pandas(hdf5_f, "EnergyCarrierDefinition_2020", energy_carrier_index)
-        dist_df = pd.read_csv(main_directory / "distribution_sh.csv", sep=",", encoding="latin1")
-        distribution_sh = dist_df.iloc[3:, :].dropna(axis=1).rename(columns={"csvid": "distribution_sh_index"}).reset_index(drop=True)
-        # change the index to integer otherwise "map" does not work
-        distribution_sh["distribution_sh_index"] = distribution_sh["distribution_sh_index"].astype(int)
-        # map the supply temperature and the heating system type to the BSSH df:
-        BSSH_2020.loc[:, "supply_temperature"] = BSSH_2020["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["supply_temperature"])
-        # BSSH_2020.loc[:, "heating_distribution_system"] = BSSH_2020["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["name"])
-        # uncomment the next line to include the return temperature
-        # BSSH_2020.loc[:, "return_temperature"] = BSSH_2020["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["return_temperature"])
 
-        # add the heating system type to the BSSH table
-        # BSSH_2020.loc[:, "energy_carrier_name"] = BSSH_2020["energy_carrier"].squeeze().map(heating_key)
+        for year in years:
+            BC = hdf5_to_pandas(hdf5_f, f"BC_{year}", building_class_columns)
+            BSSH = hdf5_to_pandas(hdf5_f, f"BSSH_{year}", building_segment_columns)
+            heating_system = hdf5_to_pandas(hdf5_f, "HeatingSystems", heating_system_columns)
+            energy_carrier = hdf5_to_pandas(hdf5_f, "EnergyCarrierDefinition_2020", energy_carrier_index)
+            dist_df = pd.read_csv(main_directory / "distribution_sh.csv", sep=",", encoding="latin1")
+            distribution_sh = dist_df.iloc[3:, :].dropna(axis=1).rename(columns={"csvid": "distribution_sh_index"}).reset_index(drop=True)
+            # change the index to integer otherwise "map" does not work
+            distribution_sh["distribution_sh_index"] = distribution_sh["distribution_sh_index"].astype(int)
 
-        # filter out residential buildings:
-        # filter out all buildings that are not SFH or MFH
-        mask = BC_2020["building_categories_index"].isin([1, 2, 5, 6])  # 1,2 SFH and 5, 6 are MFH
-        BC_2020_residential = BC_2020.loc[mask.squeeze(), :]
+            # map the supply temperature and the heating system type to the BSSH df:
+            BSSH.loc[:, "supply_temperature"] = BSSH["distribution_sh_index"].squeeze().map(
+                distribution_sh.set_index("distribution_sh_index")["supply_temperature"])
+            # BSSH_2020.loc[:, "heating_distribution_system"] = BSSH_2020["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["name"])
+            # uncomment the next line to include the return temperature
+            # BSSH_2020.loc[:, "return_temperature"] = BSSH_2020["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["return_temperature"])
 
-        # add the number of heat pumps by merging the BSSH to the BC df
-        get_number_of_heat_pumps(residential_df=BC_2020_residential, bssh_df=BSSH_2020)
+            # add the heating system type to the BSSH table
+            # BSSH_2020.loc[:, "energy_carrier_name"] = BSSH_2020["energy_carrier"].squeeze().map(heating_key)
 
 
+            # fix the dfs and reduce their size by only including residential buildings:
+            bc_residential, bssh_residential = fix_dfs(BC, BSSH)
 
-        # BC_years = [f"BC_{year}" for year in years]
-        # # create country dir if it doesnt exist:
-        # create_dict_if_not_exists(output_path / country)
-        # for name in BC_years:
-        #     df = hdf5_to_pandas(hdf5_f, name, building_class_columns)
-        #     # df.to_csv(output_path / country / f"{name}.csv", sep=";", index=False)
-        #     df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
-        # print(f"BC for {country} downloaded.")
-        #
-        # BSSH_years = [f"BSSH_{year}" for year in years]
-        # for name in BSSH_years:
-        #     df = hdf5_to_pandas(hdf5_f, name, building_segment_columns)
-        #     # df.to_csv(output_path / country / f"{name}.csv", sep=";", index=False)
-        #     df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
-        # print(f"BSSH for {country} downloaded.")
-        #
-        # energy_carrier_years = [f"EnergyCarrierDefinition_{year}" for year in years]
-        # for name in energy_carrier_years:
-        #     df = hdf5_to_pandas(hdf5_f, name, energy_carrier_index)
-        #     # df.to_csv(output_path / country / f"{name}.csv", sep=";", index=False)
-        #     df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
-        # print(f"Energy carriers for {country} downloaded.")
-        #
-        # # get Heating Systems
-        # df = hdf5_to_pandas(hdf5_f, "HeatingSystems", heating_system_columns)
-        # # df.to_csv(output_path / country / f"HeatingSystems.csv", sep=";", index=False)
-        # df.to_parquet(output_path / country / f'{name}.parquet.gzip', compression='gzip')
+            # add the number of heat pumps by merging the BSSH to the BC df
+            final_df = get_number_of_heat_pumps(bc_df=bc_residential, bssh_df=bssh_residential)
 
-        print(f"Finished retrieving data from {country}.")
+            # remove buildings without any heat pumps
+            df = final_df[(final_df["number_of_buildings_with_HP_air"] != 0) |
+                          (final_df["number_of_buildings_with_HP_ground"] != 0)].reset_index(drop=True)
+
+            df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
+
+            print(f"added {year} data to {country}.")
 
 
 def copy_hdf5_files(out_path: Path, countries: list):
@@ -349,8 +350,12 @@ def delete_hdf5(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\buildin
         print(f"{file} deleted.")
 
 
-def main(paths: dict, years: list, out_path: Path, building_class_columns, building_segment_columns, heating_system_columns, energy_carrier_index):
-    hdf_filename = "001_buildings.hdf5"
+@performance_counter
+def main(years: list, out_path: Path,
+         building_class_columns,
+         building_segment_columns,
+         heating_system_columns,
+         energy_carrier_index):
     heating_key = {
         1: "no heating",
         2: "no heating",
@@ -431,65 +436,15 @@ def main(paths: dict, years: list, out_path: Path, building_class_columns, build
     # copy distribution csv files:
     # copy_distribution_csvs(out_path=out_path, countries=country_list)
 
+    # use multiprocessing:
+    arglist = [(country, out_path, years,
+                building_class_columns,
+                building_segment_columns,
+                heating_system_columns,
+                energy_carrier_index) for country in country_list]
+    with multiprocessing.Pool(6) as pool:
+        pool.starmap(read_hdf5, arglist)
 
-    for country in country_list:
-        read_hdf5(paths, country, out_path, years, building_class_columns, building_segment_columns, heating_system_columns, energy_carrier_index)
-
-
-
-
-
-    # Define a dict comprehension to generate the heating_key dictionary
-
-
-
-    arglist = [(paths, country, out_path, years, building_class_columns, building_segment_columns, heating_system_columns, energy_carrier_index) for country in country_list]
-    # with multiprocessing.Pool(4) as pool:
-        # pool.starmap(read_hdf5, arglist)
-
-
-    # for country in country_list:
-        #load the hdf5 file:
-    # country = "CYP"
-    # read_hdf5(paths, country, out_path, years, building_class_columns, building_segment_columns, heating_system_columns, energy_carrier_index)
-
-
-        # building_classes, building_segment, dynamic_data = fetch_data(paths, year, country)
-        # building_df_merged = pd.concat([building_classes, dynamic_data], axis=1)
-        #
-        # # filter out all buildings that are not SFH or MFH
-        # residential_building_df = building_df_merged.loc[
-        #                           (building_df_merged.loc[:, "building_categories_index"] == 1) |  # SFH
-        #                           (building_df_merged.loc[:, "building_categories_index"] == 2) |  # SFH
-        #                           (building_df_merged.loc[:, "building_categories_index"] == 5) |  # MFH
-        #                           (building_df_merged.loc[:, "building_categories_index"] == 6), :]  # MFH
-        #
-        # # get the total number of buildings for each bc index and the total number
-        # # of buildings using a heat pump
-        # residential_building_df["number_of_buildings"] = 0
-        # residential_building_df["number_of_buildings_with_HP_ground"] = 0
-        # residential_building_df["number_of_buildings_with_HP_air"] = 0
-        #
-        # # add country to building_df:
-        # residential_building_df["country"] = country
-        # # add the number of heat pumps
-        # residential_building_df_enhanced = get_number_of_heat_pumps(residential_building_df, building_segment)
-        #
-        # # append the df to the big df
-        # df_all_countries = df_all_countries.append(residential_building_df_enhanced)
-        #
-        #
-        # print(f"added {country}")
-
-    # df_all_countries = df_all_countries.reset_index(drop=True).rename(columns={"index": "invert_index"})
-
-    # df_all_countries.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\data\SFH_building_data.json",
-    #                          orient="table")
-
-    # df_mfh_all_countries = df_mfh_all_countries.reset_index(drop=True).rename(columns={"index": "invert_index"})
-
-    # df_mfh_all_countries.to_json(r"C:\Users\mascherbauer\PycharmProjects\NewTrends\Prosumager\data\MFH_building_data.json",
-    #                          orient="table")
 
 
 if __name__ == "__main__":
@@ -583,4 +538,8 @@ if __name__ == "__main__":
     create_dict_if_not_exists(output_folder)
 
     years = [2020, 2030, 2050]
-    main(paths, years, output_folder, BUILDING_CLASS_COLUMNS, BUILDING_SEGMENT_COLUMNS, HEATING_SYSTEM_COLUMNS, ENERGY_CARRIER_INDEX)
+    main(years, output_folder,
+         BUILDING_CLASS_COLUMNS,
+         BUILDING_SEGMENT_COLUMNS,
+         HEATING_SYSTEM_COLUMNS,
+         ENERGY_CARRIER_INDEX)
