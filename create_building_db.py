@@ -308,20 +308,20 @@ def read_hdf5(country: str, output_path: Path, years: list,
             print(f"added {year} data to {country}.")
 
 
-def copy_hdf5_files(out_path: Path, countries: list):
+def copy_hdf5_files(path_dict: dict, out_path: Path, countries: list):
     for country in countries:
-        source_directory = paths["SOURCE_PATH"] / paths[
-            "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{paths['SUB_SCENARIO']}"
+        source_directory = path_dict["SOURCE_PATH"] / path_dict[
+            "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{path_dict['SUB_SCENARIO']}"
         source_path = find_hdf5_file(source_directory)
         destination_path = out_path / country / source_path.name
         copy_file_to_disc(source_path, destination_path)
     print("all hdf5 files are copied to local disk")
 
 
-def copy_distribution_csvs(out_path: Path, countries: list):
+def copy_distribution_csvs(path_dict: dict, out_path: Path, countries: list):
     invert_input_folder = "input_2022_newbuild_newlifetime"
     for country in countries:
-        source_directory = paths["SOURCE_PATH"] / invert_input_folder / country
+        source_directory = path_dict["SOURCE_PATH"] / invert_input_folder / country
         source_path = find_distribution_csv_file(source_directory)
         destination_path = out_path / country / "distribution_sh.csv"
         copy_file_to_disc(source_path, destination_path)
@@ -351,7 +351,7 @@ def delete_hdf5(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\buildin
 
 
 @performance_counter
-def main(years: list, out_path: Path,
+def main(paths: dict, years: list, out_path: Path,
          building_class_columns,
          building_segment_columns,
          heating_system_columns,
@@ -431,10 +431,10 @@ def main(years: list, out_path: Path,
                     'ESP',
                     'SWE']
     # copy the hdf files
-    # copy_hdf5_files(out_path=out_path, countries=country_list)
+    copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy distribution csv files:
-    # copy_distribution_csvs(out_path=out_path, countries=country_list)
+    copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
 
     # use multiprocessing:
     arglist = [(country, out_path, years,
@@ -446,11 +446,11 @@ def main(years: list, out_path: Path,
         pool.starmap(read_hdf5, arglist)
 
 
-
 if __name__ == "__main__":
     paths = {"SOURCE_PATH": Path(r"W:\projects3\2021_RES_HC_Pathways\invert"),
              "INVERT_SCENARIO": "output_new_trends_2022_12_20_2050",
              "SUB_SCENARIO": "_res_hc_pw_alternative_1_ab"}  # always has _sce_country before
+    # define path where data should be saved
     output_folder = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
 
     BUILDING_CLASS_COLUMNS = {
@@ -538,8 +538,11 @@ if __name__ == "__main__":
     create_dict_if_not_exists(output_folder)
 
     years = [2020, 2030, 2050]
-    main(years, output_folder,
+    main(paths, years, output_folder,
          BUILDING_CLASS_COLUMNS,
          BUILDING_SEGMENT_COLUMNS,
          HEATING_SYSTEM_COLUMNS,
          ENERGY_CARRIER_INDEX)
+
+    # maybe delete the hdf5 files to save disc space after its done
+    # delete_hdf5(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
