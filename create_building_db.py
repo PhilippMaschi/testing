@@ -144,12 +144,11 @@ def fix_dfs(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> (pd.DataFrame, pd.Dat
     # filter out residential buildings:
     # filter out all buildings that are not SFH or MFH
     mask = bc["building_categories_index"].isin([1, 2, 5, 6])  # 1,2 SFH and 5, 6 are MFH
-    bc_residential = bc.loc[mask.squeeze(), :]
+    bc_residential = bc.loc[mask.squeeze(), :].reset_index(drop=True)
 
     # only keep residential buildings in bssh frame:
     bc_indizes = list(bc_residential.loc[:, "index"])
-    bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(
-        drop=True)  # 1,2 SFH and 5, 6 are MFH
+    bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(drop=True)  # 1,2 SFH and 5, 6 are MFH
     return bc_residential, bssh_residential
 
 
@@ -161,6 +160,10 @@ def get_number_of_heat_pumps(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.D
     grouped = bssh_heat_pumps.groupby("building_classes_index")
 
     for index, group in grouped:
+        # add total number of buildings:
+        total_number_buildings = group["number_of_buildings"].sum()
+        bc_df.loc[bc_df.loc[:, "index"] == index, "number_of_buildings"] = total_number_buildings
+
         # add number of heat pumps to bc df:
         total_number_of_air_hp = group.loc[group.loc[:, "heat_supply_system_index"] == 42, "number_of_buildings"].sum()
         total_number_of_ground_hp = group.loc[
@@ -206,11 +209,6 @@ def get_number_of_heat_pumps(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.D
     bc_df = bc_df.fillna(0)
 
     return bc_df
-
-
-def remove_buildings_without_heatpumps(df: pd.DataFrame) -> pd.DataFrame:
-    df = df[(df["number_of_buildings_with_HP_air"] != 0) | (df["number_of_buildings_with_HP_ground"] != 0)]
-    return df
 
 
 def find_hdf5_file(directory: Path):
@@ -538,11 +536,11 @@ def main(paths: dict, years: list, out_path: Path,
                 building_segment_columns,
                 heating_system_columns,
                 energy_carrier_index) for country in country_list]
-    # read_hdf5("AUT", out_path, years,  # for debugging
-    #           building_class_columns,
-    #           building_segment_columns,
-    #           heating_system_columns,
-    #           energy_carrier_index)
+    read_hdf5("AUT", out_path, years,  # for debugging
+              building_class_columns,
+              building_segment_columns,
+              heating_system_columns,
+              energy_carrier_index)
     with multiprocessing.Pool(6) as pool:
         pool.starmap(read_hdf5, arglist)
 
