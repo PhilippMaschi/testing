@@ -152,25 +152,28 @@ def fix_dfs(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> (pd.DataFrame, pd.Dat
     return bc_residential, bssh_residential
 
 
-def get_number_of_heat_pumps(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.DataFrame:
-    # filter out only buildings with heat pumps:
-    bssh_heat_pumps = bssh_df.loc[bssh_df['heat_supply_system_index'].isin([42, 43])].reset_index(drop=True)
+def get_number_energy_carriers(group: pd.DataFrame) -> dict:
+    numbers = group.groupby("energy_carrier_name")["number_of_buildings"].sum()
+    return numbers.to_dict()
 
+
+def get_number_of_buildings(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.DataFrame:
     # Group the rows of bssh_df by building_classes_index
-    grouped = bssh_heat_pumps.groupby("building_classes_index")
+    grouped = bssh_df.groupby("building_classes_index")
 
     for index, group in grouped:
         # add total number of buildings:
         total_number_buildings = group["number_of_buildings"].sum()
         bc_df.loc[bc_df.loc[:, "index"] == index, "number_of_buildings"] = total_number_buildings
+        # add the number of buildings with other energy carriers
+        numbers = get_number_energy_carriers(group=group)
+        for carrier, number in numbers.items():
+            bc_df.loc[bc_df.loc[:, "index"] == index, f"number_buildings_{carrier.replace(' ', '_')}"] = number
 
-        # add number of heat pumps to bc df:
-        total_number_of_air_hp = group.loc[group.loc[:, "heat_supply_system_index"] == 42, "number_of_buildings"].sum()
-        total_number_of_ground_hp = group.loc[
-            group.loc[:, "heat_supply_system_index"] == 43, "number_of_buildings"].sum()
-        bc_df.loc[bc_df.loc[:, "index"] == index, "number_of_buildings_with_HP_air"] = total_number_of_air_hp
-        bc_df.loc[bc_df.loc[:, "index"] == index, "number_of_buildings_with_HP_ground"] = total_number_of_ground_hp
-
+    # filter out only buildings with heat pumps:
+    bssh_heat_pumps = bssh_df.loc[bssh_df['heat_supply_system_index'].isin([42, 43])].reset_index(drop=True)
+    heat_pumps_group = bssh_heat_pumps.groupby("building_classes_index")  # for supply temperatures
+    for index, group in heat_pumps_group:
         # add supply temperature to bc df:
         # check if there are multiple supply temperatures:
         supply_temperatures = list(group.loc[:, "supply_temperature"].unique())
@@ -349,6 +352,9 @@ def read_hdf5(country: str, output_path: Path, years: list,
     for year in years:
         BC = hdf5_to_pandas(hdf5_f, f"BC_{year}", building_class_columns)
         BSSH = hdf5_to_pandas(hdf5_f, f"BSSH_{year}", building_segment_columns)
+        bc_residential, bssh_residential = fix_dfs(BC, BSSH)
+
+
         heating_system = hdf5_to_pandas(hdf5_f, "HeatingSystems", heating_system_columns)
         energy_carrier = hdf5_to_pandas(hdf5_f, "EnergyCarrierDefinition_2020", energy_carrier_index)
         dist_df = pd.read_csv(main_directory / "distribution_sh.csv", sep=",", encoding="latin1")
@@ -358,20 +364,19 @@ def read_hdf5(country: str, output_path: Path, years: list,
         distribution_sh["distribution_sh_index"] = distribution_sh["distribution_sh_index"].astype(int)
 
         # map the supply temperature and the heating system type to the BSSH df:
-        BSSH.loc[:, "supply_temperature"] = BSSH["distribution_sh_index"].squeeze().map(
+        bssh_residential.loc[:, "supply_temperature"] = bssh_residential["distribution_sh_index"].map(
             distribution_sh.set_index("distribution_sh_index")["supply_temperature"])
-        # BSSH_2020.loc[:, "heating_distribution_system"] = BSSH_2020["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["name"])
+        # bssh_residential.loc[:, "heating_distribution_system"] = bssh_residential["distribution_sh_index"].map(distribution_sh.set_index("distribution_sh_index")["name"])
         # uncomment the next line to include the return temperature
-        # BSSH_2020.loc[:, "return_temperature"] = BSSH_2020["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["return_temperature"])
+        # bssh_residential.loc[:, "return_temperature"] = bssh_residential["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["return_temperature"])
 
-        # add the heating system type to the BSSH table
-        # BSSH_2020.loc[:, "energy_carrier_name"] = BSSH_2020["energy_carrier"].squeeze().map(heating_key)
+        # add the heating system type to the bssh_residential table
+        bssh_residential.loc[:, "energy_carrier_name"] = bssh_residential["heat_supply_system_index"].map(heating_key)
 
         # fix the dfs and reduce their size by only including residential buildings:
-        bc_residential, bssh_residential = fix_dfs(BC, BSSH)
 
-        # add the number of heat pumps by merging the BSSH to the BC df
-        merged_df = get_number_of_heat_pumps(bc_df=bc_residential, bssh_df=bssh_residential)
+        # add the number of heat pumps by merging the bssh_residential to the BC df
+        merged_df = get_number_of_buildings(bc_df=bc_residential, bssh_df=bssh_residential)
 
         # remove buildings without any heat pumps
         df = merged_df[(merged_df["number_of_buildings_with_HP_air"] != 0) |
@@ -541,8 +546,8 @@ def main(paths: dict, years: list, out_path: Path,
               building_segment_columns,
               heating_system_columns,
               energy_carrier_index)
-    with multiprocessing.Pool(6) as pool:
-        pool.starmap(read_hdf5, arglist)
+    # with multiprocessing.Pool(6) as pool:
+    #     pool.starmap(read_hdf5, arglist)
 
 
 if __name__ == "__main__":
@@ -645,3 +650,5 @@ if __name__ == "__main__":
 
     # maybe delete the hdf5 files to save disc space after its done
     # delete_hdf5(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
+
+    # TODO add all the other heating systems and total number of buildings
