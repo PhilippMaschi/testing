@@ -157,6 +157,30 @@ def get_number_energy_carriers(group: pd.DataFrame) -> dict:
     return numbers.to_dict()
 
 
+def calculate_mean_supply_temperature(grouped_df: pd.DataFrame, helper_name: str = None) -> float:
+    # add supply temperature to bc df:
+    # check if there are multiple supply temperatures:
+    supply_temperatures = list(grouped_df.loc[:, "supply_temperature"].unique())
+    if len(supply_temperatures) > 1:
+        # group by supply temperature
+        supply_temperature_group = grouped_df.groupby("supply_temperature")
+        nums = {}
+        for temp in supply_temperatures:
+            if helper_name == "get_number_of_buildings":
+                number_buildings_sup_temp = supply_temperature_group.get_group(temp)["number_of_buildings"].sum()
+            else:
+                number_buildings_sup_temp = supply_temperature_group.get_group(temp)["number_buildings_heat_pump_ground"].sum() + \
+                                            supply_temperature_group.get_group(temp)["number_buildings_heat_pump_air"].sum()
+
+            nums[temp] = number_buildings_sup_temp
+        # calculate the mean:
+        mean_sup_temp = calc_mean(nums)
+    else:
+        mean_sup_temp = supply_temperatures[0]
+
+    return mean_sup_temp
+
+
 def get_number_of_buildings(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.DataFrame:
     # Group the rows of bssh_df by building_classes_index
     grouped = bssh_df.groupby("building_classes_index")
@@ -174,21 +198,7 @@ def get_number_of_buildings(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.Da
     bssh_heat_pumps = bssh_df.loc[bssh_df['heat_supply_system_index'].isin([42, 43])].reset_index(drop=True)
     heat_pumps_group = bssh_heat_pumps.groupby("building_classes_index")  # for supply temperatures
     for index, group in heat_pumps_group:
-        # add supply temperature to bc df:
-        # check if there are multiple supply temperatures:
-        supply_temperatures = list(group.loc[:, "supply_temperature"].unique())
-        if len(supply_temperatures) > 1:
-            # group by supply temperature
-            supply_temperature_group = group.groupby("supply_temperature")
-            nums = {}
-            for temp in supply_temperatures:
-                number_buildings_sup_temp = supply_temperature_group.get_group(temp)["number_of_buildings"].sum()
-                nums[temp] = number_buildings_sup_temp
-            # calculate the mean:
-            mean_sup_temp = calc_mean(nums)
-        else:
-            mean_sup_temp = supply_temperatures[0]
-
+        mean_sup_temp = calculate_mean_supply_temperature(group, "get_number_of_buildings")
         # add the supply temperature to the BC dataframe:
         bc_df.loc[bc_df.loc[:, "index"] == index, "supply_temperature"] = mean_sup_temp
 
@@ -293,6 +303,38 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     return df_final
 
 
+def merge_similar_buildings(df: pd.DataFrame) -> pd.DataFrame:
+    new_df = df.copy()
+    # columns where numbers are summed up (PV and number of buildings)
+    adding_name = [name for name in df.columns if "number" in name]
+    # columns to merge: [2:] so index and name
+    merging_names = [name for name in df.columns if "PV" and "number" not in name][2:] + adding_name[:3]
+    # except number of persons and number of dwellings ([3:]) left out
+    adding_name = adding_name[3:]
+
+    # round the hwb column to total numbers (int) so they can be merged
+    df.loc[:, "hbw_int"] = [int(value) for value in df.loc[:, "hwb"]]
+    # group them by building category and contruction period:
+    groups = df.groupby(["construction_period_start", "building_categories_index", "hbw_int"])
+
+    for index, group in groups:
+        # take the mean of all other values (most of them are the same anyways
+        new_row = pd.DataFrame(columns=new_df.columns, index=[0])
+
+        new_row.loc[0, merging_names] = group.loc[:, merging_names].mean()
+        new_row.loc[0, adding_name] = group.loc[:, adding_name].sum()
+        new_row.loc[0, "name"] = group.loc[:, "name"].iloc[0][0:5]  # new name is first 5 letters of first name
+        new_row.loc[0, "index"] =group.loc[:, "index"].iloc[0]  # new index is the first index of merged rows
+        new_row.loc[0, "supply_temperature"] = calculate_mean_supply_temperature(group)
+
+        # drop the rows that are merged
+        new_df = new_df.drop(index=group.index, axis=0)
+        # add the merged row
+        new_df = new_df.append(new_row)
+
+    return new_df.reset_index(drop=True)
+
+
 def read_hdf5(country: str, output_path: Path, years: list,
               building_class_columns: dict,
               building_segment_columns: dict,
@@ -379,18 +421,21 @@ def read_hdf5(country: str, output_path: Path, years: list,
         merged_df = get_number_of_buildings(bc_df=bc_residential, bssh_df=bssh_residential)
 
         # remove buildings without any heat pumps
-        df = merged_df[(merged_df["number_of_buildings_with_HP_air"] != 0) |
-                      (merged_df["number_of_buildings_with_HP_ground"] != 0)].reset_index(drop=True)
+        # df = merged_df[(merged_df["number_of_buildings_with_HP_air"] != 0) |
+        #               (merged_df["number_of_buildings_with_HP_ground"] != 0)].reset_index(drop=True)
 
         # add the dynamic calc data to the df:
         dynamic_df = get_dynamic_calc_data(path=main_directory, year=year, country=country)
         # merge the dynamic df to the final df:
-        final_df = merge_dynamic_df_to_df(dynamic_df=dynamic_df, final_df=df)
+        final_df = merge_dynamic_df_to_df(dynamic_df=dynamic_df, final_df=merged_df)
 
         # clean out columns that are not needed:
         final_df = clean_df(final_df)
 
-        final_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
+        # reduce the size of buildings by merging very similar buildings:
+        reduced_df = merge_similar_buildings(final_df)
+
+        reduced_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
         print(f"added {year} data to {country}.")
 
 
