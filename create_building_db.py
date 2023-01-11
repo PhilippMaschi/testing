@@ -433,7 +433,7 @@ def read_hdf5(country: str, output_path: Path, years: list,
         final_df = clean_df(final_df)
 
         # reduce the size of buildings by merging very similar buildings:
-        reduced_df = merge_similar_buildings(final_df)
+        reduced_df = merge_similar_buildings(final_df).drop(columns=["index"]).reset_index()
 
         reduced_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
         print(f"added {year} data to {country}.")
@@ -470,7 +470,7 @@ def copy_distribution_csvs(path_dict: dict, out_path: Path, countries: list):
     print("all csv files are copied to local disk")
 
 
-def delete_hdf5(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data"):
+def clean_up(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data"):
     """Iterate through the given folder and delete all HDF5 files, prompting the user for confirmation at the beginning.
 
     Parameters
@@ -479,16 +479,17 @@ def delete_hdf5(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\buildin
         The path to the folder to be searched.
     """
     # Prompt the user for confirmation
-    response = input("Do you want to delete all HDF5 files in the given folder? [Y/n] ")
+    response = input(f"Do you want to delete all HDF5, npz, csv files in the given folder? [Y/n] \n {folder}")
     if response.lower() != 'y':
         print("No files were deleted.")
         return
 
     # Iterate through the files in the folder
-    for file in Path(folder).glob('*.h5'):
-        # Delete the file
-        file.unlink()
-        print(f"{file} deleted.")
+    for file_ending in ['*.hdf5', '*.csv', '*.npz']:
+        for file in Path(folder).rglob(file_ending):
+            # Delete the file
+            file.unlink()
+            print(f"{file} deleted.")
 
 
 @performance_counter
@@ -497,52 +498,6 @@ def main(paths: dict, years: list, out_path: Path,
          building_segment_columns,
          heating_system_columns,
          energy_carrier_index):
-    heating_key = {
-        1: "no heating",
-        2: "no heating",
-        3: "district heating",
-        4: "district heating",
-        5: "district heating",
-        6: "district heating",
-        7: "district heating",
-        8: "district heating",
-        9: "oil",
-        10: "oil",
-        11: "oil",
-        12: "oil",
-        13: "oil",
-        14: "oil",
-        15: "oil",
-        16: "oil",
-        17: "oil",
-        18: "coal",
-        19: "coal",
-        20: "coal",
-        21: "gas",
-        22: "gas",
-        23: "gas",
-        24: "gas",
-        25: "gas",
-        26: "gas",
-        27: "gas",
-        28: "gas",
-        29: "wood",
-        30: "wood",
-        31: "wood",
-        32: "wood",
-        33: "wood",
-        34: "wood",
-        35: "wood",
-        36: "wood",
-        37: "electricity",
-        38: "electricity",
-        39: "electricity",
-        40: "split system",
-        41: "split system",
-        42: "heat pump air",
-        43: "heat pump ground",
-        44: "electricity"
-    }
 
     country_list = ['AUT',
                     'BEL',
@@ -586,13 +541,13 @@ def main(paths: dict, years: list, out_path: Path,
                 building_segment_columns,
                 heating_system_columns,
                 energy_carrier_index) for country in country_list]
-    read_hdf5("AUT", out_path, years,  # for debugging
-              building_class_columns,
-              building_segment_columns,
-              heating_system_columns,
-              energy_carrier_index)
-    # with multiprocessing.Pool(6) as pool:
-    #     pool.starmap(read_hdf5, arglist)
+    # read_hdf5("DEU", out_path, years,  # for debugging
+    #           building_class_columns,
+    #           building_segment_columns,
+    #           heating_system_columns,
+    #           energy_carrier_index)
+    with multiprocessing.Pool(6) as pool:
+        pool.starmap(read_hdf5, arglist)
 
 
 if __name__ == "__main__":
@@ -694,6 +649,5 @@ if __name__ == "__main__":
          ENERGY_CARRIER_INDEX)
 
     # maybe delete the hdf5 files to save disc space after its done
-    # delete_hdf5(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
+    # clean_up(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
 
-    # TODO add all the other heating systems and total number of buildings
