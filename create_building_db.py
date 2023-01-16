@@ -324,7 +324,7 @@ def merge_similar_buildings(df: pd.DataFrame) -> pd.DataFrame:
         new_row.loc[0, merging_names] = group.loc[:, merging_names].mean()
         new_row.loc[0, adding_name] = group.loc[:, adding_name].sum()
         new_row.loc[0, "name"] = group.loc[:, "name"].iloc[0][0:5]  # new name is first 5 letters of first name
-        new_row.loc[0, "index"] =group.loc[:, "index"].iloc[0]  # new index is the first index of merged rows
+        new_row.loc[0, "index"] = group.loc[:, "index"].iloc[0]  # new index is the first index of merged rows
         new_row.loc[0, "supply_temperature"] = calculate_mean_supply_temperature(group)
 
         # drop the rows that are merged
@@ -333,6 +333,13 @@ def merge_similar_buildings(df: pd.DataFrame) -> pd.DataFrame:
         new_df = new_df.append(new_row)
 
     return new_df.reset_index(drop=True)
+
+
+def fix_number_of_persons(df: pd.DataFrame) -> pd.DataFrame:
+    # divide the floor area Af by 42.5
+    df.loc[:, "number_of_persons_per_dwelling"] = df.loc[:, "Af"] / 42.5
+    df.loc[:, "number_of_persons_per_dwelling"] = df.loc[:, "number_of_persons_per_dwelling"].apply(np.round)
+    return df
 
 
 def read_hdf5(country: str, output_path: Path, years: list,
@@ -426,14 +433,17 @@ def read_hdf5(country: str, output_path: Path, years: list,
 
         # add the dynamic calc data to the df:
         dynamic_df = get_dynamic_calc_data(path=main_directory, year=year, country=country)
-        # merge the dynamic df to the final df:
-        final_df = merge_dynamic_df_to_df(dynamic_df=dynamic_df, final_df=merged_df)
+        # merge the dynamic df to the merged df:
+        merged_df_2 = merge_dynamic_df_to_df(dynamic_df=dynamic_df, final_df=merged_df)
 
         # clean out columns that are not needed:
-        final_df = clean_df(final_df)
+        cleaned_df = clean_df(merged_df_2)
 
         # reduce the size of buildings by merging very similar buildings:
-        reduced_df = merge_similar_buildings(final_df).drop(columns=["index"]).reset_index()
+        reduced_df = merge_similar_buildings(cleaned_df).drop(columns=["index"]).reset_index()
+
+        # fix the number of persons because they are wrong in Invert:
+        final_df = fix_number_of_persons(reduced_df)
 
         reduced_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
         print(f"added {year} data to {country}.")
@@ -527,13 +537,13 @@ def main(paths: dict, years: list, out_path: Path,
                     'ESP',
                     'SWE']
     # copy the hdf files
-    # copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
+    copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy distribution csv files:
-    # copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
+    copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy dynamic calc data
-    # copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
+    copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
 
     # use multiprocessing:
     arglist = [(country, out_path, years,
@@ -650,4 +660,6 @@ if __name__ == "__main__":
 
     # maybe delete the hdf5 files to save disc space after its done
     # clean_up(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
+
+
 
