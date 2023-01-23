@@ -445,7 +445,7 @@ def read_hdf5(country: str, output_path: Path, years: list,
         # fix the number of persons because they are wrong in Invert:
         final_df = fix_number_of_persons(reduced_df)
 
-        reduced_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
+        final_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
         print(f"added {year} data to {country}.")
 
 
@@ -537,13 +537,13 @@ def main(paths: dict, years: list, out_path: Path,
                     'ESP',
                     'SWE']
     # copy the hdf files
-    copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
+    # copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy distribution csv files:
-    copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
+    # copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy dynamic calc data
-    copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
+    # copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
 
     # use multiprocessing:
     arglist = [(country, out_path, years,
@@ -551,13 +551,13 @@ def main(paths: dict, years: list, out_path: Path,
                 building_segment_columns,
                 heating_system_columns,
                 energy_carrier_index) for country in country_list]
-    # read_hdf5("DEU", out_path, years,  # for debugging
-    #           building_class_columns,
-    #           building_segment_columns,
-    #           heating_system_columns,
-    #           energy_carrier_index)
-    with multiprocessing.Pool(6) as pool:
-        pool.starmap(read_hdf5, arglist)
+    read_hdf5("AUT", out_path, years,  # for debugging
+              building_class_columns,
+              building_segment_columns,
+              heating_system_columns,
+              energy_carrier_index)
+    # with multiprocessing.Pool(6) as pool:
+    #     pool.starmap(read_hdf5, arglist)
 
 
 if __name__ == "__main__":
