@@ -389,8 +389,8 @@ def read_hdf5(country: str, output_path: Path, years: list,
         39: "electricity",
         40: "split system",
         41: "split system",
-        42: "heat pump air",
-        43: "heat pump ground",
+        43: "heat pump air",
+        42: "heat pump ground",
         44: "electricity"
     }
 
