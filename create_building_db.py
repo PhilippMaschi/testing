@@ -210,12 +210,12 @@ def get_number_of_buildings(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.Da
             for size in pv_sizes:
                 number_buildings_pv_size = pv_size_group.get_group(size)["number_of_buildings"].sum()
                 # add the pv size to the BC dataframe:
-                rounded_size = int(size)
+                rounded_size = round(size)
                 bc_df.loc[bc_df.loc[:, "index"] == index, f"PV_number_of_{rounded_size}_m2"] = number_buildings_pv_size
 
         else:
             # add the pv size to the BC dataframe:
-            rounded_size = int(pv_sizes[0])
+            rounded_size = round(pv_sizes[0])
             bc_df.loc[bc_df.loc[:, "index"] == index, f"PV_number_of_{rounded_size}_m2"] = group["number_of_buildings"].sum()
 
     # turn nan into zeros in the residential_df (those buildings don't have hps therefore they were not counted:
