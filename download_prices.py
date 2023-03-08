@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from entsoe import EntsoePandasClient, Area
 from pathlib import Path
+import multiprocessing
 
 """
 Query data from ENTSO-E transparency portal
@@ -26,44 +27,41 @@ of potential loss or damage.
 """
 
 pd.options.display.max_columns = None
-__year = 2021
-__country = "AT"
+__year = 2019
 
 electricity_price_config = {
     # variable price
     "api_key": 'c06ee579-f827-486d-bc1f-8fa0d7ccd3da',
     "start": f"{__year}0101",
     "end": f"{__year + 1}0101",
-    "country_code": __country,
     "grid_fee": 20,  # ct/kWh
 }
 
 
 def get_entsoe_prices(api_key: str,
-                      start_time: str,
-                      end_time: str,
                       country_code: str,
-                      grid_fee: float) -> np.array:
+                      year: int) -> pd.Series:
     # %% parameter definitions
-
-    # ToDo missing for all countries
-    if country_code == "DE":
-        country = "DE_LU"
-    else:
-        country = country_code
-
+    print('Prices in zone ' + country_code)
     client = EntsoePandasClient(api_key=api_key)
-
-    start = pd.Timestamp(electricity_price_config["start"], tz='CET')
-    end = pd.Timestamp(electricity_price_config["end"], tz='CET')
-
-    # Get day-ahead prices from ENTSO-E Transparency
-    print('Prices in zone ' + country)
-    DA_prices = client.query_day_ahead_prices(country, start=start, end=end)
-    prices = pd.DataFrame(DA_prices).reset_index(drop=True).to_numpy() / 10 / 1_000  # €/MWh in ct/kWh & ct/kWh in ct/Wh
-    # add grid fees:
-    prices_total = prices + grid_fee / 1_000  # also in ct/Wh
-    return prices_total
+    start = pd.Timestamp(f"{year}0101", tz='CET')
+    end = pd.Timestamp(f"{year + 1}0101", tz='CET')
+    try:
+        # Get day-ahead prices from ENTSO-E Transparency
+        DA_prices = client.query_day_ahead_prices(country_code=country_code,
+                                                  start=start,
+                                                  end=end,
+                                                  resolution="60T")
+        # check if price is hourly our subhourly:
+        if len(DA_prices) > 9000:
+            print(f"prices for {country_code} are given subhourly intervals.")
+        # drop the last hour because its already the first hour of the new year
+        entsoe_price = DA_prices.iloc[:-1]
+        return entsoe_price
+    except Exception as e:
+        print(f"{country_code} no entsoe-data available.")
+        print(f"{e}")
+        return None
 
 
 def create_avg_price_from_variable_price(var_price: np.array) -> np.array:
@@ -72,25 +70,87 @@ def create_avg_price_from_variable_price(var_price: np.array) -> np.array:
     return flat_price
 
 
+def main(path, year):
+    country_codes = [
+        "AT",
+        "DE_AT_LU",
+        "BE",
+        "BG",
+        "HR",
+        "CY",
+        "CZ",
+        "DK_1",
+        "DK_2",
+        "EE",
+        "FI",
+        "FR",
+        "DE",
+        "GR",
+        "HU",
+        # "IE_SEM",
+        "IT_CALA",
+        "IT_CALA",
+        "IT_BRNN",
+        "IT_CNOR",
+        "IT_CSUD",
+        "IT_FOGN",
+        "IT_GR",
+        "IT_MALTA",
+        "IT_NORD",
+        "IT_NORD_AT",
+        "IT_NORD_CH",
+        "IT_NORD_FR",
+        "IT_NORD_SI",
+        "IT_PRGP",
+        "IT_ROSN",
+        "IT_SARD",
+        "IT_SICI",
+        "IT_SUD",
+        "LV",
+        "LT",
+        "LU",
+        "MT",
+        "NL",
+        "PL",
+        "PT",
+        "RO",
+        "SK",
+        "SI",
+        "ES",
+        "SE_1",
+        "SE_2",
+        "SE_3",
+        "SE_4",
+    ]
+    prices_df = pd.DataFrame()
+    for country in country_codes:
+        if country == "DE":
+            country = "DE_LU"
+        elif country == "LU":
+            continue
 
-def main():
-    entsoe_price = get_entsoe_prices(api_key=electricity_price_config["api_key"],
-                                     start_time=electricity_price_config["start"],
-                                     end_time=electricity_price_config["end"],
-                                     country_code=electricity_price_config["country_code"],
-                                     grid_fee=electricity_price_config["grid_fee"])
-    # drop the last hour because its already the first hour of the new year
-    entsoe_price = entsoe_price[:-1]
+        entsoe_price = get_entsoe_prices(api_key=electricity_price_config["api_key"],
+                                         country_code=country,
+                                         year=year)
+        if type(entsoe_price) == pd.Series:
+            prices_df.loc[:, country] = entsoe_price.to_numpy() / 10  # €/MWh in ct/kWh
+            timestamp = entsoe_price.index
 
-    flat_price = create_avg_price_from_variable_price(entsoe_price)
-
+    filename = f"ENTSOE_prices_for_{year}_in_ct_per_kWh.csv"
+    prices_df.index = timestamp
     # save prices to excel
-    df = pd.DataFrame(columns=[f"entsoe {__year}", "flat price"])
-    df.loc[:, f"entsoe {__year}"] = entsoe_price.flatten()
-    df.loc[:, "flat price"] = flat_price.flatten()
-    df.to_csv(Path(f"C:/Users/mascherbauer/PycharmProjects/NewTrends/Prosumager/projects/Variable_Price_impact/prices_{__year}_AT.csv"),
-              sep=";", index=False)
+    prices_df.to_csv(path / Path(filename), sep=";", index=False)
 
 
 if __name__ == "__main__":
-    main()
+    path_to_save_csv = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\ENTSOE Prices")
+    years = [2018, 2019, 2020, 2021, 2022]
+    input_list = [(path_to_save_csv, y) for y in years]
+
+    # ---------------------------
+    # year = 2019
+    # main(path_to_save_csv, year)
+    # ---------------------------
+
+    with multiprocessing.Pool(6) as pool:
+        pool.starmap(main, input_list)
