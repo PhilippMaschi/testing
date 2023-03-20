@@ -77,7 +77,7 @@ def main(path, year):
         "BE",
         "BG",
         "HR",
-        "CY",
+        "CY",  # no data available on ENTSO-E
         "CZ",
         "DK_1",
         "DK_2",
@@ -102,7 +102,7 @@ def main(path, year):
         "IT_NORD_FR",
         "IT_NORD_SI",
         "IT_PRGP",
-        "IT_ROSN",
+        "IT_ROSN",   # has one missing value for 2020
         "IT_SARD",
         "IT_SICI",
         "IT_SUD",
@@ -133,6 +133,8 @@ def main(path, year):
                                          country_code=country,
                                          year=year)
         if type(entsoe_price) == pd.Series:
+            if len(entsoe_price) == 0:
+                continue
             prices_df.loc[:, country] = entsoe_price.to_numpy() / 10  # €/MWh in ct/kWh
             timestamp = entsoe_price.index
 
@@ -144,13 +146,13 @@ def main(path, year):
 
 if __name__ == "__main__":
     path_to_save_csv = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\ENTSOE Prices")
-    years = [2018, 2019, 2020, 2021, 2022]
+    years = [2018, 2019, 2020, 2021]
     input_list = [(path_to_save_csv, y) for y in years]
 
     # ---------------------------
-    # year = 2019
-    # main(path_to_save_csv, year)
+    year = 2020
+    main(path_to_save_csv, year)
     # ---------------------------
 
-    with multiprocessing.Pool(6) as pool:
-        pool.starmap(main, input_list)
+    # with multiprocessing.Pool(6) as pool:
+    #     pool.starmap(main, input_list)
