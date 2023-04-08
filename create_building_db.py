@@ -537,13 +537,13 @@ def main(paths: dict, years: list, out_path: Path,
                     'ESP',
                     'SWE']
     # copy the hdf files
-    # copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
+    copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy distribution csv files:
-    # copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
+    copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy dynamic calc data
-    # copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
+    copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
 
     # use multiprocessing:
     arglist = [(country, out_path, years,
