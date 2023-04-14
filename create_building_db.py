@@ -14,6 +14,89 @@ import shutil
 import re
 import multiprocessing
 
+BUILDING_CLASS_COLUMNS = {
+    "index": int,
+    "name": str,
+    "construction_period_start": int,
+    "construction_period_end": int,
+    "building_categories_index": int,
+    "number_of_dwellings_per_building": "float32",
+    "number_of_persons_per_dwelling": "float32",
+    "length_of_building": "float32",
+    "width_of_building": "float32",
+    "number_of_floors": "float32",
+    "room_height": "float32",
+    "percentage_of_building_surface_attached_length": "float32",
+    "percentage_of_building_surface_attached_width": "float32",
+    "share_of_window_area_on_gross_surface_area": "float32",
+    "share_of_windows_oriented_to_south": "float32",
+    "share_of_windows_oriented_to_north": "float32",
+    "grossfloor_area": "float32",
+    "heated_area": "float32",
+    "areafloor": "float32",
+    "areawindows": "float32",
+    "area_suitable_solar": "float32",
+    "grossvolume": "float32",
+    "heatedvolume": "float32",
+    "heated_norm_volume": "float32",
+    "hwb": "float32",
+    "hwb_norm": "float32",
+    "u_value_ceiling": "float32",
+    "u_value_exterior_walls": "float32",
+    "u_value_windows1": "float32",
+    "u_value_windows2": "float32",
+    "u_value_roof": "float32",
+    "u_value_floor": "float32",
+    "seam_loss_windows": "float32",
+    "trans_loss_walls": "float32",
+    "trans_loss_ceil": "float32",
+    "trans_loss_wind": "float32",
+    "trans_loss_floor": "float32",
+    "trans_loss_therm_bridge": "float32",
+    "trans_loss_ventilation": "float32",
+    "total_heat_losses": "float32",
+    "average_effective_area_wind_west_east_red_cool": "float32",
+    "average_effective_area_wind_south_red_cool": "float32",
+    "average_effective_area_wind_north_red_cool": "float32",
+    "spec_int_gains_cool_watt": "float32",
+    "attached_surface_area": "float32"
+}
+
+BUILDING_SEGMENT_COLUMNS = {
+    "index": int,
+    "name": str,
+    "building_classes_index": int,
+    "number_of_buildings": "float32",
+    "heat_supply_system_index": int,
+    "installation_year_system_start": "float32",
+    "installation_year_system_end": "float32",
+    "distribution_sh_index": int,
+    "distribution_dhw_index": int,
+    "pv_system_index": int,
+    "energy_carrier": int,
+    "annual_energy_costs_hs": "float32",
+    "total_annual_cost_hs": "float32",
+    "annual_energy_costs_dhw": "float32",
+    "total_annual_cost_dhw": "float32",
+    "hs_efficiency": "float32",
+    "dhw_efficiency": "float32",
+    "size_pv_system": "float32"
+}
+
+HEATING_SYSTEM_COLUMNS = {
+    "index": int,
+    "name": str,
+    "energy_carrier_main_index": int,
+
+    "build_central_system": int,
+
+}
+
+ENERGY_CARRIER_INDEX = {
+    "index": int,
+    "name": str
+}
+
 
 def performance_counter(func):
     @wraps(func)
@@ -148,7 +231,8 @@ def fix_dfs(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> (pd.DataFrame, pd.Dat
 
     # only keep residential buildings in bssh frame:
     bc_indizes = list(bc_residential.loc[:, "index"])
-    bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(drop=True)  # 1,2 SFH and 5, 6 are MFH
+    bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(
+        drop=True)  # 1,2 SFH and 5, 6 are MFH
     return bc_residential, bssh_residential
 
 
@@ -169,8 +253,10 @@ def calculate_mean_supply_temperature(grouped_df: pd.DataFrame, helper_name: str
             if helper_name == "get_number_of_buildings":
                 number_buildings_sup_temp = supply_temperature_group.get_group(temp)["number_of_buildings"].sum()
             else:
-                number_buildings_sup_temp = supply_temperature_group.get_group(temp)["number_buildings_heat_pump_ground"].sum() + \
-                                            supply_temperature_group.get_group(temp)["number_buildings_heat_pump_air"].sum()
+                number_buildings_sup_temp = supply_temperature_group.get_group(temp)[
+                                                "number_buildings_heat_pump_ground"].sum() + \
+                                            supply_temperature_group.get_group(temp)[
+                                                "number_buildings_heat_pump_air"].sum()
 
             nums[temp] = number_buildings_sup_temp
         # calculate the mean:
@@ -216,7 +302,8 @@ def get_number_of_buildings(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.Da
         else:
             # add the pv size to the BC dataframe:
             rounded_size = round(pv_sizes[0])
-            bc_df.loc[bc_df.loc[:, "index"] == index, f"PV_number_of_{rounded_size}_m2"] = group["number_of_buildings"].sum()
+            bc_df.loc[bc_df.loc[:, "index"] == index, f"PV_number_of_{rounded_size}_m2"] = group[
+                "number_of_buildings"].sum()
 
     # turn nan into zeros in the residential_df (those buildings don't have hps therefore they were not counted:
     bc_df = bc_df.fillna(0)
@@ -342,11 +429,7 @@ def fix_number_of_persons(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def read_hdf5(country: str, output_path: Path, years: list,
-              building_class_columns: dict,
-              building_segment_columns: dict,
-              heating_system_columns: dict,
-              energy_carrier_index: dict):
+def read_hdf5(country: str, output_path: Path, years: list, ):
     heating_key = {
         1: "no heating",
         2: "no heating",
@@ -389,23 +472,22 @@ def read_hdf5(country: str, output_path: Path, years: list,
         39: "electricity",
         40: "split system",
         41: "split system",
-        43: "heat pump air",
-        42: "heat pump ground",
+        42: "heat pump air",
+        43: "heat pump ground",
         44: "electricity"
     }
 
     # create country specific path
-    main_directory = Path(__file__).parent / "building_data" / country
+    main_directory = output_path / country
     hdf5_f = find_hdf5_file(main_directory)
 
     for year in years:
-        BC = hdf5_to_pandas(hdf5_f, f"BC_{year}", building_class_columns)
-        BSSH = hdf5_to_pandas(hdf5_f, f"BSSH_{year}", building_segment_columns)
+        BC = hdf5_to_pandas(hdf5_f, f"BC_{year}", BUILDING_CLASS_COLUMNS)
+        BSSH = hdf5_to_pandas(hdf5_f, f"BSSH_{year}", BUILDING_SEGMENT_COLUMNS)
         bc_residential, bssh_residential = fix_dfs(BC, BSSH)
 
-
-        heating_system = hdf5_to_pandas(hdf5_f, "HeatingSystems", heating_system_columns)
-        energy_carrier = hdf5_to_pandas(hdf5_f, "EnergyCarrierDefinition_2020", energy_carrier_index)
+        heating_system = hdf5_to_pandas(hdf5_f, "HeatingSystems", HEATING_SYSTEM_COLUMNS)
+        energy_carrier = hdf5_to_pandas(hdf5_f, "EnergyCarrierDefinition_2020", ENERGY_CARRIER_INDEX)
         dist_df = pd.read_csv(main_directory / "distribution_sh.csv", sep=",", encoding="latin1")
         distribution_sh = dist_df.iloc[3:, :].dropna(axis=1).rename(
             columns={"csvid": "distribution_sh_index"}).reset_index(drop=True)
@@ -463,24 +545,39 @@ def copy_dynamic_calc_data(path_dict: dict, out_path: Path, countries: list, yea
     for country in countries:
         for year in years:
             source_file = path_dict["SOURCE_PATH"] / path_dict[
-                "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{path_dict['SUB_SCENARIO']}" /\
-                               r"ADD_RESULTS\Dynamic_Calc_Input_Data" / f"001__dynamic_calc_data_bc_{year}.npz"
+                "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{path_dict['SUB_SCENARIO']}" / \
+                          r"ADD_RESULTS\Dynamic_Calc_Input_Data" / f"001__dynamic_calc_data_bc_{year}.npz"
             destination_path = out_path / country / f"dynamic_calc_{year}.npz"
             copy_file_to_disc(source_file, destination_path)
     print("all dynamic npz files are copied to local disk")
 
 
 def copy_distribution_csvs(path_dict: dict, out_path: Path, countries: list):
-    invert_input_folder = "input_2022_newbuild_newlifetime"
+    invert_input_folder = path_dict["INVERT_INPUT"]
     for country in countries:
-        source_directory = path_dict["SOURCE_PATH"] / invert_input_folder / country
+        source_directory = invert_input_folder / country
         source_path = find_distribution_csv_file(source_directory)
         destination_path = out_path / country / "distribution_sh.csv"
         copy_file_to_disc(source_path, destination_path)
     print("all csv files are copied to local disk")
 
 
-def clean_up(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data"):
+def delete_hdf5_files(folder: Path):
+    # Prompt the user for confirmation
+    response = input(f"Do you want to delete all HDF5  files in the given folder? [Y/n] \n {folder}")
+    if response.lower() != 'y':
+        print("No files were deleted.")
+        return
+
+    # Iterate through the files in the folder
+    for file_ending in ['*.hdf5']:
+        for file in Path(folder).rglob(file_ending):
+            # Delete the file
+            file.unlink()
+            print(f"{file} deleted.")
+
+
+def clean_up(folder: Path):
     """Iterate through the given folder and delete all HDF5 files, prompting the user for confirmation at the beginning.
 
     Parameters
@@ -503,12 +600,7 @@ def clean_up(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_d
 
 
 @performance_counter
-def main(paths: dict, years: list, out_path: Path,
-         building_class_columns,
-         building_segment_columns,
-         heating_system_columns,
-         energy_carrier_index):
-
+def main(paths: dict, years: list, out_path: Path):
     country_list = ['AUT',
                     'BEL',
                     'BGR',
@@ -540,126 +632,38 @@ def main(paths: dict, years: list, out_path: Path,
     copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy distribution csv files:
-    copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
+    # copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy dynamic calc data
-    copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
+    # copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
 
     # use multiprocessing:
-    arglist = [(country, out_path, years,
-                building_class_columns,
-                building_segment_columns,
-                heating_system_columns,
-                energy_carrier_index) for country in country_list]
-    read_hdf5("AUT", out_path, years,  # for debugging
-              building_class_columns,
-              building_segment_columns,
-              heating_system_columns,
-              energy_carrier_index)
+    arglist = [(country, out_path, years) for country in country_list]
+    # read_hdf5("AUT", out_path, years, )  # for debugging
     # with multiprocessing.Pool(6) as pool:
     #     pool.starmap(read_hdf5, arglist)
 
 
 if __name__ == "__main__":
-    paths = {"SOURCE_PATH": Path(r"W:\projects3\2021_RES_HC_Pathways\invert"),
-             "INVERT_SCENARIO": "output_new_trends_2022_12_20_2050",
-             "SUB_SCENARIO": "_res_hc_pw_alternative_1_ab"}  # always has _sce_country before
+    # user inputs:
+    project_path = Path(r"E:\projects3\2021_RES_HC_Pathways\invert")  # Path(r"E:\projects3\2022_NewTrends\invert")
+    invert_scenario = "output_new_trends_2022_12_20_2050"  #  r"output\output_230406"
+    sub_scenario = "_res_hc_pw_alternative_1_ab" # "_eff_high_electr_ab"  # always has _sce_country before
+    invert_input_path = Path(r"E:\projects3\2022_NewTrends\invert\input\input_invert_renovcosts_new")
     # define path where data should be saved
+    output_folder = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data_newTRENDs")
     output_folder = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
+    years = [2020, 2030, 2040, 2050]
 
-    BUILDING_CLASS_COLUMNS = {
-        "index": int,
-        "name": str,
-        "construction_period_start": int,
-        "construction_period_end": int,
-        "building_categories_index": int,
-        "number_of_dwellings_per_building": "float32",
-        "number_of_persons_per_dwelling": "float32",
-        "length_of_building": "float32",
-        "width_of_building": "float32",
-        "number_of_floors": "float32",
-        "room_height": "float32",
-        "percentage_of_building_surface_attached_length": "float32",
-        "percentage_of_building_surface_attached_width": "float32",
-        "share_of_window_area_on_gross_surface_area": "float32",
-        "share_of_windows_oriented_to_south": "float32",
-        "share_of_windows_oriented_to_north": "float32",
-        "grossfloor_area": "float32",
-        "heated_area": "float32",
-        "areafloor": "float32",
-        "areawindows": "float32",
-        "area_suitable_solar": "float32",
-        "grossvolume": "float32",
-        "heatedvolume": "float32",
-        "heated_norm_volume": "float32",
-        "hwb": "float32",
-        "hwb_norm": "float32",
-        "u_value_ceiling": "float32",
-        "u_value_exterior_walls": "float32",
-        "u_value_windows1": "float32",
-        "u_value_windows2": "float32",
-        "u_value_roof": "float32",
-        "u_value_floor": "float32",
-        "seam_loss_windows": "float32",
-        "trans_loss_walls": "float32",
-        "trans_loss_ceil": "float32",
-        "trans_loss_wind": "float32",
-        "trans_loss_floor": "float32",
-        "trans_loss_therm_bridge": "float32",
-        "trans_loss_ventilation": "float32",
-        "total_heat_losses": "float32",
-        "average_effective_area_wind_west_east_red_cool": "float32",
-        "average_effective_area_wind_south_red_cool": "float32",
-        "average_effective_area_wind_north_red_cool": "float32",
-        "spec_int_gains_cool_watt": "float32",
-        "attached_surface_area": "float32"
-    }
+    paths = {"SOURCE_PATH": project_path,
+             "INVERT_SCENARIO": invert_scenario,
+             "SUB_SCENARIO": sub_scenario,
+             "INVERT_INPUT": invert_input_path}
 
-    BUILDING_SEGMENT_COLUMNS = {
-        "index": int,
-        "name": str,
-        "building_classes_index": int,
-        "number_of_buildings": "float32",
-        "heat_supply_system_index": int,
-        "installation_year_system_start": "float32",
-        "installation_year_system_end": "float32",
-        "distribution_sh_index": int,
-        "distribution_dhw_index": int,
-        "pv_system_index": int,
-        "energy_carrier": int,
-        "annual_energy_costs_hs": "float32",
-        "total_annual_cost_hs": "float32",
-        "annual_energy_costs_dhw": "float32",
-        "total_annual_cost_dhw": "float32",
-        "hs_efficiency": "float32",
-        "dhw_efficiency": "float32",
-        "size_pv_system": "float32"
-    }
-
-    HEATING_SYSTEM_COLUMNS = {
-        "index": int,
-        "name": str,
-        "energy_carrier_main_index": int,
-
-        "build_central_system": int,
-
-    }
-
-    ENERGY_CARRIER_INDEX = {
-        "index": int,
-        "name": str
-    }
     create_dict_if_not_exists(output_folder)
-
-    years = [2020, 2030, 2050]
-    main(paths, years, output_folder,
-         BUILDING_CLASS_COLUMNS,
-         BUILDING_SEGMENT_COLUMNS,
-         HEATING_SYSTEM_COLUMNS,
-         ENERGY_CARRIER_INDEX)
+    main(paths, years, output_folder)
 
     # maybe delete the hdf5 files to save disc space after its done
-    # clean_up(folder=r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
-
-
-
+    # delete_hdf5_files(folder=output_folder)
+    # delete all files from output folder
+    # clean_up(folder=output_folder)
