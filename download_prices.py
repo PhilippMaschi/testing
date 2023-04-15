@@ -60,6 +60,19 @@ def get_entsoe_prices(api_key: str,
         if len(entsoe_price) != 8760:
             # just resample..
             entsoe_price = entsoe_price.resample('1H').mean()
+            #check again
+        if len(entsoe_price) != 8760:
+            # check if first or last hour is missing:
+            first = pd.Timestamp(f'{year}-01-01')
+            entsoe_price.index = entsoe_price.index.tz_localize(None)
+            if entsoe_price.index[0] != first:
+                price = entsoe_price[0]
+                entsoe_price = pd.concat([pd.DataFrame(index=[first], data=[price], columns=[0]), entsoe_price])
+            # check if last is missing
+            last = pd.Timestamp(f'{year}-12-31 23:00:00')
+            if entsoe_price.index[-1] != last:
+                price = entsoe_price[-1]
+                entsoe_price = pd.concat([entsoe_price, pd.DataFrame(index=[last], data=[price], columns=[0])])
         return entsoe_price
     except Exception as e:
         print(f"{country_code} no entsoe-data available.")
