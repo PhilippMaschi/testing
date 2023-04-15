@@ -56,7 +56,23 @@ def get_entsoe_prices(api_key: str,
         if len(DA_prices) > 9000:
             print(f"prices for {country_code} are given subhourly intervals.")
         # drop the last hour because its already the first hour of the new year
-        entsoe_price = DA_prices.iloc[:-1]
+        entsoe_price = DA_prices[DA_prices.index.year == year]
+        if len(entsoe_price) != 8760:
+            # just resample..
+            entsoe_price = entsoe_price.resample('1H').mean()
+            #check again
+        if len(entsoe_price) != 8760:
+            # check if first or last hour is missing:
+            first = pd.Timestamp(f'{year}-01-01')
+            entsoe_price.index = entsoe_price.index.tz_localize(None)
+            if entsoe_price.index[0] != first:
+                price = entsoe_price[0]
+                entsoe_price = pd.concat([pd.DataFrame(index=[first], data=[price], columns=[0]), entsoe_price])
+            # check if last is missing
+            last = pd.Timestamp(f'{year}-12-31 23:00:00')
+            if entsoe_price.index[-1] != last:
+                price = entsoe_price[-1]
+                entsoe_price = pd.concat([entsoe_price, pd.DataFrame(index=[last], data=[price], columns=[0])])
         return entsoe_price
     except Exception as e:
         print(f"{country_code} no entsoe-data available.")
@@ -87,7 +103,7 @@ def main(path, year):
         "DE",
         "GR",
         "HU",
-        # "IE_SEM",
+        "IE_SEM",
         "IT_CALA",
         "IT_CALA",
         "IT_BRNN",
@@ -150,7 +166,7 @@ if __name__ == "__main__":
     input_list = [(path_to_save_csv, y) for y in years]
 
     # ---------------------------
-    year = 2020
+    year = 2019
     main(path_to_save_csv, year)
     # ---------------------------
 
