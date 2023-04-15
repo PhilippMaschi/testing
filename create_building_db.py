@@ -253,10 +253,15 @@ def calculate_mean_supply_temperature(grouped_df: pd.DataFrame, helper_name: str
             if helper_name == "get_number_of_buildings":
                 number_buildings_sup_temp = supply_temperature_group.get_group(temp)["number_of_buildings"].sum()
             else:
-                number_buildings_sup_temp = supply_temperature_group.get_group(temp)[
-                                                "number_buildings_heat_pump_ground"].sum() + \
-                                            supply_temperature_group.get_group(temp)[
-                                                "number_buildings_heat_pump_air"].sum()
+                # df for croatia in 2020 does not have ground hps.. check if ground HPs are in table:
+                if "number_buildings_heat_pump_ground" not in supply_temperature_group.get_group(temp).columns:
+                    number_buildings_sup_temp = supply_temperature_group.get_group(temp)[
+                                                    "number_buildings_heat_pump_air"].sum()
+                else:
+                    number_buildings_sup_temp = supply_temperature_group.get_group(temp)[
+                                                    "number_buildings_heat_pump_ground"].sum() + \
+                                                supply_temperature_group.get_group(temp)[
+                                                    "number_buildings_heat_pump_air"].sum()
 
             nums[temp] = number_buildings_sup_temp
         # calculate the mean:
@@ -387,7 +392,7 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     columns = df_final.columns.to_list()
     cols = columns[:10] + columns[-6:] + columns[10:-6]
     df_final = df_final[cols]
-    return df_final
+    return df_final.fillna(0)  # in case there are any na values
 
 
 def merge_similar_buildings(df: pd.DataFrame) -> pd.DataFrame:
@@ -417,7 +422,7 @@ def merge_similar_buildings(df: pd.DataFrame) -> pd.DataFrame:
         # drop the rows that are merged
         new_df = new_df.drop(index=group.index, axis=0)
         # add the merged row
-        new_df = new_df.append(new_row)
+        new_df = pd.concat([new_df, new_row])
 
     return new_df.reset_index(drop=True)
 
@@ -526,6 +531,8 @@ def read_hdf5(country: str, output_path: Path, years: list, ):
 
         # fix the number of persons because they are wrong in Invert:
         final_df = fix_number_of_persons(reduced_df)
+        # change the type of "supply temperature" so parquet doesnt make trouble
+        final_df["supply_temperature"] = final_df["supply_temperature"].astype(float)
 
         final_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
         print(f"added {year} data to {country}.")
@@ -546,7 +553,7 @@ def copy_dynamic_calc_data(path_dict: dict, out_path: Path, countries: list, yea
         for year in years:
             source_file = path_dict["SOURCE_PATH"] / path_dict[
                 "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{path_dict['SUB_SCENARIO']}" / \
-                          r"ADD_RESULTS\Dynamic_Calc_Input_Data" / f"001__dynamic_calc_data_bc_{year}.npz"
+                          r"ADD_RESULTS/Dynamic_Calc_Input_Data" / f"001__dynamic_calc_data_bc_{year}.npz"
             destination_path = out_path / country / f"dynamic_calc_{year}.npz"
             copy_file_to_disc(source_file, destination_path)
     print("all dynamic npz files are copied to local disk")
@@ -601,58 +608,61 @@ def clean_up(folder: Path):
 
 @performance_counter
 def main(paths: dict, years: list, out_path: Path):
-    country_list = ['AUT',
-                    'BEL',
-                    'BGR',
-                    'HRV',
-                    'CYP',
-                    'CZE',
-                    'DNK',
-                    'EST',
-                    'FIN',
-                    'FRA',
-                    'DEU',
-                    'GRC',
-                    'HUN',
-                    'IRL',
-                    'ITA',
-                    'LVA',
-                    'LTU',
-                    'LUX',
-                    'MLT',
-                    'NLD',
-                    'POL',
-                    'PRT',
-                    'ROU',
-                    'SVK',
-                    'SVN',
-                    'ESP',
-                    'SWE']
+    country_list = [
+        'AUT',
+        'BEL',
+        'BGR',
+        'HRV',
+        'CYP',
+        'CZE',
+        'DNK',
+        'EST',
+        'FIN',
+        'FRA',
+        'DEU',
+        'GRC',
+        'HUN',
+        'IRL',
+        'ITA',
+        'LVA',
+        'LTU',
+        'LUX',
+        'MLT',
+        'NLD',
+        'POL',
+        'PRT',
+        'ROU',
+        'SVK',
+        'SVN',
+        'ESP',
+        'SWE'
+    ]
     # copy the hdf files
     copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy distribution csv files:
-    # copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
+    copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy dynamic calc data
-    # copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
+    copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
 
     # use multiprocessing:
     arglist = [(country, out_path, years) for country in country_list]
-    # read_hdf5("AUT", out_path, years, )  # for debugging
-    # with multiprocessing.Pool(6) as pool:
-    #     pool.starmap(read_hdf5, arglist)
+    # read_hdf5("HRV", out_path, years, )  # for debugging
+    with multiprocessing.Pool(6) as pool:
+        pool.starmap(read_hdf5, arglist)
 
 
 if __name__ == "__main__":
     # user inputs:
-    project_path = Path(r"E:\projects3\2021_RES_HC_Pathways\invert")  # Path(r"E:\projects3\2022_NewTrends\invert")
-    invert_scenario = "output_new_trends_2022_12_20_2050"  #  r"output\output_230406"
-    sub_scenario = "_res_hc_pw_alternative_1_ab" # "_eff_high_electr_ab"  # always has _sce_country before
-    invert_input_path = Path(r"E:\projects3\2022_NewTrends\invert\input\input_invert_renovcosts_new")
+    project_path = Path(
+        r"/home/users/pmascherbauer/projects3/2022_NewTrends/invert/")  # Path(r"E:\projects3\2022_NewTrends\invert")
+    invert_scenario = r"output/output_230406/"  # r"output_new_trends_2022_12_20_2050"
+    sub_scenario = "_eff_high_electr_ab"  # "_res_hc_pw_alternative_1_ab"   # always has _sce_country before
+    invert_input_path = Path(
+        r"/home/users/pmascherbauer/projects3/2022_NewTrends/invert/input/input_invert_renovcosts_new/")
     # define path where data should be saved
-    output_folder = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data_newTRENDs")
-    output_folder = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data")
+    output_folder = Path(r"/home/users/pmascherbauer/projects/Philipp/PycharmProjects/projects/NewTrends_D5.4")
     years = [2020, 2030, 2040, 2050]
 
     paths = {"SOURCE_PATH": project_path,
