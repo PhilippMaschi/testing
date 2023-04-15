@@ -253,15 +253,10 @@ def calculate_mean_supply_temperature(grouped_df: pd.DataFrame, helper_name: str
             if helper_name == "get_number_of_buildings":
                 number_buildings_sup_temp = supply_temperature_group.get_group(temp)["number_of_buildings"].sum()
             else:
-                # df for croatia in 2020 does not have ground hps.. check if ground HPs are in table:
-                if "number_buildings_heat_pump_ground" not in supply_temperature_group.get_group(temp).columns:
-                    number_buildings_sup_temp = supply_temperature_group.get_group(temp)[
-                                                    "number_buildings_heat_pump_air"].sum()
-                else:
-                    number_buildings_sup_temp = supply_temperature_group.get_group(temp)[
-                                                    "number_buildings_heat_pump_ground"].sum() + \
-                                                supply_temperature_group.get_group(temp)[
-                                                    "number_buildings_heat_pump_air"].sum()
+                number_buildings_sup_temp = supply_temperature_group.get_group(temp)[
+                                                "number_buildings_heat_pump_ground"].sum() + \
+                                            supply_temperature_group.get_group(temp)[
+                                                "number_buildings_heat_pump_air"].sum()
 
             nums[temp] = number_buildings_sup_temp
         # calculate the mean:
@@ -397,6 +392,9 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
 
 def merge_similar_buildings(df: pd.DataFrame) -> pd.DataFrame:
     new_df = df.copy()
+    # df for croatia in 2020 does not have ground hps.. check if ground HPs are in table:
+    if "number_buildings_heat_pump_ground" not in new_df.columns:
+        new_df["number_buildings_heat_pump_ground"] = 0
     # columns where numbers are summed up (PV and number of buildings)
     adding_name = [name for name in df.columns if "number" in name]
     # columns to merge: [2:] so index and name
@@ -405,9 +403,9 @@ def merge_similar_buildings(df: pd.DataFrame) -> pd.DataFrame:
     adding_name = adding_name[3:]
 
     # round the hwb column to total numbers (int) so they can be merged
-    df.loc[:, "hbw_int"] = [int(value) for value in df.loc[:, "hwb"]]
+    new_df.loc[:, "hbw_int"] = [int(value) for value in new_df.loc[:, "hwb"]]
     # group them by building category and contruction period:
-    groups = df.groupby(["construction_period_start", "building_categories_index", "hbw_int"])
+    groups = new_df.groupby(["construction_period_start", "building_categories_index", "hbw_int"])
 
     for index, group in groups:
         # take the mean of all other values (most of them are the same anyways
