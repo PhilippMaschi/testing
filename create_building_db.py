@@ -387,14 +387,15 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     columns = df_final.columns.to_list()
     cols = columns[:10] + columns[-6:] + columns[10:-6]
     df_final = df_final[cols]
+    # df for croatia in 2020 does not have ground hps.. check if ground HPs are in table:
+    if "number_buildings_heat_pump_ground" not in df_final.columns:
+        df_final["number_buildings_heat_pump_ground"] = 0
     return df_final.fillna(0)  # in case there are any na values
 
 
 def merge_similar_buildings(df: pd.DataFrame) -> pd.DataFrame:
     new_df = df.copy()
-    # df for croatia in 2020 does not have ground hps.. check if ground HPs are in table:
-    if "number_buildings_heat_pump_ground" not in new_df.columns:
-        new_df["number_buildings_heat_pump_ground"] = 0
+
     # columns where numbers are summed up (PV and number of buildings)
     adding_name = [name for name in df.columns if "number" in name]
     # columns to merge: [2:] so index and name
@@ -525,10 +526,10 @@ def read_hdf5(country: str, output_path: Path, years: list, ):
         cleaned_df = clean_df(merged_df_2)
 
         # reduce the size of buildings by merging very similar buildings:
-        reduced_df = merge_similar_buildings(cleaned_df).drop(columns=["index"]).reset_index()
+        # reduced_df = merge_similar_buildings(cleaned_df).drop(columns=["index"]).reset_index()
 
         # fix the number of persons because they are wrong in Invert:
-        final_df = fix_number_of_persons(reduced_df)
+        final_df = fix_number_of_persons(cleaned_df)
         # change the type of "supply temperature" so parquet doesnt make trouble
         final_df["supply_temperature"] = final_df["supply_temperature"].astype(float)
 
