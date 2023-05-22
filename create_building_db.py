@@ -80,14 +80,66 @@ BUILDING_SEGMENT_COLUMNS = {
     "total_annual_cost_dhw": "float32",
     "hs_efficiency": "float32",
     "dhw_efficiency": "float32",
-    "size_pv_system": "float32"
+    "size_pv_system": "float32",
+    "fed_ambient_sh_per_bssh": "float32",
+    "fed_ambient_dhw_per_bssh": "float32",
 }
+
+HEATING_SYSTEM_INDEX = {
+    1: "no heating",
+    2: "no heating",
+    3: "district heating",
+    4: "district heating",
+    5: "district heating",
+    6: "district heating",
+    7: "district heating",
+    8: "district heating",
+    9: "oil",
+    10: "oil",
+    11: "oil",
+    12: "oil",
+    13: "oil",
+    14: "oil",
+    15: "oil",
+    16: "oil",
+    17: "oil",
+    18: "coal",
+    19: "coal",
+    20: "coal",
+    21: "gas",
+    22: "gas",
+    23: "gas",
+    24: "gas",
+    25: "gas",
+    26: "gas",
+    27: "gas",
+    28: "gas",
+    29: "wood",
+    30: "wood",
+    31: "wood",
+    32: "wood",
+    33: "wood",
+    34: "wood",
+    35: "wood",
+    36: "wood",
+    37: "electricity",  # TODO rein nehmen
+    38: "electricity",  # TODO rein nehmen
+    39: "electricity",  # TODO rein nehmen
+    40: "split system",  # TODO rein nehmen!
+    41: "split system",  # TODO rein nehmen!
+    42: "heat pump air",
+    43: "heat pump ground",
+    44: "electricity"  # TODO rein nehmen
+}
+
+SELECTED_HEATING_SYSTEMS = {"electricity": [37, 38, 39, 44],
+                            "heat pump air": [42],
+                            "heat pump ground": [43]}
 
 HEATING_SYSTEM_COLUMNS = {
     "index": int,
     "name": str,
     "energy_carrier_main_index": int,
-
     "build_central_system": int,
 
 }
@@ -95,6 +147,13 @@ HEATING_SYSTEM_COLUMNS = {
 ENERGY_CARRIER_INDEX = {
     "index": int,
     "name": str
+}
+
+SFH_MFH = {
+    1: "SFH",
+    2: "SFH",
+    5: "MFH",
+    6: "MFH"
 }
 
 
@@ -226,13 +285,18 @@ def fix_dfs(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> (pd.DataFrame, pd.Dat
 
     # filter out residential buildings:
     # filter out all buildings that are not SFH or MFH
-    mask = bc["building_categories_index"].isin([1, 2, 5, 6])  # 1,2 SFH and 5, 6 are MFH
+    bc["building_categories_index"] = bc["building_categories_index"].astype(int)
+    mask = bc["building_categories_index"].isin(SFH_MFH.keys())  # 1,2 SFH and 5, 6 are MFH
     bc_residential = bc.loc[mask.squeeze(), :].reset_index(drop=True)
 
     # only keep residential buildings in bssh frame:
     bc_indizes = list(bc_residential.loc[:, "index"])
     bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(
         drop=True)  # 1,2 SFH and 5, 6 are MFH
+    # check if heat pumps with index 40 and 41 are ignored:
+    assert bssh_residential.query(f"heat_supply_system_index in {[40, 41]}")["number_of_buildings"].sum() <= 1, \
+        "careful, building class index 40 and 41 are ignored which represent split systems and they have a number " \
+        "of buildings"
     return bc_residential, bssh_residential
 
 
@@ -280,7 +344,7 @@ def get_number_of_buildings(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.Da
         for carrier, number in numbers.items():
             bc_df.loc[bc_df.loc[:, "index"] == index, f"number_buildings_{carrier.replace(' ', '_')}"] = number
 
-    # filter out only buildings with heat pumps:
+    # the supply temperature is only calculated for the buildings with heat pumps:
     bssh_heat_pumps = bssh_df.loc[bssh_df['heat_supply_system_index'].isin([42, 43])].reset_index(drop=True)
     heat_pumps_group = bssh_heat_pumps.groupby("building_classes_index")  # for supply temperatures
     for index, group in heat_pumps_group:
@@ -434,52 +498,6 @@ def fix_number_of_persons(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def read_hdf5(country: str, output_path: Path, years: list, ):
-    heating_key = {
-        1: "no heating",
-        2: "no heating",
-        3: "district heating",
-        4: "district heating",
-        5: "district heating",
-        6: "district heating",
-        7: "district heating",
-        8: "district heating",
-        9: "oil",
-        10: "oil",
-        11: "oil",
-        12: "oil",
-        13: "oil",
-        14: "oil",
-        15: "oil",
-        16: "oil",
-        17: "oil",
-        18: "coal",
-        19: "coal",
-        20: "coal",
-        21: "gas",
-        22: "gas",
-        23: "gas",
-        24: "gas",
-        25: "gas",
-        26: "gas",
-        27: "gas",
-        28: "gas",
-        29: "wood",
-        30: "wood",
-        31: "wood",
-        32: "wood",
-        33: "wood",
-        34: "wood",
-        35: "wood",
-        36: "wood",
-        37: "electricity",
-        38: "electricity",
-        39: "electricity",
-        40: "split system",
-        41: "split system",
-        42: "heat pump air",
-        43: "heat pump ground",
-        44: "electricity"
-    }
 
     # create country specific path
     main_directory = output_path / country
@@ -506,11 +524,11 @@ def read_hdf5(country: str, output_path: Path, years: list, ):
         # bssh_residential.loc[:, "return_temperature"] = bssh_residential["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["return_temperature"])
 
         # add the heating system type to the bssh_residential table
-        bssh_residential.loc[:, "energy_carrier_name"] = bssh_residential["heat_supply_system_index"].map(heating_key)
+        bssh_residential.loc[:, "energy_carrier_name"] = bssh_residential["heat_supply_system_index"].map(HEATING_SYSTEM_INDEX)
 
         # fix the dfs and reduce their size by only including residential buildings:
 
-        # add the number of heat pumps by merging the bssh_residential to the BC df
+        # add the number of buildings by merging the bssh_residential to the BC df
         merged_df = get_number_of_buildings(bc_df=bc_residential, bssh_df=bssh_residential)
 
         # remove buildings without any heat pumps
@@ -637,20 +655,20 @@ def main(paths: dict, years: list, out_path: Path):
         'SWE'
     ]
     # copy the hdf files
-    copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
+    # copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy distribution csv files:
-    copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
+    # copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy dynamic calc data
-    copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
+    # copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
 
     # use multiprocessing:
     arglist = [(country, out_path, years) for country in country_list]
-    # read_hdf5("HRV", out_path, years, )  # for debugging
-    cores = int(multiprocessing.cpu_count() / 2)
-    with multiprocessing.Pool(cores) as pool:
-        pool.starmap(read_hdf5, arglist)
+    read_hdf5("AUT", out_path, years, )  # for debugging
+    # cores = int(multiprocessing.cpu_count() / 2)
+    # with multiprocessing.Pool(cores) as pool:
+    #     pool.starmap(read_hdf5, arglist)
 
 
 if __name__ == "__main__":
