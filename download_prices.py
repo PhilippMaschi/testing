@@ -166,9 +166,9 @@ if __name__ == "__main__":
     input_list = [(path_to_save_csv, y) for y in years]
 
     # ---------------------------
-    year = 2019
-    main(path_to_save_csv, year)
+    # year = 2019
+    # main(path_to_save_csv, year)
     # ---------------------------
 
-    # with multiprocessing.Pool(6) as pool:
-    #     pool.starmap(main, input_list)
+    with multiprocessing.Pool(6) as pool:
+        pool.starmap(main, input_list)

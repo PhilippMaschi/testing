@@ -639,7 +639,7 @@ def main(paths: dict, years: list, out_path: Path):
 
     # use multiprocessing:
     arglist = [(country, out_path, years) for country in country_list]
-    # read_hdf5("AUT", out_path, years, )  # for debugging
+    read_hdf5("AUT", out_path, years, )  # for debugging
     # with multiprocessing.Pool(6) as pool:
     #     pool.starmap(read_hdf5, arglist)
 
