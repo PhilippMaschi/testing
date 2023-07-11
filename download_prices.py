@@ -148,6 +148,8 @@ def main(path, year):
         entsoe_price = get_entsoe_prices(api_key=electricity_price_config["api_key"],
                                          country_code=country,
                                          year=year)
+        if type(entsoe_price) == pd.DataFrame:
+            entsoe_price = entsoe_price.squeeze()
         if type(entsoe_price) == pd.Series:
             if len(entsoe_price) == 0:
                 continue
@@ -169,6 +171,6 @@ if __name__ == "__main__":
     # year = 2019
     # main(path_to_save_csv, year)
     # ---------------------------
-
-    with multiprocessing.Pool(6) as pool:
+    cores = int(multiprocessing.cpu_count() / 2)
+    with multiprocessing.Pool(cores) as pool:
         pool.starmap(main, input_list)
