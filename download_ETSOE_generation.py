@@ -87,13 +87,15 @@ def compress_to_single_files(year: int, path: Path):
     merge the intermediate csv files together to large files for each year containing all countries
     :return:
     """
+    print(f"creating consumption file for {year}")
     df = pd.DataFrame()
     for file in path.iterdir():
         if str(year) in file.name:
             read = pd.read_csv(file, sep=";")
             df = pd.concat([df, read], axis=1)
-            # file.unlink()
+            file.unlink()
     df.to_csv(path / f"ENTSOE_generation_MWh_{year}.csv")
+    print(f"ENTSOE_generation_MWh_{year}.csv saved", sep=";")
 
 
 if __name__ == "__main__":
@@ -133,7 +135,7 @@ if __name__ == "__main__":
     ]
     path = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\ENTSOE Generation")
 
-    main(country="HR", year=2018, path=path)
+    # main(country="HR", year=2018, path=path)
 
     input_list = [(country, y, path_to_save_csv) for country in country_codes for y in years]
     with multiprocessing.Pool(6) as pool:
