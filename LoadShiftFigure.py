@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -83,12 +85,12 @@ price = np.array([
 
 time = np.arange(1, 25)
 
-plt.plot(time, consumer_load, label='Consumer Load', color="blue")
-plt.plot(time, prosumager_load, label='Prosumager Load', color="black", linewidth=2)
+plt.plot(time, consumer_load, label='$P_{consumer}$', color="blue")
+plt.plot(time, prosumager_load, label='$P_{prosumager}$', color="black", linewidth=2)
 plt.fill_between(time, consumer_load, prosumager_load, where=(consumer_load > prosumager_load),
-                 color='forestgreen', interpolate=True, label='reduced peak')
+                 color='forestgreen', interpolate=True, label='$E_{shifted}$')
 plt.fill_between(time, consumer_load, prosumager_load, where=(consumer_load <= prosumager_load),
-                 color='crimson', interpolate=True, label='higher peak')
+                 color='crimson', interpolate=True, label='$E_{increased}$')
 
 plt.legend(loc='upper left')
 plt.xticks([])  # Hide x-axis ticks
@@ -104,4 +106,5 @@ ax2.yaxis.set_ticks([])  # Hide secondary y-axis ticks
 
 ax.set_ylabel('Load')
 ax.set_xlabel('Time')
+plt.savefig(Path(r"C:\Users\mascherbauer\OneDrive\PHD\Präsentationen\Konferenzen\ECEMP_2023") / "LoadShifting.svg")
 plt.show()
