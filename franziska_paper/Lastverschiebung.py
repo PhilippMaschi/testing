@@ -206,7 +206,7 @@ def get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, initia
 
 
 def calculate_LoadShiftPotential(Buildings, hours_of_preheating, hours_of_shifting, T_outside,
-                                 T_min_indoor, T_max_indoor, HouseNr, T_offset_indoor=2):
+                                 T_min_indoor, T_max_indoor, HouseNr, T_offset_indoor=2, plot_on=False):
     # calculate the thermal mass temperature when there is thermal equilibrium:
     Q_Heating_noDR_constant, Q_Cooling_noDR_constant, T_Room_noDR_constant, T_thermalMass_noDR_constant = \
         get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, initial_thermal_mass_temp=22)
@@ -265,21 +265,27 @@ def calculate_LoadShiftPotential(Buildings, hours_of_preheating, hours_of_shifti
 
     # total losses:
     TotalLoss = ExcessHeatPreheat - SaveHeatShifting - RemainingEnergy
-    plot_heat_demand_and_shifted_bars(
-        ExcessHeatPreheat,
-        SaveHeatShifting,
-        RemainingEnergy,
-        TotalLoss,
-        Q_PreHeating_noDR,
-        Q_ReducedHeating_noDR,
-        T_PrethermalMass_noDR,
-        T_ReducedRoom_noDR,
-        T_ReducedthermalMass_noDR,
-        T_PreRoom_noDR,
-        Q_Heating_noDR_constant,
-        T_thermalMass_noDR_constant,
-        T_Room_noDR_constant
-    )
+    if plot_on:
+        plot1, plot2 = plot_heat_demand_and_shifted_bars(
+            ExcessHeatPreheat,
+            SaveHeatShifting,
+            RemainingEnergy,
+            TotalLoss,
+            Q_PreHeating_noDR,
+            Q_ReducedHeating_noDR,
+            T_PrethermalMass_noDR,
+            T_ReducedRoom_noDR,
+            T_ReducedthermalMass_noDR,
+            T_PreRoom_noDR,
+            Q_Heating_noDR_constant,
+            T_thermalMass_noDR_constant,
+            T_Room_noDR_constant,
+            HouseNr,
+            hours_of_preheating,
+            hours_of_shifting,
+        )
+        return plot1, plot2
+
     return Q_PreHeating_noDR
 
 
@@ -296,7 +302,10 @@ def plot_heat_demand_and_shifted_bars(
         T_PreRoom_noDR,
         Q_Heating_noDR_constant,
         T_thermalMass_noDR_constant,
-        T_Room_noDR_constant
+        T_Room_noDR_constant,
+        house_nr,
+        preheating_hours,
+        shifting_hours,
 ):
     # plots:
     fig0 = plt.figure(figsize=(5, 6))
@@ -304,63 +313,63 @@ def plot_heat_demand_and_shifted_bars(
     ax0 = plt.gca()
     # Bar positions
     bar_positions = [0.5, 1]
-    plt.bar(bar_positions[0], ExcessHeatPreheat[0], color="red", label="Additional Energy", width=bar_width, alpha=0.7)
-    plt.bar(bar_positions[1], SaveHeatShifting[0], color="green", label="Reduced Energy", width=bar_width, alpha=0.7)
-    plt.bar(bar_positions[1], RemainingEnergy[0], color="orange", bottom=SaveHeatShifting[0],
+    plt.bar(bar_positions[0], ExcessHeatPreheat[house_nr-1], color="red", label="Additional Energy", width=bar_width, alpha=0.7)
+    plt.bar(bar_positions[1], SaveHeatShifting[house_nr-1], color="green", label="Reduced Energy", width=bar_width, alpha=0.7)
+    plt.bar(bar_positions[1], RemainingEnergy[house_nr-1], color="orange", bottom=SaveHeatShifting[house_nr-1],
             label="Energy remaining in thermal mass", width=bar_width)
-    plt.bar(bar_positions[1], TotalLoss[0], color="grey",
-            bottom=SaveHeatShifting[0] + RemainingEnergy[0], label="Thermal losses", width=bar_width)
+    plt.bar(bar_positions[1], TotalLoss[house_nr-1], color="grey",
+            bottom=SaveHeatShifting[house_nr-1] + RemainingEnergy[house_nr-1], label="Thermal losses", width=bar_width)
 
-    plt.title("Energy shifting at " + str(T_outside) + "°C, house Nr " + str(HouseNr))
+    plt.title("Energy shifting at " + str(T_outside) + "°C, house Nr " + str(house_nr))
     ax0.set_xticks(bar_positions)
     ax0.set_xticklabels(['preheating', 'discharging'])
     plt.ylabel("Energy (Wh)")
 
     ax0.legend(loc='upper center', bbox_to_anchor=(0.5, 1.2), ncol=2)
     plt.tight_layout()
-    plt.savefig(Path(__file__).parent.resolve() / f"Energy_shifted_{HouseNr}.png")
-    plt.savefig(Path(__file__).parent.resolve() / f"Energy_shifted_{HouseNr}.svg")
+    plt.savefig(Path(__file__).parent.resolve() / f"Energy_shifted_{house_nr}.png")
+    plt.savefig(Path(__file__).parent.resolve() / f"Energy_shifted_{house_nr}.svg")
 
-    plt.show()
+    # plt.show()
 
     # plot results for one building:
-    x_achse = np.arange(hours_of_preheating + hours_of_shifting)
-    Q_Heating_plot = np.append(Q_PreHeating_noDR[:, HouseNr - 1], Q_ReducedHeating_noDR[:, HouseNr - 1])
-    T_thermalMass_plot = np.append(T_PrethermalMass_noDR[:, HouseNr - 1], T_ReducedthermalMass_noDR[:, HouseNr - 1])
-    T_Room_plot = np.append(T_PreRoom_noDR[:, HouseNr - 1], T_ReducedRoom_noDR[:, HouseNr - 1])
+    x_achse = np.arange(preheating_hours + shifting_hours)
+    Q_Heating_plot = np.append(Q_PreHeating_noDR[:, house_nr - 1], Q_ReducedHeating_noDR[:, house_nr - 1])
+    T_thermalMass_plot = np.append(T_PrethermalMass_noDR[:, house_nr - 1], T_ReducedthermalMass_noDR[:, house_nr - 1])
+    T_Room_plot = np.append(T_PreRoom_noDR[:, house_nr - 1], T_ReducedRoom_noDR[:, house_nr - 1])
 
-    fig, (ax1, ax2) = plt.subplots(2, 1)
+    fig1, (ax1, ax2) = plt.subplots(2, 1)
     ax1.plot(x_achse, Q_Heating_plot, label="heating power", color="red")
-    ax1.axhline(Q_Heating_noDR_constant[HouseNr - 1], xmin=0, xmax=1, label="constant heating power", color="black")
+    ax1.axhline(Q_Heating_noDR_constant[house_nr - 1], xmin=0, xmax=1, label="constant heating power", color="black")
     # ax1.vlines(x=0, ymin=Q_Heating_noDR_constant[0], ymax=Q_Heating_plot[0], color="red")
-    ax1.axvline(x=hours_of_preheating - 1, color="black", linestyle="--", linewidth=0.7)
+    ax1.axvline(x=preheating_hours - 1, color="black", linestyle="--", linewidth=0.7)
 
-    ax1.fill_between(x_achse, Q_Heating_noDR_constant[HouseNr - 1], Q_Heating_plot,
-                     where=(Q_Heating_plot > Q_Heating_noDR_constant[HouseNr - 1]), color='red', alpha=0.7,
+    ax1.fill_between(x_achse, Q_Heating_noDR_constant[house_nr - 1], Q_Heating_plot,
+                     where=(Q_Heating_plot > Q_Heating_noDR_constant[house_nr - 1]), color='red', alpha=0.7,
                      label='Additional Energy', interpolate=True)
-    ax1.fill_between(x_achse, Q_Heating_noDR_constant[HouseNr - 1], Q_Heating_plot,
-                     where=(Q_Heating_plot < Q_Heating_noDR_constant[HouseNr - 1]), color='green', alpha=0.7,
+    ax1.fill_between(x_achse, Q_Heating_noDR_constant[house_nr - 1], Q_Heating_plot,
+                     where=(Q_Heating_plot < Q_Heating_noDR_constant[house_nr - 1]), color='green', alpha=0.7,
                      label='Reduced Energy', interpolate=True)
 
     mass_temp = ax2.plot(x_achse, T_thermalMass_plot, label="Thermal mass temperature", color="purple")
-    const_mass_temp = ax2.hlines(T_thermalMass_noDR_constant[HouseNr - 1],
+    const_mass_temp = ax2.hlines(T_thermalMass_noDR_constant[house_nr - 1],
                                  xmin=0,
-                                 xmax=hours_of_preheating + hours_of_shifting - 1,
+                                 xmax=preheating_hours + shifting_hours - 1,
                                  color="purple",
                                  label="Constant thermal mass temperature",
                                  linestyles="--")
     ax2.vlines(x=0, ymin=T_thermalMass_noDR_constant[0], ymax=T_thermalMass_plot[0], color="purple")
-    ax2.axvline(x=hours_of_preheating - 1, color="black", linestyle="--", linewidth=0.5)
+    ax2.axvline(x=preheating_hours - 1, color="black", linestyle="--", linewidth=0.5)
 
     room_temp = ax2.plot(x_achse, T_Room_plot, label="Room temperature", color="skyblue")
     const_room_temp = ax2.hlines(T_Room_noDR_constant[0],
                                  xmin=0,
-                                 xmax=hours_of_preheating + hours_of_shifting - 1,
+                                 xmax=preheating_hours + shifting_hours - 1,
                                  color="skyblue",
                                  label="Constant room temperature",
                                  linestyles="--")
-    ax2.vlines(x=0, ymin=T_Room_noDR_constant[HouseNr - 1], ymax=T_Room_plot[0], color="skyblue")
-    ax2.axvline(x=hours_of_preheating - 1, color="black", linestyle="--", linewidth=0.5)
+    ax2.vlines(x=0, ymin=T_Room_noDR_constant[house_nr - 1], ymax=T_Room_plot[0], color="skyblue")
+    ax2.axvline(x=preheating_hours - 1, color="black", linestyle="--", linewidth=0.5)
 
     ax1.legend(loc="upper right")
     labels = ["Room temperature", "Thermal mass temperature", 'Variable', 'Constant']
@@ -377,11 +386,13 @@ def plot_heat_demand_and_shifted_bars(
 
     ax1.set_ylabel("heating power in W")
     ax2.set_ylabel("temperature in °C")
-    ax1.set_title("Load shift at " + str(T_outside) + " °C, House Nr " + str(HouseNr))
+    ax1.set_title("Load shift at " + str(T_outside) + " °C, House Nr " + str(house_nr))
+    ax2.set_xlabel("time (h)")
     plt.tight_layout()
-    fig.savefig(Path(__file__).parent.resolve() / f"Subplot_energy_shifted_{HouseNr}.png")
-    fig.savefig(Path(__file__).parent.resolve() / f"Subplot_energy_shifted_{HouseNr}.svg")
-    plt.show()
+    fig1.savefig(Path(__file__).parent.resolve() / f"Subplot_energy_shifted_{house_nr}.png")
+    fig1.savefig(Path(__file__).parent.resolve() / f"Subplot_energy_shifted_{house_nr}.svg")
+    # plt.show()
+    return fig0, fig1
 
 
 if __name__ == "__main__":
@@ -394,22 +405,37 @@ if __name__ == "__main__":
     # compare_solar_radation()
 
     hours_of_preheating = 3
-    hours_of_shifting = 30
-    T_outside = -15
+    hours_of_shifting = 20
+    T_outside = -5
     T_min_indoor = 20
-    T_max_indoor = 26
+    T_max_indoor = 23
     T_offset_indoor = 2
     HouseNr = 3  # startet bei 1! nicht bei 0
     plotON = True
-    # installierte Leistung bei -15°C
+    # installierte Leistung bei -5°C
+    for houses in [1, 2, 3, 4]:
+        line_plot, barplot = calculate_LoadShiftPotential(Buildings,
+                                                          hours_of_preheating,
+                                                          hours_of_shifting,
+                                                          T_outside,
+                                                          T_min_indoor,
+                                                          T_max_indoor,
+                                                          houses,
+                                                          T_offset_indoor=T_offset_indoor,
+                                                          plot_on=True)
+
+
+
     installierte_Leistung = calculate_LoadShiftPotential(Buildings,
                                                          hours_of_preheating,
                                                          hours_of_shifting,
-                                                         T_outside,
+                                                         -15,
                                                          T_min_indoor,
                                                          T_max_indoor,
                                                          HouseNr,
-                                                         T_offset_indoor=T_offset_indoor)
+                                                         T_offset_indoor=T_offset_indoor,
+                                                         plot_on=False)
+
     installierte_Leistung = installierte_Leistung[0, :]  # installierte leistung für jedes haus
 
     eingespeicherte_energie = []
@@ -428,7 +454,8 @@ if __name__ == "__main__":
                                                                   T_min_indoor, T_max_indoor, HouseNr,
                                                                   T_offset_indoor=T_offset_indoor)
 
-            eingespeicherte_energie.append([temp, preheatingHours, Heizleistung_Vorheizen.sum(axis=0)[0],
+            eingespeicherte_energie.append([temp, preheatingHours,
+                                            Heizleistung_Vorheizen.sum(axis=0)[0],
                                             Heizleistung_Vorheizen.sum(axis=0)[1],
                                             Heizleistung_Vorheizen.sum(axis=0)[2]])
 
