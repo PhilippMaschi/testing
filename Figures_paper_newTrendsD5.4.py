@@ -1,8 +1,8 @@
 import pandas as pd
-import numpy as np
 from pathlib import Path
 import seaborn as sns
 import matplotlib.pyplot as plt
+import matplotlib
 
 EUROPEAN_COUNTRIES = {
     'AUT': 'Austria',  #
@@ -44,12 +44,19 @@ load_factor["price_id"] = load_factor["price_id"].replace({"optimized price 1": 
 
 self_consumption = pd.read_csv(path_to_files / "PV self consumption (%).csv", sep=";")
 self_consumption["price_id"] = self_consumption["price_id"].replace({"optimized price 1": "prosumager",
-                                                           "reference": "consumer"})
+                                                                     "reference": "consumer"})
 
 mac = pd.read_csv(path_to_files / "MAC electricity price (centperkWh).csv", sep=";")
 shifted_electricity = pd.read_csv(path_to_files / "shifted electricity (%).csv", sep=";")
 shifted_electricity_mwh = pd.read_csv(path_to_files / "shifted electricity (MWh).csv", sep=";")
 mean_electricity_price = pd.read_csv(path_to_files / "electricity price mean (centperkWh).csv", sep=";")
+pv_share = pd.read_csv(path_to_files / "PV share (%).csv", sep=";")
+pv_share["price_id"] = pv_share["price_id"].replace({"1": "prosumager",
+                                                     "reference_1": "consumer"})
+
+primes_df = pd.read_excel(path_to_files / "PRIMES_Prosumager_data_0929.xlsx", engine="openpyxl")
+primes_df[["Load Factor (%)", "PV share (%)", "shifted electricity (%)", "PV self consumption (%)"]] = primes_df[[
+    "Load Factor (%)", "PV share (%)", "shifted electricity (%)", "PV self consumption (%)"]] * 100
 
 
 def merge_dfs(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
@@ -72,67 +79,93 @@ for df in [
     load_factor,
     shifted_electricity.drop(columns=["price_id"]),
     shifted_electricity_mwh.drop(columns=["price_id"]),
-    mean_electricity_price.drop(columns=["price_id"])
+    mean_electricity_price.drop(columns=["price_id"]),
+    pv_share
 ]:
     plot_df = merge_dfs(left=plot_df, right=df)
 
 plot_df["shifted electricity (TWh)"] = plot_df["shifted electricity (MWh)"] / 1_000_000
 plot_df["PV capacity (GWp)"] = plot_df["total_pv_capacity (kWp)"] / 1_000_000
 plot_df["Load Factor (%)"] = plot_df["Load Factor (%)"] * 100  # %
+plot_df["consumer type"] = plot_df["price_id"]
+plot_df["model"] = "FLEX"
 
-sns.scatterplot(data=plot_df.query(f"year != 2020"),
-                x="PV capacity (GWp)",
-                y="PV self consumption (%)",
-                hue="year",
-                style="consumer type",
-                )
-plt.show()
+primes_for_merge = pd.merge(left=primes_df,
+                            right=plot_df[["country", "year", "consumer type", "MAC electricity price (cent/kWh)",
+                                           "electricity price mean (cent/kWh)"]],
+                            on=["country", "year", "consumer type"])
+for_merge = plot_df[[name for name in primes_for_merge.columns]].query(f"year != 2020")
 
-#
-sns.scatterplot(data=plot_df.query(f"year != 2020"),
-                x="total_battery_capacity (kWh)",
-                y="PV self consumption (%)",
-                hue="year",
-                style="consumer type",
-                )
-plt.show()
+combined_df = pd.concat([for_merge, primes_for_merge], axis=0)
+combined_df.to_csv(path_to_files / "data_for_D5.4_graphiks.csv", index=False, sep=";")
 
-sns.scatterplot(data=plot_df.query(f"year != 2020"),
-                x="total storage capacity (GWh)",
-                y="PV self consumption (%)",
-                hue="year",
-                style="consumer type",
-                )
-plt.show()
+for_plot = combined_df.loc[combined_df.loc[:, "consumer type"] == "prosumager", :]
 
-sns.scatterplot(data=plot_df.query(f"year != 2020"),
-                x="MAC electricity price (cent/kWh)",
-                y="Load Factor (%)",
-                hue="year",
-                style="consumer type"
-                )
-plt.show()
+# prepare plot_df to merge with PRIMES:
+# sns.set_palette("tab10")
 
-# MAC, Shifted electricity (%)
-sns.scatterplot(data=plot_df.query(f"year != 2020"),
-                x="MAC electricity price (cent/kWh)",
-                y="shifted electricity (%)",
-                hue="year",
-                )
-plt.show()
 
-# MAC, Shifted electricity TWh
-sns.scatterplot(data=plot_df.query(f"year != 2020"),
-                x="MAC electricity price (cent/kWh)",
-                y="shifted electricity (TWh)",
-                hue="year",
-                )
-plt.show()
+def create_scatter_plot(data: pd.DataFrame, x: str, y: str, style="year", hue="model"):
+    plot_name = f"{x.replace(r'/', 'per')}_over_{y}.png"
+    path_to_figures = Path(r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\NewTrends\Deliverables\D5.4 paper\Figures")
+    data["model"] = data["model"].replace({"PRIMES": "PRIMES-Prosumager", "FLEX": "Invert/FLEX"})
+    palette = sns.color_palette("hls", n_colors=2)
+    if y == "shifted electricity (%)":
+        sns.relplot(
+            data=data,
+            x=x,
+            y=y,
+            col="year",
+            hue=style,
+            # style="consumer type",  # style
+            kind="scatter",
+            palette=palette
+        )
+    else:
+        sns.relplot(
+            data=data,
+            x=x,
+            y=y,
+            col="year",
+            # size="PV capacity (GWp)",
+            hue=style,
+            # style="consumer type",  # style
+            kind="scatter",
+            palette=palette
+        )
+    matplotlib.rcParams.update({'font.size': 15})
 
-# mean electricity price, installed PV capacity:
-sns.scatterplot(data=plot_df.query(f"year != 2020"),
-                x="electricity price mean (cent/kWh)",
-                y="PV capacity (GWp)",
-                hue="year",
+    # sns.scatterplot(data=data.query(query_string),
+    #                 x=x,
+    #                 y=y,
+    #                 hue=hue,
+    #                 style=style,
+    #                 palette=palette
+    #                 )
+    plt.savefig(path_to_figures / plot_name,
+                # dpi=1200
                 )
-plt.show()
+    plt.savefig(path_to_figures / plot_name.replace("png", "svg"))
+    plt.show()
+
+
+x_y_pairs = [("PV capacity (GWp)", "PV self consumption (%)"),
+             ("PV capacity (GWp)", "Load Factor (%)"),
+             ("PV capacity (GWp)", "shifted electricity (%)"),
+             ("PV capacity (GWp)", "PV share (%)"),
+             ("MAC electricity price (cent/kWh)", "PV self consumption (%)"),
+             ("MAC electricity price (cent/kWh)", "Load Factor (%)"),
+             ("MAC electricity price (cent/kWh)", "shifted electricity (%)"),
+             ("MAC electricity price (cent/kWh)", "PV share (%)"),
+             ("electricity price mean (cent/kWh)", "PV capacity (GWp)"),
+             ("electricity price mean (cent/kWh)", "PV self consumption (%)"),
+             ("shifted electricity (%)", "Load Factor (%)"),
+             ("PV share (%)", "PV self consumption (%)")
+             ]
+
+for x, y in x_y_pairs:
+    create_scatter_plot(data=for_plot,
+                        x=x,
+                        y=y,
+                        style="model",
+                        hue="year")
