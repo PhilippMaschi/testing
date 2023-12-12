@@ -74,10 +74,10 @@ BUILDING_SEGMENT_COLUMNS = {
     "distribution_dhw_index": int,
     "pv_system_index": int,
     "energy_carrier": int,
-    "annual_energy_costs_hs": "float32",
-    "total_annual_cost_hs": "float32",
-    "annual_energy_costs_dhw": "float32",
-    "total_annual_cost_dhw": "float32",
+    # "annual_energy_costs_hs": "float32",
+    # "total_annual_cost_hs": "float32",
+    # "annual_energy_costs_dhw": "float32",
+    # "total_annual_cost_dhw": "float32",
     "hs_efficiency": "float32",
     "dhw_efficiency": "float32",
     "size_pv_system": "float32",
@@ -497,12 +497,16 @@ def fix_number_of_persons(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def read_hdf5(country: str, output_path: Path, years: list, ):
+def read_hdf5(country: str, output_path: Path, years: list, path_dict: dict):
 
     # create country specific path
     main_directory = output_path / country
-    hdf5_f = find_hdf5_file(main_directory)
+    # hdf5_f = find_hdf5_file(main_directory)
 
+    source_directory = path_dict["SOURCE_PATH"] / path_dict[
+        "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}_{path_dict['SUB_SCENARIO']}"
+    assert source_directory.exists(), "directory path provided does not exist"
+    hdf5_f = find_hdf5_file(source_directory)
     for year in years:
         BC = hdf5_to_pandas(hdf5_f, f"BC_{year}", BUILDING_CLASS_COLUMNS)
         BSSH = hdf5_to_pandas(hdf5_f, f"BSSH_{year}", BUILDING_SEGMENT_COLUMNS)
@@ -558,7 +562,8 @@ def read_hdf5(country: str, output_path: Path, years: list, ):
 def copy_hdf5_files(path_dict: dict, out_path: Path, countries: list):
     for country in countries:
         source_directory = path_dict["SOURCE_PATH"] / path_dict[
-            "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{path_dict['SUB_SCENARIO']}"
+            "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}_{path_dict['SUB_SCENARIO']}"
+        assert source_directory.exists(), "directory path provided does not exist"
         source_path = find_hdf5_file(source_directory)
         destination_path = out_path / country / source_path.name
         copy_file_to_disc(source_path, destination_path)
@@ -569,7 +574,7 @@ def copy_dynamic_calc_data(path_dict: dict, out_path: Path, countries: list, yea
     for country in countries:
         for year in years:
             source_file = path_dict["SOURCE_PATH"] / path_dict[
-                "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}{path_dict['SUB_SCENARIO']}" / \
+                "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}_{path_dict['SUB_SCENARIO']}" / \
                           r"ADD_RESULTS/Dynamic_Calc_Input_Data" / f"001__dynamic_calc_data_bc_{year}.npz"
             destination_path = out_path / country / f"dynamic_calc_{year}.npz"
             copy_file_to_disc(source_file, destination_path)
@@ -654,7 +659,7 @@ def main(paths: dict, years: list, out_path: Path):
         'ESP',
         'SWE'
     ]
-    # copy the hdf files
+    # copy the hdf files, NOT NEEDED AS THE READ HDF5 USES hdf5 file from orig repository
     # copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy distribution csv files:
@@ -664,23 +669,23 @@ def main(paths: dict, years: list, out_path: Path):
     # copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
 
     # use multiprocessing:
-    arglist = [(country, out_path, years) for country in country_list]
-    read_hdf5("AUT", out_path, years, )  # for debugging
-    # cores = int(multiprocessing.cpu_count() / 2)
-    # with multiprocessing.Pool(cores) as pool:
-    #     pool.starmap(read_hdf5, arglist)
+    arglist = [(country, out_path, years, paths) for country in country_list]
+    # read_hdf5("AUT", out_path, years, paths)  # for debugging
+    cores = int(multiprocessing.cpu_count() / 2)
+    with multiprocessing.Pool(cores) as pool:
+        pool.starmap(read_hdf5, arglist)
 
 
 if __name__ == "__main__":
     # user inputs:
-    project_path = Path(
-        r"/home/users/pmascherbauer/projects3/2022_NewTrends/invert/")  # Path(r"E:\projects3\2022_NewTrends\invert")
-    invert_scenario = r"output/output_230406/"  # r"output_new_trends_2022_12_20_2050"
-    sub_scenario = "_eff_high_electr_ab"  # "_res_hc_pw_alternative_1_ab"   # always has _sce_country before
+    project_path = Path( r"W:/projects3/2021_ECEMF/invert")  # Path(r"E:\projects3\2022_NewTrends\invert")
+    invert_scenario = r"output/output_ecemf_invert_eelab_secondround_231130_am_pm"  # r"output_new_trends_2022_12_20_2050"
+    sub_scenario = "eff_high_elec_ab"  # "_res_hc_pw_alternative_1_ab"   # always has _sce_country before
+    # invert input data ("input") folder
     invert_input_path = Path(
-        r"/home/users/pmascherbauer/projects3/2022_NewTrends/invert/input/input_invert_renovcosts_new/")
+        r"W:\projects3\2021_ECEMF\invert\input\input_ecemf_invert_eelab_secondround_231115")
     # define path where data should be saved
-    output_folder = Path(r"/home/users/pmascherbauer/projects/Philipp/PycharmProjects/projects/NewTrends_D5.4")
+    output_folder = Path(r"W:/projects3/2021_ECEMF/Philipp")
     years = [2020, 2030, 2040, 2050]
 
     paths = {"SOURCE_PATH": project_path,
