@@ -122,19 +122,19 @@ HEATING_SYSTEM_INDEX = {
     34: "wood",
     35: "wood",
     36: "wood",
-    37: "electricity",  # TODO rein nehmen
-    38: "electricity",  # TODO rein nehmen
-    39: "electricity",  # TODO rein nehmen
-    40: "split system",  # TODO rein nehmen!
-    41: "split system",  # TODO rein nehmen!
+    37: "electricity",
+    38: "electricity",
+    39: "electricity",
+    40: "split system",
+    41: "split system",
     42: "heat pump air",
     43: "heat pump ground",
-    44: "electricity"  # TODO rein nehmen
+    44: "electricity"
 }
 
-SELECTED_HEATING_SYSTEMS = {"electricity": [37, 38, 39, 44],
-                            "heat pump air": [42],
-                            "heat pump ground": [43]}
+# SELECTED_HEATING_SYSTEMS = {"electricity": [37, 38, 39, 44],
+#                             "heat pump air": [42],
+#                             "heat pump ground": [43]}
 
 HEATING_SYSTEM_COLUMNS = {
     "index": int,
@@ -290,13 +290,8 @@ def fix_dfs(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> (pd.DataFrame, pd.Dat
     bc_residential = bc.loc[mask.squeeze(), :].reset_index(drop=True)
 
     # only keep residential buildings in bssh frame:
-    bc_indizes = list(bc_residential.loc[:, "index"])
-    bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(
-        drop=True)  # 1,2 SFH and 5, 6 are MFH
-    # check if heat pumps with index 40 and 41 are ignored:
-    assert bssh_residential.query(f"heat_supply_system_index in {[40, 41]}")["number_of_buildings"].sum() <= 1, \
-        "careful, building class index 40 and 41 are ignored which represent split systems and they have a number " \
-        "of buildings"
+    bc_indizes = list(bc_residential.loc[:, "index"])  # 1,2 SFH and 5, 6 are MFH
+    bssh_residential = bssh.loc[bssh["building_classes_index"].isin(bc_indizes)].reset_index(drop=True)
     return bc_residential, bssh_residential
 
 
@@ -344,7 +339,7 @@ def get_number_of_buildings(bc_df: pd.DataFrame, bssh_df: pd.DataFrame) -> pd.Da
         for carrier, number in numbers.items():
             bc_df.loc[bc_df.loc[:, "index"] == index, f"number_buildings_{carrier.replace(' ', '_')}"] = number
 
-    # the supply temperature is only calculated for the buildings with heat pumps:
+    # the supply temperature is only calculated/valid for the buildings with heat pumps:
     bssh_heat_pumps = bssh_df.loc[bssh_df['heat_supply_system_index'].isin([42, 43])].reset_index(drop=True)
     heat_pumps_group = bssh_heat_pumps.groupby("building_classes_index")  # for supply temperatures
     for index, group in heat_pumps_group:
@@ -497,66 +492,70 @@ def fix_number_of_persons(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def read_hdf5(country: str, output_path: Path, years: list, path_dict: dict):
-
+def read_hdf5(country: str, output_path: Path, years: list, path_dict: dict, hdf5_was_copied: bool = False):
+    print(f"reading hdf5 for {country}")
     # create country specific path
     main_directory = output_path / country
-    # hdf5_f = find_hdf5_file(main_directory)
-
-    source_directory = path_dict["SOURCE_PATH"] / path_dict[
-        "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}_{path_dict['SUB_SCENARIO']}"
-    assert source_directory.exists(), "directory path provided does not exist"
-    hdf5_f = find_hdf5_file(source_directory)
+    if hdf5_was_copied:
+        hdf5_f = find_hdf5_file(main_directory)
+    else:
+        source_directory = path_dict["SOURCE_PATH"] / path_dict[
+            "INVERT_SCENARIO"] / country / f"_scen_{country.lower()}_{path_dict['SUB_SCENARIO']}"
+        assert source_directory.exists(), "directory path provided does not exist"
+        hdf5_f = find_hdf5_file(source_directory)
     for year in years:
-        BC = hdf5_to_pandas(hdf5_f, f"BC_{year}", BUILDING_CLASS_COLUMNS)
-        BSSH = hdf5_to_pandas(hdf5_f, f"BSSH_{year}", BUILDING_SEGMENT_COLUMNS)
-        bc_residential, bssh_residential = fix_dfs(BC, BSSH)
+        # check if files already exist:
+        file = output_path / country / f'{year}.parquet.gzip'
+        if file.exists():
+            print(f"{country} {year} parquet already exists - skipping")
+        else:
+            BC = hdf5_to_pandas(hdf5_f, f"BC_{year}", BUILDING_CLASS_COLUMNS)
+            BSSH = hdf5_to_pandas(hdf5_f, f"BSSH_{year}", BUILDING_SEGMENT_COLUMNS)
+            bc_residential, bssh_residential = fix_dfs(BC, BSSH)
 
-        heating_system = hdf5_to_pandas(hdf5_f, "HeatingSystems", HEATING_SYSTEM_COLUMNS)
-        energy_carrier = hdf5_to_pandas(hdf5_f, "EnergyCarrierDefinition_2020", ENERGY_CARRIER_INDEX)
-        dist_df = pd.read_csv(main_directory / "distribution_sh.csv", sep=",", encoding="latin1")
-        distribution_sh = dist_df.iloc[3:, :].dropna(axis=1).rename(
-            columns={"csvid": "distribution_sh_index"}).reset_index(drop=True)
-        # change the index to integer otherwise "map" does not work
-        distribution_sh["distribution_sh_index"] = distribution_sh["distribution_sh_index"].astype(int)
+            # heating_system = hdf5_to_pandas(hdf5_f, "HeatingSystems", HEATING_SYSTEM_COLUMNS)
+            # energy_carrier = hdf5_to_pandas(hdf5_f, "EnergyCarrierDefinition_2020", ENERGY_CARRIER_INDEX)
+            dist_df = pd.read_csv(main_directory / "distribution_sh.csv", sep=",", encoding="latin1")
+            distribution_sh = dist_df.iloc[3:, :].dropna(axis=1).rename(
+                columns={"csvid": "distribution_sh_index"}).reset_index(drop=True)
+            # change the index to integer otherwise "map" does not work
+            distribution_sh["distribution_sh_index"] = distribution_sh["distribution_sh_index"].astype(int)
 
-        # map the supply temperature and the heating system type to the BSSH df:
-        bssh_residential.loc[:, "supply_temperature"] = bssh_residential["distribution_sh_index"].map(
-            distribution_sh.set_index("distribution_sh_index")["supply_temperature"])
-        # bssh_residential.loc[:, "heating_distribution_system"] = bssh_residential["distribution_sh_index"].map(distribution_sh.set_index("distribution_sh_index")["name"])
-        # uncomment the next line to include the return temperature
-        # bssh_residential.loc[:, "return_temperature"] = bssh_residential["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["return_temperature"])
+            # map the supply temperature and the heating system type to the BSSH df:
+            bssh_residential.loc[:, "supply_temperature"] = bssh_residential["distribution_sh_index"].map(
+                distribution_sh.set_index("distribution_sh_index")["supply_temperature"])
+            # bssh_residential.loc[:, "heating_distribution_system"] = bssh_residential["distribution_sh_index"].map(distribution_sh.set_index("distribution_sh_index")["name"])
+            # uncomment the next line to include the return temperature
+            # bssh_residential.loc[:, "return_temperature"] = bssh_residential["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["return_temperature"])
 
-        # add the heating system type to the bssh_residential table
-        bssh_residential.loc[:, "energy_carrier_name"] = bssh_residential["heat_supply_system_index"].map(HEATING_SYSTEM_INDEX)
+            # add the heating system type to the bssh_residential table
+            bssh_residential.loc[:, "energy_carrier_name"] = bssh_residential["heat_supply_system_index"].map(HEATING_SYSTEM_INDEX)
 
-        # fix the dfs and reduce their size by only including residential buildings:
+            # add the number of buildings by merging the bssh_residential to the BC df
+            merged_df = get_number_of_buildings(bc_df=bc_residential, bssh_df=bssh_residential)
 
-        # add the number of buildings by merging the bssh_residential to the BC df
-        merged_df = get_number_of_buildings(bc_df=bc_residential, bssh_df=bssh_residential)
+            # remove buildings without any heat pumps
+            # df = merged_df[(merged_df["number_of_buildings_with_HP_air"] != 0) |
+            #               (merged_df["number_of_buildings_with_HP_ground"] != 0)].reset_index(drop=True)
 
-        # remove buildings without any heat pumps
-        # df = merged_df[(merged_df["number_of_buildings_with_HP_air"] != 0) |
-        #               (merged_df["number_of_buildings_with_HP_ground"] != 0)].reset_index(drop=True)
+            # add the dynamic calc data to the df:
+            dynamic_df = get_dynamic_calc_data(path=main_directory, year=year, country=country)
+            # merge the dynamic df to the merged df:
+            merged_df_2 = merge_dynamic_df_to_df(dynamic_df=dynamic_df, final_df=merged_df)
 
-        # add the dynamic calc data to the df:
-        dynamic_df = get_dynamic_calc_data(path=main_directory, year=year, country=country)
-        # merge the dynamic df to the merged df:
-        merged_df_2 = merge_dynamic_df_to_df(dynamic_df=dynamic_df, final_df=merged_df)
+            # clean out columns that are not needed:
+            cleaned_df = clean_df(merged_df_2)
 
-        # clean out columns that are not needed:
-        cleaned_df = clean_df(merged_df_2)
+            # reduce the size of buildings by merging very similar buildings:
+            # reduced_df = merge_similar_buildings(cleaned_df).drop(columns=["index"]).reset_index()
 
-        # reduce the size of buildings by merging very similar buildings:
-        # reduced_df = merge_similar_buildings(cleaned_df).drop(columns=["index"]).reset_index()
+            # fix the number of persons because they are wrong in Invert:
+            final_df = fix_number_of_persons(cleaned_df)
+            # change the type of "supply temperature" so parquet doesnt make trouble
+            final_df["supply_temperature"] = final_df["supply_temperature"].astype(float)
 
-        # fix the number of persons because they are wrong in Invert:
-        final_df = fix_number_of_persons(cleaned_df)
-        # change the type of "supply temperature" so parquet doesnt make trouble
-        final_df["supply_temperature"] = final_df["supply_temperature"].astype(float)
-
-        final_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
-        print(f"added {year} data to {country}.")
+            final_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
+            print(f"added {year} data to {country}.")
 
 
 def copy_hdf5_files(path_dict: dict, out_path: Path, countries: list):
@@ -669,8 +668,9 @@ def main(paths: dict, years: list, out_path: Path):
     # copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
 
     # use multiprocessing:
-    arglist = [(country, out_path, years, paths) for country in country_list]
-    # read_hdf5("AUT", out_path, years, paths)  # for debugging
+    hdf5_was_copied = False
+    arglist = [(country, out_path, years, paths, hdf5_was_copied) for country in country_list]
+    # read_hdf5("SWE", out_path, years, paths, hdf5_was_copied)  # for debugging
     cores = int(multiprocessing.cpu_count() / 2)
     with multiprocessing.Pool(cores) as pool:
         pool.starmap(read_hdf5, arglist)
@@ -678,14 +678,14 @@ def main(paths: dict, years: list, out_path: Path):
 
 if __name__ == "__main__":
     # user inputs:
-    project_path = Path( r"W:/projects3/2021_ECEMF/invert")  # Path(r"E:\projects3\2022_NewTrends\invert")
+    project_path = Path(r"E:/projects3/2021_ECEMF/invert")  # Path(r"E:\projects3\2022_NewTrends\invert")
     invert_scenario = r"output/output_ecemf_invert_eelab_secondround_231130_am_pm"  # r"output_new_trends_2022_12_20_2050"
     sub_scenario = "eff_high_elec_ab"  # "_res_hc_pw_alternative_1_ab"   # always has _sce_country before
     # invert input data ("input") folder
     invert_input_path = Path(
         r"W:\projects3\2021_ECEMF\invert\input\input_ecemf_invert_eelab_secondround_231115")
     # define path where data should be saved
-    output_folder = Path(r"W:/projects3/2021_ECEMF/Philipp")
+    output_folder = Path(r"E:/projects3/2021_ECEMF/Philipp")
     years = [2020, 2030, 2040, 2050]
 
     paths = {"SOURCE_PATH": project_path,
