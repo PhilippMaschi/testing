@@ -3,6 +3,10 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+import matplotlib
+from matplotlib import cm
+from matplotlib.colors import LightSource
+from scipy.interpolate import griddata
 
 
 def ref_HeatingCooling(T_outside, Q_solar, Buildings, initial_thermal_mass_temp=20, T_air_min=20, T_air_max=27,
@@ -267,17 +271,17 @@ def calculate_LoadShiftPotential(Buildings, hours_of_preheating, hours_of_shifti
     TotalLoss = ExcessHeatPreheat - SaveHeatShifting - RemainingEnergy
     if plot_on:
         plot1, plot2 = plot_heat_demand_and_shifted_bars(
-            ExcessHeatPreheat,
-            SaveHeatShifting,
-            RemainingEnergy,
-            TotalLoss,
-            Q_PreHeating_noDR,
-            Q_ReducedHeating_noDR,
+            ExcessHeatPreheat / 1000,
+            SaveHeatShifting / 1000,
+            RemainingEnergy / 1000,
+            TotalLoss / 1000,
+            Q_PreHeating_noDR / 1000,
+            Q_ReducedHeating_noDR / 1000,
             T_PrethermalMass_noDR,
             T_ReducedRoom_noDR,
             T_ReducedthermalMass_noDR,
             T_PreRoom_noDR,
-            Q_Heating_noDR_constant,
+            Q_Heating_noDR_constant / 1000,
             T_thermalMass_noDR_constant,
             T_Room_noDR_constant,
             HouseNr,
@@ -323,7 +327,7 @@ def plot_heat_demand_and_shifted_bars(
     plt.title("Energy shifting at " + str(T_outside) + "°C, house Nr " + str(house_nr))
     ax0.set_xticks(bar_positions)
     ax0.set_xticklabels(['preheating', 'discharging'])
-    plt.ylabel("Energy (Wh)")
+    plt.ylabel("Energy (lWh)")
 
     ax0.legend(loc='upper center', bbox_to_anchor=(0.5, 1.2), ncol=2)
     plt.tight_layout()
@@ -384,7 +388,7 @@ def plot_heat_demand_and_shifted_bars(
         loc='upper right'
     )
 
-    ax1.set_ylabel("heating power in W")
+    ax1.set_ylabel("heating power in kW")
     ax2.set_ylabel("temperature in °C")
     ax1.set_title("Load shift at " + str(T_outside) + " °C, House Nr " + str(house_nr))
     ax2.set_xlabel("time (h)")
@@ -461,7 +465,7 @@ if __name__ == "__main__":
 
     eingespeicherte_energie2d = np.vstack(eingespeicherte_energie2d)  # list to matrix
     Daten = np.vstack(eingespeicherte_energie)  # list to matrix
-    fig = plt.figure()
+    fig = plt.figure(figsize=(18, 16))
     ax = plt.axes(projection="3d")
     x_data = Daten[:, 0]  # Temperature
     y_data = Daten[:, 1]  # preheating duration
@@ -469,15 +473,19 @@ if __name__ == "__main__":
     z_data2 = Daten[:, 3] / installierte_Leistung[1]  # stored energy house 2
     z_data3 = Daten[:, 4] / installierte_Leistung[2]  # stored energy house 3
 
-    ax.scatter3D(x_data, y_data, z_data1, cmap="Blues", label="House 1")
-    ax.scatter3D(x_data, y_data, z_data2, cmap="greens", label="House 2")
-    ax.scatter3D(x_data, y_data, z_data3, cmap="reds", label="House 3")
+    ax.scatter(x_data, y_data, z_data1, color="Blue", label="House 1", marker="x", alpha=0.5, s=50)
+    # ax.scatter(x_data, y_data, z_data2, color="green", label="House 2", marker="x", alpha=0.5)
+    ax.scatter(x_data, y_data, z_data3, color="red", label="House 2", marker="o", alpha=0.5)
 
-    plt.legend()
-    ax.set_xlabel("temperature in °C")
-    ax.set_ylabel("preheating hours")
-    ax.set_zlabel(r'$\frac{stored \; energy}{installed \; HP \; power}$')
-    plt.savefig(project_directory_path / "Stored_energy_3D.png")
+    plt.legend(prop={"size":20})
+    ax.set_xlabel("temperature in °C", fontsize=20, labelpad=20)
+    ax.set_ylabel("preheating hours", fontsize=20, labelpad=20)
+    ax.set_zlabel(r'$\frac{stored \; energy}{installed \; HP \; power}$', fontsize=20, labelpad=20)
+
+    matplotlib.rc('xtick', labelsize=20)
+    matplotlib.rc('ytick', labelsize=20)
+    # plt.tight_layout()
+    plt.savefig(project_directory_path / "Stored_energy_3D.svg")
     plt.show()
 
     # 2d plot über temperatur
