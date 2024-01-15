@@ -394,10 +394,28 @@ def copy_file_to_disc(source: Path, destination: Path):
     print(f"copied {source.name} to local disk as {destination}")
 
 
-def hdf5_to_pandas(hdf5_file: Path, group_name, columns) -> pd.DataFrame:
+def hdf5_to_pandas(hdf5_file: Path, group_name: str, columns: dict = None) -> pd.DataFrame:
+    """
+    Code is quite slow...
+    :param hdf5_file: path to the hdf5 file which needs to be opened
+    :param group_name: is either BC_{year} or BSSH_{year} where year can be 2020 or any other year that has been
+    modelled with Invert. Eg: BC_2030 or BSSH_2050
+    :param columns: dictionary with columns that you want to extract from this particular dataframe. The keys should
+    contain the name of the column and the values represnt the datatype of the columns. For example:
+        BSSH_colums = {
+        "index": int,
+        "name": str,
+        "building_classes_index": int,
+        "number_of_buildings": "float32",
+        }
+    If no columns dict is provided, all the columns are imported.
+    :return: pd.DataFrame containing the hdf5 data
+    """
     with h5py.File(hdf5_file, 'r') as file:
         # Get the table from the group
         dataset = file[group_name]
+        if columns is None:
+            columns = dataset.dtype.fields
         df = pd.DataFrame(index=range(len(dataset)), columns=[list(columns.keys())])
         for name in columns.keys():
             df[name] = dataset[name]
