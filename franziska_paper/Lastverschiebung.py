@@ -59,6 +59,7 @@ def ref_HeatingCooling(T_outside, Q_solar, Buildings, initial_thermal_mass_temp=
     Q_Heating_noDR = np.zeros(shape=(len(timesteps), len(Hve)))
     Q_Cooling_noDR = np.zeros(shape=(len(timesteps), len(Hve)))
     T_Room_noDR = np.zeros(shape=(len(timesteps), len(Hve)))
+    operative_temperature = np.zeros(shape=(len(timesteps), len(Hve)))
     heating_power_10 = Af * 10
 
     for t in timesteps:  # t is the index for each timestep
@@ -138,15 +139,20 @@ def ref_HeatingCooling(T_outside, Q_solar, Buildings, initial_thermal_mass_temp=
         # Equ. C.11 for 10 W/m^2 cooling
         T_air_10_c = (Htr_is * T_s_10_c + Hve * T_sup[t] + PHI_ia - heating_power_10) / \
                      (Htr_is + Hve)
+        operative_temperature_0 = 0.3 * T_air_0 + 0.7 * T_s_0
+        operative_temperature_10 = 0.3 * T_air_10 + 0.7 * T_s_10
+        operative_temperature_10_c = 0.3 * T_air_10_c + 0.7 * T_s_10_c
+        op_temp_min = 0.3 * T_air_min[t] + 0.7 * T_s_0
+        op_temp_max = 0.3 * T_air_max[t] + 0.7 * T_s_0
 
         for i in range(len(Hve)):
             # Check if air temperature without heating is in between boundaries and calculate actual HC power:
-            if T_air_0[i] >= T_air_min[t] and T_air_0[i] <= T_air_max[t]:
+            if operative_temperature_0[i] >= op_temp_min[i] and operative_temperature_0[i] <= op_temp_max[i]:
                 Q_Heating_noDR[t, i] = 0
-            elif T_air_0[i] < T_air_min[t]:  # heating is required
-                Q_Heating_noDR[t, i] = heating_power_10[i] * (T_air_min[t] - T_air_0[i]) / (T_air_10[i] - T_air_0[i])
-            elif T_air_0[i] > T_air_max[t]:  # cooling is required
-                Q_Cooling_noDR[t, i] = heating_power_10[i] * (T_air_max[t] - T_air_0[i]) / (T_air_10_c[i] - T_air_0[i])
+            elif operative_temperature_0[i] < op_temp_min[i]:  # heating is required
+                Q_Heating_noDR[t, i] = heating_power_10[i] * (T_air_min[t] - operative_temperature_0[i]) / (operative_temperature_10[i] - operative_temperature_0[i])
+            elif operative_temperature_0[i] > op_temp_max:  # cooling is required
+                Q_Cooling_noDR[t, i] = heating_power_10[i] * (T_air_max[t] - operative_temperature_0[i]) / (operative_temperature_10_c[i] - operative_temperature_0[i])
 
         # now calculate the actual temperature of thermal mass Tm_t with Q_HC_real:
         # Equ. C.5 with actual heating power
@@ -169,13 +175,16 @@ def ref_HeatingCooling(T_outside, Q_solar, Buildings, initial_thermal_mass_temp=
         T_Room_noDR[t, :] = (Htr_is * T_s_real + Hve * T_sup[t] + PHI_ia +
                              Q_Heating_noDR[t, :] - Q_Cooling_noDR[t, :]) / (Htr_is + Hve)
 
+        operative_temperature[t, :] = 0.3*T_Room_noDR[t, :] + 0.7*T_s_real
+
     # fill nan
     Q_Cooling_noDR = np.nan_to_num(Q_Cooling_noDR, nan=0)
     Q_Heating_noDR = np.nan_to_num(Q_Heating_noDR, nan=0)
     T_Room_noDR = np.nan_to_num(T_Room_noDR, nan=0)
     Tm_t = np.nan_to_num(Tm_t, nan=0)
+    operative_temperature = np.nan_to_num(operative_temperature, nan=0)
 
-    return Q_Heating_noDR, Q_Cooling_noDR, T_Room_noDR, Tm_t
+    return Q_Heating_noDR, Q_Cooling_noDR, operative_temperature, Tm_t
 
 
 def get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, initial_thermal_mass_temp):
@@ -327,7 +336,7 @@ def plot_heat_demand_and_shifted_bars(
     plt.title("Energy shifting at " + str(T_outside) + "°C, house Nr " + str(house_nr))
     ax0.set_xticks(bar_positions)
     ax0.set_xticklabels(['preheating', 'discharging'])
-    plt.ylabel("Energy (lWh)")
+    plt.ylabel("Energy (kWh)")
 
     ax0.legend(loc='upper center', bbox_to_anchor=(0.5, 1.2), ncol=2)
     plt.tight_layout()
