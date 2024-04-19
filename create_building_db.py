@@ -59,7 +59,10 @@ BUILDING_CLASS_COLUMNS = {
     "average_effective_area_wind_south_red_cool": "float32",
     "average_effective_area_wind_north_red_cool": "float32",
     "spec_int_gains_cool_watt": "float32",
-    "attached_surface_area": "float32"
+    "attached_surface_area": "float32",
+    "effective_indoor_temp_jan": "float32",
+    "uedh_sh_effective": "float32",
+    "ued_dhw": "float32",
 }
 
 BUILDING_SEGMENT_COLUMNS = {
@@ -534,6 +537,7 @@ def read_hdf5(country: str, output_path: Path, years: list, path_dict: dict, hdf
         else:
             BC = hdf5_to_pandas(hdf5_f, f"BC_{year}", BUILDING_CLASS_COLUMNS)
             BSSH = hdf5_to_pandas(hdf5_f, f"BSSH_{year}", BUILDING_SEGMENT_COLUMNS)
+            # only keep residential buildings:
             bc_residential, bssh_residential = fix_dfs(BC, BSSH)
 
             # heating_system = hdf5_to_pandas(hdf5_f, "HeatingSystems", HEATING_SYSTEM_COLUMNS)
@@ -552,7 +556,8 @@ def read_hdf5(country: str, output_path: Path, years: list, path_dict: dict, hdf
             # bssh_residential.loc[:, "return_temperature"] = bssh_residential["distribution_sh_index"].squeeze().map(distribution_sh.set_index("distribution_sh_index")["return_temperature"])
 
             # add the heating system type to the bssh_residential table
-            bssh_residential.loc[:, "energy_carrier_name"] = bssh_residential["heat_supply_system_index"].map(HEATING_SYSTEM_INDEX)
+            bssh_residential.loc[:, "energy_carrier_name"] = bssh_residential["heat_supply_system_index"].map(
+                HEATING_SYSTEM_INDEX)
 
             # add the number of buildings by merging the bssh_residential to the BC df
             merged_df = get_number_of_buildings(bc_df=bc_residential, bssh_df=bssh_residential)
@@ -576,9 +581,28 @@ def read_hdf5(country: str, output_path: Path, years: list, path_dict: dict, hdf
             final_df = fix_number_of_persons(cleaned_df)
             # change the type of "supply temperature" so parquet doesnt make trouble
             final_df["supply_temperature"] = final_df["supply_temperature"].astype(float)
-
-            final_df.to_parquet(output_path / country / f'{year}.parquet.gzip', compression='gzip', index=False)
+            # rename the effective indoor set temp column
+            final_df = final_df.rename(columns={"effective_indoor_temp_jan": "indoor_set_temperature"})
+            # fix the name column:
+            final_df['name'] = final_df['name'].apply(lambda x: x.decode('utf-8') if isinstance(x, bytes) else x)
+            final_df.to_parquet(output_path / f'INVERT_{country}_{year}.parquet.gzip', compression='gzip', index=False)
+            print_summary_data_from_invert(final_df, year, country)
             print(f"added {year} data to {country}.")
+
+
+def print_summary_data_from_invert(df: pd.DataFrame, year, country):
+    print(f"Printing Invert data on buildings from {country} in {year} \n")
+    df.loc[:, "type"] = df["building_categories_index"].map(SFH_MFH)
+    type_groups = df.groupby("type")
+    for building_type, group in type_groups:
+        print(
+            f"{building_type}: \n "
+            f"UED for DHW = "
+            f"{round((group['ued_dhw'] * group['number_of_buildings']).sum() / 1_000 / 1_000)} MWh \n"  # MWh
+            f"UED for space heating = "
+            f"{round((group['uedh_sh_effective'] * group['number_of_buildings']).sum() / 1_000 / 1_000)} MWh \n"  # MWh
+
+        )
 
 
 def copy_hdf5_files(path_dict: dict, out_path: Path, countries: list):
@@ -654,61 +678,69 @@ def clean_up(folder: Path):
 def main(paths: dict, years: list, out_path: Path):
     country_list = [
         'AUT',
-        'BEL',
-        'BGR',
-        'HRV',
-        'CYP',
-        'CZE',
-        'DNK',
-        'EST',
-        'FIN',
-        'FRA',
-        'DEU',
-        'GRC',
-        'HUN',
-        'IRL',
-        'ITA',
-        'LVA',
-        'LTU',
-        'LUX',
-        'MLT',
-        'NLD',
-        'POL',
-        'PRT',
-        'ROU',
-        'SVK',
-        'SVN',
-        'ESP',
-        'SWE'
+        # 'BEL',
+        # 'BGR',
+        # 'HRV',
+        # 'CYP',
+        # 'CZE',
+        # 'DNK',
+        # 'EST',
+        # 'FIN',
+        # 'FRA',
+        # 'DEU',
+        # 'GRC',
+        # 'HUN',
+        # 'IRL',
+        # 'ITA',
+        # 'LVA',
+        # 'LTU',
+        # 'LUX',
+        # 'MLT',
+        # 'NLD',
+        # 'POL',
+        # 'PRT',
+        # 'ROU',
+        # 'SVK',
+        # 'SVN',
+        # 'ESP',
+        # 'SWE'
     ]
     # copy the hdf files, NOT NEEDED AS THE READ HDF5 USES hdf5 file from orig repository
     # copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy distribution csv files:
-    # copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
+    copy_distribution_csvs(path_dict=paths, out_path=out_path, countries=country_list)
 
     # copy dynamic calc data
-    # copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
+    copy_dynamic_calc_data(path_dict=paths, out_path=out_path, countries=country_list, years=years)
 
     # use multiprocessing:
     hdf5_was_copied = False
     arglist = [(country, out_path, years, paths, hdf5_was_copied) for country in country_list]
-    # read_hdf5("SWE", out_path, years, paths, hdf5_was_copied)  # for debugging
-    cores = int(multiprocessing.cpu_count() / 2)
-    with multiprocessing.Pool(cores) as pool:
-        pool.starmap(read_hdf5, arglist)
+    read_hdf5("AUT", out_path, years, paths, hdf5_was_copied)  # for debugging
+    # cores = int(multiprocessing.cpu_count() / 2)
+    # with multiprocessing.Pool(cores) as pool:
+    #     pool.starmap(read_hdf5, arglist)
+    print("create building files: Done")
 
 
 if __name__ == "__main__":
     # user inputs:
-    project_path = Path(r"E:/projects3/2021_ECEMF/invert")  # Path(r"E:\projects3\2022_NewTrends\invert")
-    invert_scenario = r"output/output_ecemf_invert_eelab_secondround_231130_am_pm"  # r"output_new_trends_2022_12_20_2050"
-    sub_scenario = "eff_high_elec_ab"  # "_res_hc_pw_alternative_1_ab"   # always has _sce_country before
+    project_path = Path(
+        r"E:\projects3\2022_NewTrends\invert\output")  # Path(r"E:\projects3\2022_NewTrends\invert\out")  Path(r"E:/projects3/2021_ECEMF/invert")
+    invert_scenario = r"output_230825_hdf5_for_Philipp"  # r"output_new_trends_2022_12_20_2050"  r"output/output_ecemf_invert_eelab_secondround_231130_am_pm"
+    sub_scenario = "eff_high_electr_ab"  # "_res_hc_pw_alternative_1_ab"  "eff_high_elec_ab"
     # invert input data ("input") folder
     invert_input_path = Path(
-        r"W:\projects3\2021_ECEMF\invert\input\input_ecemf_invert_eelab_secondround_231115")
+        r"E:\projects3\2022_NewTrends\invert\input\input_invert_renovcosts_new_trend"
+        # r"W:\projects3\2021_ECEMF\invert\input\input_ecemf_invert_eelab_secondround_231115"
+
+    )
     # define path where data should be saved
-    output_folder = Path(r"E:/projects3/2021_ECEMF/Philipp")
+    output_folder = Path(
+        r"E:\projects3\Philipp\output_data_invert"
+        # r"E:/projects3/2021_ECEMF/Philipp"
+    )
     years = [2020, 2030, 2040, 2050]
 
     paths = {"SOURCE_PATH": project_path,
