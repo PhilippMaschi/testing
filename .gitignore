@@ -7,6 +7,7 @@
 *.npz
 *.png
 *.svg
-*./idea
+idea/
+*.html
 
 
