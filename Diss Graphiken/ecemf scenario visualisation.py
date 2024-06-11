@@ -3,7 +3,7 @@ import seaborn as sns
 import pandas as pd
 from pathlib import Path
 from matplotlib.ticker import PercentFormatter
-
+import matplotlib
 
 YEARS = [2020, 2030, 2040, 2050]
 
@@ -21,7 +21,9 @@ devices_murcia_high_eff = {
     "Buffer tank": [0, 0.05, 0.15, 0.25],
     "PV": [0.015, 0.1, 0.4, 0.6],
     "Battery": [0.1, 0.12, 0.2, 0.3],
-    "Prosumager": [0, 0.1, 0.3, 0.5],
+    "Prosumager low": [0, 0.05, 0.1, 0.2],
+    "Prosumager medium": [0, 0.1, 0.3, 0.5],
+    "Prosumager high": [0, 0.15, 0.4, 0.8],
     }
 
 # with weak policy
@@ -37,10 +39,14 @@ devices_murcia_moderate_eff = {
     "Buffer tank": [0, 0.05, 0.15, 0.25],
     "PV": [0.015, 0.15, 0.3, 0.5],
     "Battery": [0.1, 0.12, 0.16, 0.25],
-    "Prosumager": [0, 0.1, 0.2, 0.4],
+    "Prosumager low": [0, 0.05, 0.1, 0.2],
+    "Prosumager medium": [0, 0.1, 0.3, 0.5],
+    "Prosumager high": [0, 0.15, 0.4, 0.8],
     }
 
-
+Low = [0, 0.05, 0.1, 0.2]
+Medium = [0, 0.1, 0.3, 0.5]
+High = [0, 0.15, 0.4, 0.8]
 # Leeuwarden
 # Strong policy
 heating_leeuwarden_high_eff = {
@@ -55,7 +61,10 @@ devices_leeuwarden_high_eff = {
     "Buffer tank": [0, 0.05, 0.15, 0.25],
     "PV": [0.02, 0.15, 0.4, 0.6],
     "Battery": [0.1, 0.12, 0.2, 0.3],
-    "Prosumager": [0, 0.1, 0.3, 0.5],
+    "Prosumager low": [0, 0.05, 0.1, 0.2],
+    "Prosumager medium": [0, 0.1, 0.3, 0.5],
+    "Prosumager high": [0, 0.15, 0.4, 0.8],
+
     }
 
 
@@ -72,7 +81,9 @@ devices_leeuwarden_moderate_eff = {
     "Buffer tank": [0, 0.05, 0.15, 0.25],
     "PV": [0.02, 0.1, 0.3, 0.5],
     "Battery": [0.1, 0.12, 0.16, 0.25],
-    "Prosumager": [0, 0.1, 0.2, 0.4],
+    "Prosumager low": [0, 0.05, 0.1, 0.2],
+    "Prosumager medium": [0, 0.1, 0.3, 0.5],
+    "Prosumager high": [0, 0.15, 0.4, 0.8],
     }
 
 
@@ -98,7 +109,7 @@ def line_plot(dictionary: dict, graphik_name: str, stacked: bool):
     else:
         kind="line"
         alpha=1
-        linestyles = ['-', '--', '-.', ':', '-D', '-x']
+        linestyles = [':o', '--', '-.', ':', '--D', '-x', '-x', '-x']
     # Create a DataFrame
     df = pd.DataFrame(dictionary, index=YEARS)
     colors = [
@@ -131,23 +142,11 @@ def line_plot(dictionary: dict, graphik_name: str, stacked: bool):
 
 
 
-line_plot(add_no_heating_to_heating_dict(heating_murcia_high_eff), graphik_name="Murcia_high_eff_heating_systems", stacked=True)
-line_plot(add_no_heating_to_heating_dict(heating_murcia_moderate_eff), graphik_name="Murcia_moderate_eff_heating_systems", stacked=True)
-
-line_plot(devices_murcia_high_eff, graphik_name="Devices_murcia_high_eff", stacked=False)
-line_plot(devices_murcia_moderate_eff, graphik_name="Devices_murcia_low_eff", stacked=False)
-
-
-
-line_plot(add_no_heating_to_heating_dict(heating_leeuwarden_high_eff), graphik_name="Leeuwarden_strong_policy_heating_systems", stacked=True)
-line_plot(add_no_heating_to_heating_dict(heating_leeuwarden_moderate_eff), graphik_name="Leeuwarden_weak_policy_heating_systems", stacked=True)
-
-line_plot(devices_leeuwarden_high_eff, graphik_name="Devices_Leeuwarden_Strong_policy", stacked=False)
-line_plot(devices_leeuwarden_moderate_eff, graphik_name="Devices_Leeuwarden_Weak_policy", stacked=False)
+# 
 
 def calculate_percentage_of_categorial_data(df, column):
     new_df = pd.DataFrame()
-    for region, group in df.groupby(['region']):
+    for region, group in df.groupby('region'):
         it = pd.DataFrame(group.value_counts(column), columns=["numbers"]).reset_index()
         it["percentage"] = it["numbers"] / it["numbers"].sum()
         it["region"] = region
@@ -159,10 +158,10 @@ def calculate_percentage_of_categorial_data(df, column):
 
 
 def show_building_attributes():
-    murcia_df = pd.read_excel(Path(r"C:\Users\mascherbauer\PycharmProjects\OSM\output_data") / f"2020_high_eff_combined_building_df_Leeuwarden_non_clustered.xlsx", 
+    murcia_df = pd.read_excel(Path(r"C:\Users\mascherbauer\PycharmProjects\OSM\output_data") / f"2020_H_combined_building_df_Leeuwarden_non_clustered.xlsx", 
                           engine="openpyxl")
     murcia_df["region"] = "Murcia"
-    leeuwarden_df = pd.read_excel(Path(r"C:\Users\mascherbauer\PycharmProjects\OSM\output_data") / f"2020_high_eff_combined_building_df_Murcia_non_clustered.xlsx", 
+    leeuwarden_df = pd.read_excel(Path(r"C:\Users\mascherbauer\PycharmProjects\OSM\output_data") / f"2020_M_combined_building_df_Murcia_non_clustered.xlsx", 
                           engine="openpyxl")
     leeuwarden_df["region"] = "Leeuwarden"
     
@@ -170,18 +169,96 @@ def show_building_attributes():
     df = pd.concat([murcia_df[common_columns], leeuwarden_df[common_columns]], axis=0)
 
     df.boxplot(by="region", column="area")
+    plt.suptitle("")
+    plt.title("")
     plt.ylabel("floor area (m$^2$)")
     plt.tight_layout()
     plt.savefig(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") / "ECEMF_building_areas_boxplot.png")
     plt.close()
 
+    df.boxplot(by="region", column="percentage attached surface area")
+    plt.suptitle("")
+    plt.title("")
+    plt.ylabel("percentage of attached wall area")
+    plt.tight_layout()
+    plt.savefig(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") / "ECEMF_attached_wall_boxplot.png")
+    plt.close()
+
     category1_pct = calculate_percentage_of_categorial_data(df, 'type')
     category1_pct.plot(kind="bar", stacked=True)
-    plt.ylabel("percentage")
+    plt.ylabel("percentage share")
+    plt.xticks(rotation="horizontal")
     plt.tight_layout()
     plt.savefig(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") / "ECEMF_SFH_MFH_percentage_barplot.png")
     plt.close()
 
-show_building_attributes()
+
+def plot_comillas_results():
+    path2data = Path(__file__).parent / "Comillas_results.xlsx"
+    for name in ["Low Voltage", "Medium Voltage", "Transformers", "Power losses"]:
+        df = pd.read_excel(path2data, sheet_name=name, header=[0, 1])
+        df.columns = pd.MultiIndex.from_tuples(df.columns)
+        # Reshape the DataFrame
+        df.columns = ['_'.join(col).strip() for col in df.columns.values]
+        melted_df = pd.melt(df, id_vars=['Policy_Prosumager'], var_name='policy_prosumager', value_name='percentage increase (%)')
+        melted_df[['policy scenario', 'prosumager scenario']] = melted_df['policy_prosumager'].str.split('_', expand=True)
+        melted_df.drop(columns="policy_prosumager", inplace=True)
+        melted_df['policy scenario'] = melted_df['policy scenario'].replace({"Weak": "Weak Policy", "Strong": "Strong Policy"})
+        melted_df['prosumager scenario'] = melted_df['prosumager scenario'].replace({"High": "Prosumager-High", "Medium":  "Prosumager-Medium", "Low":  "Prosumager-Low"})
+
+        final_df = melted_df.rename(columns={"Policy_Prosumager": "year"})
+        final_df = final_df.loc[final_df.loc[:, "year"] != 2020, :]
+
+        matplotlib.rc("font", **{"size": 28})
+        fig, ax = plt.subplots(figsize=(20, 16))
+        # Define unique groups for policy and prosumager scenarios
+        unique_groups = final_df[['policy scenario', 'prosumager scenario']].drop_duplicates()
+
+        # Define a color palette
+        palette = sns.color_palette("pastel6", len(final_df['year'].unique()))
+
+        # Plot each year as a separate bar, stacked by the 'percentage increase (%)'
+        for i, (policy, prosumager) in enumerate(unique_groups.values):
+            group_df = final_df[(final_df['policy scenario'] == policy) & (final_df['prosumager scenario'] == prosumager)]
+            bottom = 0
+            for j, year in enumerate(sorted(group_df['year'].unique())):
+                data = group_df[group_df['year'] == year]
+                ax.bar(i, data['percentage increase (%)'].values[0], bottom=bottom, color=palette[j], edgecolor='white', label=year if i == 0 else "")
+                bottom += data['percentage increase (%)'].values[0]
+
+        # Add labels and title
+        ax.set_xticks(range(len(unique_groups)))
+        ax.set_xticklabels([f"{policy}\n{prosumager}" for policy, prosumager in unique_groups.values], rotation=45, ha="right")
+        if "Voltage" in name:
+            add = "lines"
+        else:
+            add = ""
+        ax.set_ylabel(f'{name} {add} percentage increase (%)')
+        ax.legend(title='Year', bbox_to_anchor=(1.05, 1), loc='upper left')
+
+        plt.tight_layout()
+        plt.savefig(path2data.parent / f"Murcia_results_{name}.png")
+        plt.close()
+# line_plot(add_no_heating_to_heating_dict(heating_murcia_high_eff), graphik_name="Murcia_H_heating_systems", stacked=True)
+# line_plot(add_no_heating_to_heating_dict(heating_murcia_moderate_eff), graphik_name="Murcia_M_heating_systems", stacked=True)
+
+# line_plot(devices_murcia_high_eff, graphik_name="Devices_murcia_high_eff", stacked=False)
+# line_plot(devices_murcia_moderate_eff, graphik_name="Devices_murcia_low_eff", stacked=False)
+
+
+
+# line_plot(add_no_heating_to_heating_dict(heating_leeuwarden_high_eff), graphik_name="Leeuwarden_strong_policy_heating_systems", stacked=True)
+# line_plot(add_no_heating_to_heating_dict(heating_leeuwarden_moderate_eff), graphik_name="Leeuwarden_weak_policy_heating_systems", stacked=True)
+
+# line_plot(devices_leeuwarden_high_eff, graphik_name="Devices_Leeuwarden_Strong_policy", stacked=False)
+# line_plot(devices_leeuwarden_moderate_eff, graphik_name="Devices_Leeuwarden_Weak_policy", stacked=False)
+
+
+# show_building_attributes()
+
+
+plot_comillas_results()
+
+
 
 
