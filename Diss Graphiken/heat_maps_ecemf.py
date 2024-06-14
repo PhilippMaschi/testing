@@ -182,6 +182,7 @@ def select_cmap(metric: str):
 
 def plot_baseyear(region: str, region_gdf: gpd.GeoDataFrame, scenario: dict, metric: str, variable_name: str, v_dict: dict):
     print(f"creating 2020 plot for {metric}")
+    fontsize = 18
     file_name = get_file_name(scenario)
     parquet_file = f"{metric}_{file_name}.parquet.gzip"
     if normed:
@@ -214,8 +215,11 @@ def plot_baseyear(region: str, region_gdf: gpd.GeoDataFrame, scenario: dict, met
                 ax=ax,
                 legend_kwds={'extend':'both'},
                 )
-    cbar = plt.colorbar(sm, ax=ax, extend='both')
-    cbar.ax.set_ylabel(f'{variable_name}')
+    cbar = plt.colorbar(sm, ax=ax, extend='both', fraction=0.035, pad=0.0)
+    cbar.ax.set_ylabel(f'{variable_name}', fontsize=fontsize)
+    cbar.ax.tick_params(labelsize=fontsize)
+    ax.set_xticks([])
+    ax.set_yticks([])
     plt.tight_layout()
     if normed:
         plt.savefig(Path("Diss Graphiken") / f"Density_map{metric}_{region}_2020_Normed.svg")
@@ -238,10 +242,11 @@ def create_single_scenarios_from_year_scenarios(year_scens: dict):
 
 
 def create_big_subplot_with_density_maps(region: str, region_gdf: gpd.GeoDataFrame, scenario_dict: dict, v_dict: dict, metric_dict: dict):
+    fontsize = 18
     for metric, variable_name in metric_dict.items():
         
         # create subplots for each metric:
-        fig, axes = plt.subplots(nrows=6, ncols=3, figsize=(20, 16))
+        fig, axes = plt.subplots(nrows=6, ncols=3, figsize=(40, 32))
         
         for j, (scenario_name, year_scenarios) in enumerate(scenario_dict.items()):
             print(f"creating plot for {scenario_name}")
@@ -283,8 +288,11 @@ def create_big_subplot_with_density_maps(region: str, region_gdf: gpd.GeoDataFra
                          ax=axes[i_row, i_column],
                          legend_kwds={'extend':'both'},
                          )
-                cbar = plt.colorbar(sm, ax=axes[i_row, i_column], extend='both')
-                cbar.ax.set_ylabel(f'{variable_name}')
+                axes[i_row, i_column].set_xticks([])
+                axes[i_row, i_column].set_yticks([])
+                cbar = plt.colorbar(sm, ax=axes[i_row, i_column], extend='both', fraction=0.035, pad=0.03)
+                cbar.ax.set_ylabel(f'{variable_name}', fontsize=fontsize)
+                cbar.ax.tick_params(labelsize=fontsize)
 
         plt.tight_layout()
         if normed:
