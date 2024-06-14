@@ -215,7 +215,7 @@ def plot_baseyear(region: str, region_gdf: gpd.GeoDataFrame, scenario: dict, met
                 ax=ax,
                 legend_kwds={'extend':'both'},
                 )
-    cbar = plt.colorbar(sm, ax=ax, extend='both', fraction=0.035, pad=0.0)
+    cbar = plt.colorbar(sm, ax=ax, extend='both', fraction=0.035, pad=0.01)
     cbar.ax.set_ylabel(f'{variable_name}', fontsize=fontsize)
     cbar.ax.tick_params(labelsize=fontsize)
     ax.set_xticks([])
@@ -290,7 +290,7 @@ def create_big_subplot_with_density_maps(region: str, region_gdf: gpd.GeoDataFra
                          )
                 axes[i_row, i_column].set_xticks([])
                 axes[i_row, i_column].set_yticks([])
-                cbar = plt.colorbar(sm, ax=axes[i_row, i_column], extend='both', fraction=0.035, pad=0.03)
+                cbar = plt.colorbar(sm, ax=axes[i_row, i_column], extend='both', fraction=0.035, pad=0.01)
                 cbar.ax.set_ylabel(f'{variable_name}', fontsize=fontsize)
                 cbar.ax.tick_params(labelsize=fontsize)
 
