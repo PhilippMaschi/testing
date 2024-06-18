@@ -1,9 +1,11 @@
 import geopandas as gpd
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
 from pathlib import Path
 import os
 import pickle
+import numpy as np
 
 # Set the environment variable to increase the timeout to 5 seconds
 os.environ['PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT'] = '5'
@@ -103,9 +105,14 @@ for i, prosumager_shares in enumerate([Low, Medium, High]):
 
 
 def get_file_name(dictionary: dict):
+    if dictionary["year"] == 2020:  # for 2020 the scenario is always the same
+        building_scenario = "H"
+    else:
+        building_scenario = dictionary['building_scenario']
+
     return f"{dictionary['year']}_" \
            f"{dictionary['region']}_" \
-           f"{dictionary['building_scenario']}_" \
+           f"{building_scenario}_" \
            f"PV-{round(dictionary['pv_installation_percentage'] * 100)}%_" \
            f"DHW-{round(dictionary['dhw_storage_percentage'] * 100)}%_" \
            f"Buffer-{round(dictionary['buffer_storage_percentage'] * 100)}%_" \
@@ -120,9 +127,18 @@ def get_file_name(dictionary: dict):
 
 
 def load_file_from_server(region: str, filename: str):
-    path_to_results_on_server = Path(f"X:\projects4\workspace_philippm\FLEX\projects\ECEMF_T4.3_{region}\data_output")
+    path_to_results_on_server = Path(f"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/ECEMF_T4.3_{region}/data_output")
     return pd.read_parquet(path_to_results_on_server / filename)
 
+def load_normed_profiles(region: str, filename: str, variable_name: str):
+    df = load_summed_profiles(region=region, filename=filename, variable_name=variable_name)
+    # load building component to get Af
+    path_to_building_component = Path(f"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/data/input_operation/ECEMF_T4.3_{region}_2020_H") / "OperationScenario_Component_Building.xlsx"
+    building_df = pd.read_excel(path_to_building_component, engine="openpyxl")
+    merged = df.merge(building_df.loc[:, ["ID_Building", "Af"]], on="ID_Building")
+    merged[variable_name] = merged[variable_name] / merged["Af"]
+    merged.drop(columns="Af", inplace=True)
+    return merged
 
 def load_summed_profiles(region: str, filename: str, variable_name: str):
     parquet_file = load_file_from_server(region, filename)
@@ -161,25 +177,54 @@ def select_cmap(metric: str):
         cmap = "Blues"
     elif "demand" in metric.lower():
         cmap = "Greens"
+    return cmap
 
 
-def plot_baseyear(region: str, region_gdf: gpd.GeoDataFrame, scenario: dict, metric: str, variable_name: str):
+def plot_baseyear(region: str, region_gdf: gpd.GeoDataFrame, scenario: dict, metric: str, variable_name: str, v_dict: dict):
     print(f"creating 2020 plot for {metric}")
+    fontsize = 18
     file_name = get_file_name(scenario)
     parquet_file = f"{metric}_{file_name}.parquet.gzip"
-    summed_df = load_summed_profiles(region=region,
-                                filename=parquet_file,
-                                variable_name=variable_name)
-    gdf = region_gdf.merge(summed_df, on="ID_Building")
+    if normed:
+        profiles = load_normed_profiles(region=region, 
+                                        filename=parquet_file, 
+                                        variable_name=variable_name)
+    else:
+        profiles = load_summed_profiles(region=region,
+                                    filename=parquet_file,
+                                    variable_name=variable_name)
+
+    gdf = region_gdf.merge(profiles, on="ID_Building")
+
+    vmin, vmax = v_dict[metric]
+    c_map = plt.get_cmap(select_cmap(metric=metric))
+    cmap_with_under_over = colors.ListedColormap(c_map(np.linspace(0, 1, c_map.N)))
+    cmap_with_under_over.set_under('lightgray')
+    cmap_with_under_over.set_over('gold')
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    # Create a ScalarMappable and set under and over colors
+    sm = plt.cm.ScalarMappable(cmap=cmap_with_under_over, norm=norm)
+    sm.set_array([])  # Only needed for the colorbar
+    
     fig = plt.figure(figsize=(20, 20))
     ax=plt.gca()
     gdf.plot(column=variable_name, 
-                cmap=select_cmap(metric=metric), 
-                legend=True, 
-                vmin=0,
-                ax=ax)
+                legend=False, 
+                cmap=cmap_with_under_over,
+                norm=norm, 
+                ax=ax,
+                legend_kwds={'extend':'both'},
+                )
+    cbar = plt.colorbar(sm, ax=ax, extend='both', fraction=0.035, pad=0.0)
+    cbar.ax.set_ylabel(f'{variable_name}', fontsize=fontsize)
+    cbar.ax.tick_params(labelsize=fontsize)
+    ax.set_xticks([])
+    ax.set_yticks([])
     plt.tight_layout()
-    plt.savefig(Path("Diss Graphiken") / f"Density_map{metric}_{region}_2020.svg")
+    if normed:
+        plt.savefig(Path("Diss Graphiken") / f"Density_map{metric}_{region}_2020_Normed.svg")
+    else:
+        plt.savefig(Path("Diss Graphiken") / f"Density_map{metric}_{region}_2020.svg")
     plt.close()
     print(f"created 2020 desity map for {metric} {region}")
 
@@ -196,13 +241,12 @@ def create_single_scenarios_from_year_scenarios(year_scens: dict):
     return scenarios
 
 
-def create_big_subplot_with_density_maps(region: str, region_gdf: gpd.GeoDataFrame, scenario_dict: dict):
-    for metric, variable_name in {"Heating_q": "yearly heat demand (kWh)", 
-                                    "Demand": "yearly electricity demand (kWh)", 
-                                    "Cooling_e": "yearly cooling demand (kWh)"}.items():
+def create_big_subplot_with_density_maps(region: str, region_gdf: gpd.GeoDataFrame, scenario_dict: dict, v_dict: dict, metric_dict: dict):
+    fontsize = 18
+    for metric, variable_name in metric_dict.items():
         
         # create subplots for each metric:
-        fig, axes = plt.subplots(nrows=6, ncols=3, figsize=(20, 16))
+        fig, axes = plt.subplots(nrows=6, ncols=3, figsize=(40, 32))
         
         for j, (scenario_name, year_scenarios) in enumerate(scenario_dict.items()):
             print(f"creating plot for {scenario_name}")
@@ -212,39 +256,64 @@ def create_big_subplot_with_density_maps(region: str, region_gdf: gpd.GeoDataFra
                 if scen["year"] == 2020:
                     # plot the baseyear in the first run only:
                     if j == 0:
-                        plot_baseyear(region=region, region_gdf=region_gdf, scenario=scen, metric=metric, variable_name=variable_name)
+                        plot_baseyear(region=region, region_gdf=region_gdf, scenario=scen, metric=metric, variable_name=variable_name, v_dict=v_dict)
                     continue
                 i_row, i_column = find_ax_row_column(scen_name=scenario_name, year=scen["year"])
                 file_name = get_file_name(scen)
 
-
+                vmin, vmax = v_dict[metric]
                 parquet_file = f"{metric}_{file_name}.parquet.gzip"
-                summed_df = load_summed_profiles(region=region,
-                                            filename=parquet_file,
-                                            variable_name=variable_name)
-                gdf = region_gdf.merge(summed_df, on="ID_Building")
-
+                if normed:
+                    profiles = load_normed_profiles(region=region, 
+                                                    filename=parquet_file, 
+                                                    variable_name=variable_name)
+                else:
+                    profiles = load_summed_profiles(region=region,
+                                                filename=parquet_file,
+                                                variable_name=variable_name)
+                gdf = region_gdf.merge(profiles, on="ID_Building")
+                c_map = plt.get_cmap(select_cmap(metric=metric))
+                cmap_with_under_over = colors.ListedColormap(c_map(np.linspace(0, 1, c_map.N)))
+                cmap_with_under_over.set_under('lightgray')
+                cmap_with_under_over.set_over('gold')
+                norm = colors.Normalize(vmin=vmin, vmax=vmax)
+                # Create a ScalarMappable and set under and over colors
+                sm = plt.cm.ScalarMappable(cmap=cmap_with_under_over, norm=norm)
+                sm.set_array([])  # Only needed for the colorbar
+                
                 gdf.plot(column=variable_name, 
-                         cmap=select_cmap(metric=metric), 
-                         legend=True, 
+                         cmap=cmap_with_under_over,
+                         norm=norm, 
+                         legend=False, 
                          ax=axes[i_row, i_column],
-                         vmin=0,
-                         vmax=10_000)
+                         legend_kwds={'extend':'both'},
+                         )
+                axes[i_row, i_column].set_xticks([])
+                axes[i_row, i_column].set_yticks([])
+                cbar = plt.colorbar(sm, ax=axes[i_row, i_column], extend='both', fraction=0.035, pad=0.03)
+                cbar.ax.set_ylabel(f'{variable_name}', fontsize=fontsize)
+                cbar.ax.tick_params(labelsize=fontsize)
 
         plt.tight_layout()
-        plt.savefig(Path("Diss Graphiken") / f"Density_map_{region}{metric}.svg")
-        plt.show()
+        if normed:
+            plt.savefig(Path("Diss Graphiken") / f"Density_map_{region}{metric}_Normed.svg")
+        else:
+            plt.savefig(Path("Diss Graphiken") / f"Density_map_{region}{metric}.svg")
         plt.close()
         print(f"saved plot for {metric} {region}")
 
 
-def vamx_for_density_maps(scenario_dict, region: str):
-    file_path = Path(__file__).parent / f"vmax_dictionary_{region}.pkl"
+def vamx_for_density_maps(scenario_dict, region: str, normed: bool, metric_dict: dict):
+    if normed:
+        file_path = Path(__file__).parent / f"vmax_dictionary_{region}_normed.pkl"
+    else:
+        file_path = Path(__file__).parent / f"vmax_dictionary_{region}.pkl"
+
     if not file_path.exists():
+        print("creating dictionary containing vmin and vmax for plots")
+        v_dict = {}
         # create dict for heating, cooling, electricity with max values
-        for metric, variable_name in {"Heating_q": "yearly heat demand (kWh)", 
-                                "Demand": "yearly electricity demand (kWh)", 
-                                "Cooling_e": "yearly cooling demand (kWh)"}.items():
+        for metric, variable_name in metric_dict.items():
             metric_list = []
             for j, (scenario_name, year_scenarios) in enumerate(scenario_dict.items()):
                 scenarios = create_single_scenarios_from_year_scenarios(year_scens=year_scenarios)
@@ -252,33 +321,47 @@ def vamx_for_density_maps(scenario_dict, region: str):
                     parquet_file = f"{metric}_{get_file_name(scen)}.parquet.gzip"
                     # to get a nice graph the outliers have to be ignored
                     # we take the max of the 90th percentile excluding the highest 10th percentile
-                    profiles = load_summed_profiles(region=region, filename=parquet_file, variable_name=variable_name)
-                    
+                    if normed:
+                        profiles = load_normed_profiles(region=region, filename=parquet_file, variable_name=variable_name)
+                        metric_list.append(np.ceil(profiles[variable_name].quantile(0.9)))
+                        metric_list.append(np.floor(profiles[variable_name].quantile(0.1)))
+                    else:
+                        profiles = load_summed_profiles(region=region, filename=parquet_file, variable_name=variable_name)
+                        metric_list.append(np.ceil(profiles[variable_name].quantile(0.9) / 1_000) * 1_000)
+                        metric_list.append(np.floor(profiles[variable_name].quantile(0.1) / 1_000) * 1_000)
+            v_dict[metric] = (min(metric_list), max(metric_list))
 
-
-
+        # save to pickle file
         with open(file_path, 'wb') as f:
-            pickle.dump(dictionary, f)
-
-
+            pickle.dump(v_dict, f)
+        print(f"saved dictionary for vmin and vmax for {region}")
     with open(file_path, 'rb') as f:
         loaded_dict = pickle.load(f)
     return loaded_dict
 
 # murcia shapefile
-path_to_gdf_file_murcia = Path(r"C:\Users\mascherbauer\PycharmProjects\OSM\output_data")
+path_to_gdf_files = Path(__file__).parent / "input_data"
 file_murica = "H_geometry_df_Murcia.shp"
-murcia_gdf = gpd.read_file(path_to_gdf_file_murcia / file_murica).rename(columns={"ID_Buildin": "ID_Building"})
+murcia_gdf = gpd.read_file(path_to_gdf_files / file_murica).rename(columns={"ID_Buildin": "ID_Building"})
 
-path_to_gdf_file_leeuwarden = Path(r"C:\Users\mascherbauer\PycharmProjects\OSM\output_data")
 file_leeuwarden = "H_geometry_df_Leeuwarden.shp"
-leeuwarden_gdf = gpd.read_file(path_to_gdf_file_leeuwarden / file_leeuwarden).rename(columns={"ID_Buildin": "ID_Building"})
+leeuwarden_gdf = gpd.read_file(path_to_gdf_files / file_leeuwarden).rename(columns={"ID_Buildin": "ID_Building"})
 
-# TODO find out vmax for each plot
-# find vmax
-vamx_for_density_maps(scenario_dict=scenario_dict_leeuwarden, region="Leeuwarden")
-create_big_subplot_with_density_maps(region="Leeuwarden", region_gdf=leeuwarden_gdf, scenario_dict=scenario_dict_leeuwarden)
 
-# create_big_subplot_with_density_maps(region="Murica", region_gdf=murcia_gdf, scenario_dict=scenario_dict_murcia)
+normed = True
+if normed:
+    metric_dict = {"Heating_q": "yearly heat demand (kWh/m$^2$)", 
+                "Demand": "yearly electricity demand (kWh/m$^2$)", 
+                "Cooling_e": "yearly cooling demand (kWh/m$^2$)"}
+else:
+    metric_dict = {"Heating_q": "yearly heat demand (kWh)", 
+                    "Demand": "yearly electricity demand (kWh)", 
+                    "Cooling_e": "yearly cooling demand (kWh)"}
+    
+v_dict = vamx_for_density_maps(scenario_dict=scenario_dict_leeuwarden, region="Leeuwarden", normed=normed, metric_dict=metric_dict)
+create_big_subplot_with_density_maps(region="Leeuwarden", region_gdf=leeuwarden_gdf, scenario_dict=scenario_dict_leeuwarden, v_dict=v_dict, metric_dict=metric_dict)
+
+v_dict = vamx_for_density_maps(scenario_dict=scenario_dict_murcia, region="Murcia", normed=normed, metric_dict=metric_dict)
+create_big_subplot_with_density_maps(region="Murcia", region_gdf=murcia_gdf, scenario_dict=scenario_dict_murcia, v_dict=v_dict, metric_dict=metric_dict)
 
 
