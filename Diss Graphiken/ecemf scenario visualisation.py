@@ -4,8 +4,20 @@ import pandas as pd
 from pathlib import Path
 from matplotlib.ticker import PercentFormatter
 import matplotlib
+import plotly.express as px
 
 YEARS = [2020, 2030, 2040, 2050]
+
+# data that is the same for both case studies and for both policy scenarios:
+SAME_FOR_ALL = {
+    "DHW tank": [0.5, 0.55, 0.6, 0.65],
+    "Buffer tank": [0, 0.05, 0.15, 0.25],
+    "Battery weak policy": [0.1, 0.12, 0.16, 0.25],
+    "Battery strong policy": [0.1, 0.12, 0.2, 0.3],
+    "Prosumager low": [0, 0.05, 0.1, 0.2],
+    "Prosumager medium": [0, 0.1, 0.3, 0.5],
+    "Prosumager high": [0, 0.15, 0.4, 0.8],
+}
 
 # Murcia scnearios
 # Strong policy
@@ -100,6 +112,74 @@ def add_no_heating_to_heating_dict(heating_dict: dict) -> dict:
     return heating_dict
 
 
+def plot_same_for_all():
+    df = pd.DataFrame(SAME_FOR_ALL, index=YEARS)
+    prosumer_columns = [name for name in df.columns if "prosumager" in name.lower()]
+    linestyles = [':o', '-.o', '--d', '-x', ]
+    fig, ax = plt.subplots(figsize=(10, 6))
+    years = df.index.to_numpy()
+    bar_width = 2
+    ax.set_xticks(years)
+    colors = ['darkturquoise', 'blue', 'indianred', 'tomato']
+    df.drop(columns=prosumer_columns).plot(kind="line", stacked=False, ax=ax, alpha=1, style=linestyles, color=colors)  # Adjust transparency with alpha
+    ax.bar(years - bar_width, df['Prosumager low'], width=bar_width, alpha=0.5, label='Prosumager low', color="greenyellow")
+    ax.bar(years, df['Prosumager medium'], width=bar_width, alpha=0.5, label='Prosumager medium', color="limegreen")
+    ax.bar(years + bar_width, df['Prosumager high'], width=bar_width, alpha=0.5, label='Prosumager high', color="darkgreen")
+    ax.set_xlabel('Year', fontsize=18)
+    ax.set_ylabel('Percentage', fontsize=18)
+    ax.set_ylim(0, 1)
+    ax.yaxis.set_major_formatter(PercentFormatter(1))
+    plt.xticks(YEARS, fontsize=18)
+    plt.yticks(fontsize=18)
+    plt.legend(fontsize='large')
+
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") /
+                f"Scenario_independent_parameters_ecemf.svg")
+    plt.close()
+
+def show_pv_and_ac_change_over_all_scenarios():
+    new_dict = {
+        "AC strong policy Murcia": [value for _, value in devices_murcia_high_eff.items() if "AC" in _][0],
+        "AC weak policy Murcia": [value for _, value in devices_murcia_moderate_eff.items() if "AC" in _][0],
+        "AC strong policy Leeuwarden": [value for _, value in devices_leeuwarden_high_eff.items() if "AC" in _][0],
+        "AC weak policy Leeuwarden": [value for _, value in devices_leeuwarden_moderate_eff.items() if "AC" in _][0],
+        "PV strong policy Leeuwarden": [value for _, value in devices_leeuwarden_high_eff.items() if "PV" in _][0],
+        "PV weak policy Leeuwarden": [value for _, value in devices_leeuwarden_moderate_eff.items() if "PV" in _][0],
+        "PV strong policy Murcia": [value for _, value in devices_murcia_high_eff.items() if "PV" in _][0],
+        "PV weak policy Murcia": [value for _, value in devices_murcia_moderate_eff.items() if "PV" in _][0],
+    }
+
+
+    def create_df(dictionary):
+        df_ = pd.DataFrame(dictionary, index=YEARS).reset_index().rename(columns={"index": "year"}).melt(var_name="policy scenario", value_name="percentage", id_vars="year")
+        df_["region"] = df_["policy scenario"].apply(lambda x: "Murcia" if "Murcia" in x else "Leeuwarden")
+        df_["technology"] = df_["policy scenario"].apply(lambda x: "PV" if "PV" in x else "AC")
+        df_["policy scenario"] = df_["policy scenario"].apply(lambda x: x.replace(" Leeuwarden", "").replace("PV ", "").replace(" Murcia", ""))
+        return df_
+
+    df = create_df(new_dict)
+
+    fig = px.bar(data_frame=df,
+            x="year",
+            y="percentage",
+            color="technology",
+            pattern_shape="policy scenario",
+            barmode="group",
+            facet_col="region",
+            color_discrete_sequence=px.colors.qualitative.G10
+            )
+    fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+    fig.update_layout(
+    yaxis=dict(
+        tickformat=".0%",
+        title="Year"
+    ))
+    fig.show()
+    fig.write_image(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") /
+                f"PV and AC percentages ecemf.svg", engine="kaleido")
+
 
 def line_plot(dictionary: dict, graphik_name: str, stacked: bool):
     if stacked:
@@ -109,7 +189,7 @@ def line_plot(dictionary: dict, graphik_name: str, stacked: bool):
     else:
         kind="line"
         alpha=1
-        linestyles = [':o', '--', '-.', ':', '--D', '-x', '-x', '-x']
+        linestyles = [':o', '--', '-.', '-x', '--D',]
     # Create a DataFrame
     df = pd.DataFrame(dictionary, index=YEARS)
     prosumer_columns = [name for name in df.columns if "prosumager" in name.lower()]
@@ -254,6 +334,10 @@ def plot_comillas_results():
         plt.tight_layout()
         plt.savefig(path2data.parent / f"Murcia_results_{name}.png")
         plt.close()
+
+
+show_pv_and_ac_change_over_all_scenarios()
+plot_same_for_all()
 
 # line_plot(add_no_heating_to_heating_dict(heating_murcia_high_eff), graphik_name="Murcia_H_heating_systems", stacked=True)
 # line_plot(add_no_heating_to_heating_dict(heating_murcia_moderate_eff), graphik_name="Murcia_M_heating_systems", stacked=True)
