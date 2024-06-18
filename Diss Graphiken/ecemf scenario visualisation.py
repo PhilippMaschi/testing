@@ -112,6 +112,7 @@ def line_plot(dictionary: dict, graphik_name: str, stacked: bool):
         linestyles = [':o', '--', '-.', ':', '--D', '-x', '-x', '-x']
     # Create a DataFrame
     df = pd.DataFrame(dictionary, index=YEARS)
+    prosumer_columns = [name for name in df.columns if "prosumager" in name.lower()]
     colors = [
         '#1f77b4',  # blue
         '#ff7f0e',  # orange
@@ -121,8 +122,22 @@ def line_plot(dictionary: dict, graphik_name: str, stacked: bool):
     ]
     # Plotting the DataFrame
     fig, ax = plt.subplots(figsize=(10, 6))
-    df.plot(kind=kind, stacked=stacked, ax=ax, alpha=alpha, style=linestyles)  # Adjust transparency with alpha
+    if stacked:
+        df.plot(kind=kind, stacked=stacked, ax=ax, alpha=alpha, style=linestyles)  # Adjust transparency with alpha
 
+    else:
+        years = df.index.to_numpy()
+        bar_width = 2
+        ax.set_xticks(years)
+        df.drop(columns=prosumer_columns).plot(kind=kind, stacked=stacked, ax=ax, alpha=alpha, style=linestyles)  # Adjust transparency with alpha
+        ax.bar(years - bar_width, df['Prosumager low'], width=bar_width, alpha=0.5, label='Prosumager low')
+        ax.bar(years, df['Prosumager medium'], width=bar_width, alpha=0.5, label='Prosumager medium')
+        ax.bar(years + bar_width, df['Prosumager high'], width=bar_width, alpha=0.5, label='Prosumager high')
+ 
+        # ax2 = ax.twinx()
+        # ax2.set_xticks(df.index)
+        # df[prosumer_columns].plot(kind="bar", ax=ax2, alpha=alpha,)  # Adjust transparency with alpha
+        
     # Adding labels and title
     ax.set_xlabel('Year', fontsize=18)
     ax.set_ylabel('Percentage', fontsize=18)
@@ -239,25 +254,26 @@ def plot_comillas_results():
         plt.tight_layout()
         plt.savefig(path2data.parent / f"Murcia_results_{name}.png")
         plt.close()
+
 # line_plot(add_no_heating_to_heating_dict(heating_murcia_high_eff), graphik_name="Murcia_H_heating_systems", stacked=True)
 # line_plot(add_no_heating_to_heating_dict(heating_murcia_moderate_eff), graphik_name="Murcia_M_heating_systems", stacked=True)
 
-# line_plot(devices_murcia_high_eff, graphik_name="Devices_murcia_high_eff", stacked=False)
-# line_plot(devices_murcia_moderate_eff, graphik_name="Devices_murcia_low_eff", stacked=False)
+line_plot(devices_murcia_high_eff, graphik_name="Devices_murcia_high_eff", stacked=False)
+line_plot(devices_murcia_moderate_eff, graphik_name="Devices_murcia_low_eff", stacked=False)
 
 
 
 # line_plot(add_no_heating_to_heating_dict(heating_leeuwarden_high_eff), graphik_name="Leeuwarden_strong_policy_heating_systems", stacked=True)
 # line_plot(add_no_heating_to_heating_dict(heating_leeuwarden_moderate_eff), graphik_name="Leeuwarden_weak_policy_heating_systems", stacked=True)
 
-# line_plot(devices_leeuwarden_high_eff, graphik_name="Devices_Leeuwarden_Strong_policy", stacked=False)
-# line_plot(devices_leeuwarden_moderate_eff, graphik_name="Devices_Leeuwarden_Weak_policy", stacked=False)
+line_plot(devices_leeuwarden_high_eff, graphik_name="Devices_Leeuwarden_Strong_policy", stacked=False)
+line_plot(devices_leeuwarden_moderate_eff, graphik_name="Devices_Leeuwarden_Weak_policy", stacked=False)
 
 
 # show_building_attributes()
 
 
-plot_comillas_results()
+# plot_comillas_results()
 
 
 
