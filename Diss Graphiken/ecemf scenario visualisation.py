@@ -2,9 +2,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 from pathlib import Path
-from matplotlib.ticker import PercentFormatter
+from matplotlib.ticker import PercentFormatter, FuncFormatter
 import matplotlib
 import plotly.express as px
+import matplotlib.colors as mcolors
+from matplotlib.patches import Patch
 
 YEARS = [2020, 2030, 2040, 2050]
 
@@ -126,7 +128,7 @@ def plot_same_for_all():
     ax.bar(years, df['Prosumager medium'], width=bar_width, alpha=0.5, label='Prosumager medium', color="limegreen")
     ax.bar(years + bar_width, df['Prosumager high'], width=bar_width, alpha=0.5, label='Prosumager high', color="darkgreen")
     ax.set_xlabel('Year', fontsize=18)
-    ax.set_ylabel('Percentage', fontsize=18)
+    ax.set_ylabel('Percentage of buildings equiped \n with certain technology', fontsize=18)
     ax.set_ylim(0, 1)
     ax.yaxis.set_major_formatter(PercentFormatter(1))
     plt.xticks(YEARS, fontsize=18)
@@ -156,7 +158,7 @@ def show_pv_and_ac_change_over_all_scenarios():
         df_ = pd.DataFrame(dictionary, index=YEARS).reset_index().rename(columns={"index": "year"}).melt(var_name="policy scenario", value_name="percentage", id_vars="year")
         df_["region"] = df_["policy scenario"].apply(lambda x: "Murcia" if "Murcia" in x else "Leeuwarden")
         df_["technology"] = df_["policy scenario"].apply(lambda x: "PV" if "PV" in x else "AC")
-        df_["policy scenario"] = df_["policy scenario"].apply(lambda x: x.replace(" Leeuwarden", "").replace("PV ", "").replace(" Murcia", ""))
+        df_["policy scenario"] = df_["policy scenario"].apply(lambda x: x.replace(" Leeuwarden", "").replace("PV ", "").replace(" Murcia", "").replace("AC ", ""))
         return df_
 
     df = create_df(new_dict)
@@ -174,11 +176,11 @@ def show_pv_and_ac_change_over_all_scenarios():
     fig.update_layout(
     yaxis=dict(
         tickformat=".0%",
-        title="Year"
+        title="Percentage of buildings equiped with certain technology"
     ))
     fig.show()
     fig.write_image(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") /
-                f"PV and AC percentages ecemf.svg", engine="kaleido")
+                f"PV_and_AC_percentages_ecemf.svg", engine="kaleido")
 
 
 def line_plot(dictionary: dict, graphik_name: str, stacked: bool):
@@ -220,7 +222,7 @@ def line_plot(dictionary: dict, graphik_name: str, stacked: bool):
         
     # Adding labels and title
     ax.set_xlabel('Year', fontsize=18)
-    ax.set_ylabel('Percentage', fontsize=18)
+    ax.set_ylabel('Percentage share of heating systems (%)', fontsize=18)
     ax.set_ylim(0, 1)
     ax.yaxis.set_major_formatter(PercentFormatter(1))
     plt.xticks(YEARS, fontsize=18)
@@ -232,7 +234,7 @@ def line_plot(dictionary: dict, graphik_name: str, stacked: bool):
     # Show the plot
     plt.tight_layout()
     plt.savefig(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") /
-                f"{graphik_name}.png")
+                f"{graphik_name}.svg")
     plt.close()
 
 
@@ -289,75 +291,152 @@ def show_building_attributes():
 
 
 def plot_comillas_results():
-    path2data = Path(__file__).parent / "Comillas_results.xlsx"
+    path2data = Path(__file__).parent / "Comillas_results_Murica.xlsx"
     for name in ["Low Voltage", "Medium Voltage", "Transformers", "Power losses"]:
-        df = pd.read_excel(path2data, sheet_name=name, header=[0, 1])
+        df = pd.read_excel(path2data, sheet_name=name, header=[0, 1, 2])
         df.columns = pd.MultiIndex.from_tuples(df.columns)
         # Reshape the DataFrame
         df.columns = ['_'.join(col).strip() for col in df.columns.values]
-        melted_df = pd.melt(df, id_vars=['Policy_Prosumager'], var_name='policy_prosumager', value_name='percentage increase (%)')
-        melted_df[['policy scenario', 'prosumager scenario']] = melted_df['policy_prosumager'].str.split('_', expand=True)
-        melted_df.drop(columns="policy_prosumager", inplace=True)
-        melted_df['policy scenario'] = melted_df['policy scenario'].replace({"Weak": "Weak Policy", "Strong": "Strong Policy"})
-        melted_df['prosumager scenario'] = melted_df['prosumager scenario'].replace({"High": "Prosumager-High", "Medium":  "Prosumager-Medium", "Low":  "Prosumager-Low"})
+        melted_df = pd.melt(df, id_vars=['Policy_Prosumagers_EVs'], var_name='policy_prosumager_ev', value_name='percentage increase (%)')
+        melted_df[['Policy scenario', 'Prosumager scenario', "EV scenario"]] = melted_df['policy_prosumager_ev'].str.split('_', expand=True)
+        melted_df.drop(columns="policy_prosumager_ev", inplace=True)
+        melted_df['Policy scenario'] = melted_df['Policy scenario'].replace({"Weak": "Weak Policy", "Strong": "Strong Policy"})
+        melted_df['Prosumager scenario'] = melted_df['Prosumager scenario'].replace({"High": "Prosumager-High", "Medium":  "Prosumager-Medium", "Low":  "Prosumager-Low"})
 
-        final_df = melted_df.rename(columns={"Policy_Prosumager": "year"})
+        final_df = melted_df.rename(columns={"Policy_Prosumagers_EVs": "year"})
         final_df = final_df.loc[final_df.loc[:, "year"] != 2020, :]
+        final_df = final_df.sort_values("year", ascending=False)
+        final_df["percentage increase (%)"] = final_df["percentage increase (%)"] /100
+        final_df['year'] = final_df['year'].astype(str)
+
+        # px_fig = px.bar(
+        #     data_frame=final_df,
+        #     x="Prosumager scenario",
+        #     y="percentage increase (%)",
+        #     color="year",
+        #     facet_col="Policy scenario",
+        #     pattern_shape="EV scenario",
+        #     barmode="group",
+        #     color_discrete_sequence=px.colors.qualitative.G10,
+
+        # )
+        # px_fig.update_layout(
+        #     yaxis=dict(
+        #         tickformat=".0%",
+        #         title="Percentage increase (%)"
+        # ))
+        # px_fig.update_traces(base=[0 for i in px_fig.data])
+        # px_fig.update_layout(
+        #     legend=dict(
+        #         title="Year, EVs included",
+        #         itemsizing='constant'  # Ensure items are displayed as labels
+        #     ),
+        # )
+        # px_fig.for_each_xaxis(lambda axis: axis.update(title=''))
+        # px_fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+        # px_fig.show()
 
         matplotlib.rc("font", **{"size": 28})
         fig, ax = plt.subplots(figsize=(20, 16))
         # Define unique groups for policy and prosumager scenarios
-        unique_groups = final_df[['policy scenario', 'prosumager scenario']].drop_duplicates()
+        unique_groups = final_df[['Policy scenario', 'Prosumager scenario', "EV scenario"]].drop_duplicates()
 
         # Define a color palette
         palette = sns.color_palette("pastel6", len(final_df['year'].unique()))
+        def blend_color(color, blend_with, blend_factor):
+            color_rgba = mcolors.to_rgba(color)
+            blend_with_rgba = mcolors.to_rgba(blend_with)
+            blended_rgba = [(1 - blend_factor) * c + blend_factor * b for c, b in zip(color_rgba, blend_with_rgba)]
+            return blended_rgba
 
+        # Define custom grey tones
+        grey_light = "#B0B0B0"    # Light grey
+        grey_medium = "#808080"   # Medium grey
+
+        x_labels = ["low Prosumager", "medium Prosumager", "high Prosumager", "low Prosumager", "medium Prosumager", "high Prosumager"]
         # Plot each year as a separate bar, stacked by the 'percentage increase (%)'
-        for i, (policy, prosumager) in enumerate(unique_groups.values):
-            group_df = final_df[(final_df['policy scenario'] == policy) & (final_df['prosumager scenario'] == prosumager)]
-            bottom = 0
-            for j, year in enumerate(sorted(group_df['year'].unique())):
+        for i, (policy, prosumager, ev) in enumerate(unique_groups.values):
+            group_df = final_df[(final_df['Policy scenario'] == policy) & (final_df['Prosumager scenario'] == prosumager) & (final_df['EV scenario'] == ev)]
+
+            # weak policy is in 0-5, strong policy in positions 6-11
+            for j, year in enumerate(group_df['year'].unique()):
                 data = group_df[group_df['year'] == year]
-                ax.bar(i, data['percentage increase (%)'].values[0], bottom=bottom, color=palette[j], edgecolor='white', label=year if i == 0 else "")
-                bottom += data['percentage increase (%)'].values[0]
+                
+                if "low" in prosumager.lower():
+                    hatch = "///"
+                    if "weak" in policy.lower():
+                        position = 0 - 0.3
+                    else:
+                        position = 6 + 0.3
+                elif "medium" in prosumager.lower():
+                    hatch = "."
+                    if "weak" in policy.lower():
+                        position = 2 - 0.3
+                    else:
+                        position = 8 + 0.3
+                else:
+                    hatch = ""
+                    if "weak" in policy.lower():
+                        position = 4 - 0.3
+                    else:
+                        position = 10 + 0.3
+                
+                if ev == "Yes":
+                    color = mcolors.to_rgba(palette[j], alpha=1)
+                    position += 0.8
+                else:
+                    color = mcolors.to_rgba(blend_color(palette[j], grey_light, 0.5))
+
+                ax.bar(position, data['percentage increase (%)'].values[0], bottom=0, color=color, edgecolor='white', label=year if i == 0 else "", width=0.6, hatch=hatch)
 
         # Add labels and title
-        ax.set_xticks(range(len(unique_groups)))
-        ax.set_xticklabels([f"{policy}\n{prosumager}" for policy, prosumager in unique_groups.values], rotation=45, ha="right")
+        ax.set_xticks([2.5, 8.5])
+        ax.set_xticklabels(["Weak Policy", "Strong Policy"])
         if "Voltage" in name:
             add = "lines"
         else:
             add = ""
         ax.set_ylabel(f'{name} {add} percentage increase (%)')
-        ax.legend(title='Year', bbox_to_anchor=(1.05, 1), loc='upper left')
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
+        legend_elements = [
+            Patch(facecolor=palette[0], label="2050"),
+            Patch(facecolor=palette[1], label="2040"),
+            Patch(facecolor=palette[2], label="2030"),
+            Patch(facecolor="white", hatch="", label="high Prosumager share", edgecolor="black"),
+            Patch(facecolor="white", hatch="..", label="medium Prosumager share", edgecolor="black"),
+            Patch(facecolor="white", hatch="///", label="low Prosumager share", edgecolor="black"),
+            Patch(facecolor=grey_light, hatch="", label="with EV"),
+            Patch(facecolor=grey_medium, hatch="", label="without EV"),
+            ]
+        ax.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left')
 
         plt.tight_layout()
         plt.savefig(path2data.parent / f"Murcia_results_{name}.png")
         plt.close()
 
 
-show_pv_and_ac_change_over_all_scenarios()
-plot_same_for_all()
+# show_pv_and_ac_change_over_all_scenarios()
+# plot_same_for_all()
 
 # line_plot(add_no_heating_to_heating_dict(heating_murcia_high_eff), graphik_name="Murcia_H_heating_systems", stacked=True)
 # line_plot(add_no_heating_to_heating_dict(heating_murcia_moderate_eff), graphik_name="Murcia_M_heating_systems", stacked=True)
 
-line_plot(devices_murcia_high_eff, graphik_name="Devices_murcia_high_eff", stacked=False)
-line_plot(devices_murcia_moderate_eff, graphik_name="Devices_murcia_low_eff", stacked=False)
+# line_plot(devices_murcia_high_eff, graphik_name="Devices_murcia_high_eff", stacked=False)
+# line_plot(devices_murcia_moderate_eff, graphik_name="Devices_murcia_low_eff", stacked=False)
 
 
 
 # line_plot(add_no_heating_to_heating_dict(heating_leeuwarden_high_eff), graphik_name="Leeuwarden_strong_policy_heating_systems", stacked=True)
 # line_plot(add_no_heating_to_heating_dict(heating_leeuwarden_moderate_eff), graphik_name="Leeuwarden_weak_policy_heating_systems", stacked=True)
 
-line_plot(devices_leeuwarden_high_eff, graphik_name="Devices_Leeuwarden_Strong_policy", stacked=False)
-line_plot(devices_leeuwarden_moderate_eff, graphik_name="Devices_Leeuwarden_Weak_policy", stacked=False)
+# line_plot(devices_leeuwarden_high_eff, graphik_name="Devices_Leeuwarden_Strong_policy", stacked=False)
+# line_plot(devices_leeuwarden_moderate_eff, graphik_name="Devices_Leeuwarden_Weak_policy", stacked=False)
 
 
 # show_building_attributes()
 
 
-# plot_comillas_results()
+plot_comillas_results()
 
 
 
