@@ -114,7 +114,7 @@ def add_no_heating_to_heating_dict(heating_dict: dict) -> dict:
     return heating_dict
 
 
-def plot_same_for_all():
+def plot_params_same_for_all():
     df = pd.DataFrame(SAME_FOR_ALL, index=YEARS)
     prosumer_columns = [name for name in df.columns if "prosumager" in name.lower()]
     linestyles = [':o', '-.o', '--d', '-x', ]
@@ -255,10 +255,11 @@ def calculate_percentage_of_categorial_data(df, column):
 
 
 def show_building_attributes():
+    # TODO these are the wrong files, they get cleaned again when creating the scenarios
     murcia_df = pd.read_excel(Path(r"C:\Users\mascherbauer\PycharmProjects\OSM\output_data") / f"2020_H_combined_building_df_Leeuwarden_non_clustered.xlsx", 
                           engine="openpyxl")
     murcia_df["region"] = "Murcia"
-    leeuwarden_df = pd.read_excel(Path(r"C:\Users\mascherbauer\PycharmProjects\OSM\output_data") / f"2020_M_combined_building_df_Murcia_non_clustered.xlsx", 
+    leeuwarden_df = pd.read_excel(Path(r"C:\Users\mascherbauer\PycharmProjects\OSM\output_data") / f"2020_H_combined_building_df_Murcia_non_clustered.xlsx", 
                           engine="openpyxl")
     leeuwarden_df["region"] = "Leeuwarden"
     
@@ -309,33 +310,6 @@ def plot_comillas_results():
         final_df["percentage increase (%)"] = final_df["percentage increase (%)"] /100
         final_df['year'] = final_df['year'].astype(str)
 
-        # px_fig = px.bar(
-        #     data_frame=final_df,
-        #     x="Prosumager scenario",
-        #     y="percentage increase (%)",
-        #     color="year",
-        #     facet_col="Policy scenario",
-        #     pattern_shape="EV scenario",
-        #     barmode="group",
-        #     color_discrete_sequence=px.colors.qualitative.G10,
-
-        # )
-        # px_fig.update_layout(
-        #     yaxis=dict(
-        #         tickformat=".0%",
-        #         title="Percentage increase (%)"
-        # ))
-        # px_fig.update_traces(base=[0 for i in px_fig.data])
-        # px_fig.update_layout(
-        #     legend=dict(
-        #         title="Year, EVs included",
-        #         itemsizing='constant'  # Ensure items are displayed as labels
-        #     ),
-        # )
-        # px_fig.for_each_xaxis(lambda axis: axis.update(title=''))
-        # px_fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-        # px_fig.show()
-
         matplotlib.rc("font", **{"size": 28})
         fig, ax = plt.subplots(figsize=(20, 16))
         # Define unique groups for policy and prosumager scenarios
@@ -343,17 +317,8 @@ def plot_comillas_results():
 
         # Define a color palette
         palette = sns.color_palette("pastel6", len(final_df['year'].unique()))
-        def blend_color(color, blend_with, blend_factor):
-            color_rgba = mcolors.to_rgba(color)
-            blend_with_rgba = mcolors.to_rgba(blend_with)
-            blended_rgba = [(1 - blend_factor) * c + blend_factor * b for c, b in zip(color_rgba, blend_with_rgba)]
-            return blended_rgba
 
-        # Define custom grey tones
-        grey_light = "#B0B0B0"    # Light grey
-        grey_medium = "#808080"   # Medium grey
-
-        x_labels = ["low Prosumager", "medium Prosumager", "high Prosumager", "low Prosumager", "medium Prosumager", "high Prosumager"]
+        x_labels = ["low", "medium", "high", "low", "medium", "high"]
         # Plot each year as a separate bar, stacked by the 'percentage increase (%)'
         for i, (policy, prosumager, ev) in enumerate(unique_groups.values):
             group_df = final_df[(final_df['Policy scenario'] == policy) & (final_df['Prosumager scenario'] == prosumager) & (final_df['EV scenario'] == ev)]
@@ -363,19 +328,19 @@ def plot_comillas_results():
                 data = group_df[group_df['year'] == year]
                 
                 if "low" in prosumager.lower():
-                    hatch = "///"
+
                     if "weak" in policy.lower():
                         position = 0 - 0.3
                     else:
                         position = 6 + 0.3
                 elif "medium" in prosumager.lower():
-                    hatch = "."
+
                     if "weak" in policy.lower():
                         position = 2 - 0.3
                     else:
                         position = 8 + 0.3
                 else:
-                    hatch = ""
+
                     if "weak" in policy.lower():
                         position = 4 - 0.3
                     else:
@@ -384,14 +349,17 @@ def plot_comillas_results():
                 if ev == "Yes":
                     color = mcolors.to_rgba(palette[j], alpha=1)
                     position += 0.8
+                    hatch = ""
                 else:
-                    color = mcolors.to_rgba(blend_color(palette[j], grey_light, 0.5))
+                    color = mcolors.to_rgba(palette[j], alpha=1)
+                    hatch = "///"
 
                 ax.bar(position, data['percentage increase (%)'].values[0], bottom=0, color=color, edgecolor='white', label=year if i == 0 else "", width=0.6, hatch=hatch)
 
         # Add labels and title
-        ax.set_xticks([2.5, 8.5])
-        ax.set_xticklabels(["Weak Policy", "Strong Policy"])
+        ax.set_xticks([0.1, 2.1, 4.1, 6.7, 8.7, 10.7])
+        ax.set_xticklabels(x_labels, rotation=0)
+        ax.set_xlabel("Prosumager scenario")
         if "Voltage" in name:
             add = "lines"
         else:
@@ -402,21 +370,21 @@ def plot_comillas_results():
             Patch(facecolor=palette[0], label="2050"),
             Patch(facecolor=palette[1], label="2040"),
             Patch(facecolor=palette[2], label="2030"),
-            Patch(facecolor="white", hatch="", label="high Prosumager share", edgecolor="black"),
-            Patch(facecolor="white", hatch="..", label="medium Prosumager share", edgecolor="black"),
-            Patch(facecolor="white", hatch="///", label="low Prosumager share", edgecolor="black"),
-            Patch(facecolor=grey_light, hatch="", label="with EV"),
-            Patch(facecolor=grey_medium, hatch="", label="without EV"),
+            Patch(facecolor="white", hatch="///", label="without EV", edgecolor="black"),
+            Patch(facecolor="white", hatch="", label="with EV", edgecolor="black"),
             ]
         ax.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left')
 
+        ax2 = ax.twiny()
+        ax2.set_xticks([0.25, 0.75])
+        ax2.set_xticklabels(["Weak Policy", "Strong Policy"])
         plt.tight_layout()
-        plt.savefig(path2data.parent / f"Murcia_results_{name}.png")
+        plt.savefig(path2data.parent / f"Murcia_results_{name}.svg")
         plt.close()
 
 
 # show_pv_and_ac_change_over_all_scenarios()
-# plot_same_for_all()
+# plot_params_same_for_all()
 
 # line_plot(add_no_heating_to_heating_dict(heating_murcia_high_eff), graphik_name="Murcia_H_heating_systems", stacked=True)
 # line_plot(add_no_heating_to_heating_dict(heating_murcia_moderate_eff), graphik_name="Murcia_M_heating_systems", stacked=True)
