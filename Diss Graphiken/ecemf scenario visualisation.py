@@ -291,96 +291,109 @@ def show_building_attributes():
     plt.close()
 
 
-def plot_comillas_results():
+def prepare_final_df(path_2_file, sheetname):
+    df = pd.read_excel(path_2_file, sheet_name=sheetname, header=[0, 1, 2])
+    df.columns = pd.MultiIndex.from_tuples(df.columns)
+    # Reshape the DataFrame
+    df.columns = ['_'.join(col).strip() for col in df.columns.values]
+    melted_df = pd.melt(df, id_vars=['Policy_Prosumagers_EVs'], var_name='policy_prosumager_ev', value_name='percentage increase (%)')
+    melted_df[['Policy scenario', 'Prosumager scenario', "EV scenario"]] = melted_df['policy_prosumager_ev'].str.split('_', expand=True)
+    melted_df.drop(columns="policy_prosumager_ev", inplace=True)
+    melted_df['Policy scenario'] = melted_df['Policy scenario'].replace({"Weak": "Weak Policy", "Strong": "Strong Policy"})
+    melted_df['Prosumager scenario'] = melted_df['Prosumager scenario'].replace({"High": "Prosumager-High", "Medium":  "Prosumager-Medium", "Low":  "Prosumager-Low"})
+
+    final_df = melted_df.rename(columns={"Policy_Prosumagers_EVs": "year"})
+    final_df = final_df.loc[final_df.loc[:, "year"] != 2020, :]
+    final_df = final_df.sort_values("year", ascending=False)
+    final_df["percentage increase (%)"] = final_df["percentage increase (%)"] /100
+    final_df['year'] = final_df['year'].astype(str)
+    return final_df
+
+
+def plot_murcia_results():
     path2data = Path(__file__).parent / "Comillas_results_Murica.xlsx"
     for name in ["Low Voltage", "Medium Voltage", "Transformers", "Power losses"]:
-        df = pd.read_excel(path2data, sheet_name=name, header=[0, 1, 2])
-        df.columns = pd.MultiIndex.from_tuples(df.columns)
-        # Reshape the DataFrame
-        df.columns = ['_'.join(col).strip() for col in df.columns.values]
-        melted_df = pd.melt(df, id_vars=['Policy_Prosumagers_EVs'], var_name='policy_prosumager_ev', value_name='percentage increase (%)')
-        melted_df[['Policy scenario', 'Prosumager scenario', "EV scenario"]] = melted_df['policy_prosumager_ev'].str.split('_', expand=True)
-        melted_df.drop(columns="policy_prosumager_ev", inplace=True)
-        melted_df['Policy scenario'] = melted_df['Policy scenario'].replace({"Weak": "Weak Policy", "Strong": "Strong Policy"})
-        melted_df['Prosumager scenario'] = melted_df['Prosumager scenario'].replace({"High": "Prosumager-High", "Medium":  "Prosumager-Medium", "Low":  "Prosumager-Low"})
+        final_df = prepare_final_df(path_2_file=path2data, sheetname=name)
+        barplot_comillas_results(df=final_df, region="Murcia", data_path=path2data, name=name)
 
-        final_df = melted_df.rename(columns={"Policy_Prosumagers_EVs": "year"})
-        final_df = final_df.loc[final_df.loc[:, "year"] != 2020, :]
-        final_df = final_df.sort_values("year", ascending=False)
-        final_df["percentage increase (%)"] = final_df["percentage increase (%)"] /100
-        final_df['year'] = final_df['year'].astype(str)
+def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, name: str):
+    matplotlib.rc("font", **{"size": 28})
+    fig, ax = plt.subplots(figsize=(20, 16))
+    # Define unique groups for policy and prosumager scenarios
+    unique_groups = df[['Policy scenario', 'Prosumager scenario', "EV scenario"]].drop_duplicates()
 
-        matplotlib.rc("font", **{"size": 28})
-        fig, ax = plt.subplots(figsize=(20, 16))
-        # Define unique groups for policy and prosumager scenarios
-        unique_groups = final_df[['Policy scenario', 'Prosumager scenario', "EV scenario"]].drop_duplicates()
+    # Define a color palette
+    palette = sns.color_palette("pastel6", len(df['year'].unique()))
 
-        # Define a color palette
-        palette = sns.color_palette("pastel6", len(final_df['year'].unique()))
+    x_labels = ["low", "medium", "high", "low", "medium", "high"]
+    # Plot each year as a separate bar, stacked by the 'percentage increase (%)'
+    for i, (policy, prosumager, ev) in enumerate(unique_groups.values):
+        group_df = df[(df['Policy scenario'] == policy) & (df['Prosumager scenario'] == prosumager) & (df['EV scenario'] == ev)]
 
-        x_labels = ["low", "medium", "high", "low", "medium", "high"]
-        # Plot each year as a separate bar, stacked by the 'percentage increase (%)'
-        for i, (policy, prosumager, ev) in enumerate(unique_groups.values):
-            group_df = final_df[(final_df['Policy scenario'] == policy) & (final_df['Prosumager scenario'] == prosumager) & (final_df['EV scenario'] == ev)]
+        # weak policy is in 0-5, strong policy in positions 6-11
+        for j, year in enumerate(group_df['year'].unique()):
+            data = group_df[group_df['year'] == year]
+            
+            if "low" in prosumager.lower():
 
-            # weak policy is in 0-5, strong policy in positions 6-11
-            for j, year in enumerate(group_df['year'].unique()):
-                data = group_df[group_df['year'] == year]
-                
-                if "low" in prosumager.lower():
-
-                    if "weak" in policy.lower():
-                        position = 0 - 0.3
-                    else:
-                        position = 6 + 0.3
-                elif "medium" in prosumager.lower():
-
-                    if "weak" in policy.lower():
-                        position = 2 - 0.3
-                    else:
-                        position = 8 + 0.3
+                if "weak" in policy.lower():
+                    position = 0 - 0.3
                 else:
+                    position = 6 + 0.3
+            elif "medium" in prosumager.lower():
 
-                    if "weak" in policy.lower():
-                        position = 4 - 0.3
-                    else:
-                        position = 10 + 0.3
-                
-                if ev == "Yes":
-                    color = mcolors.to_rgba(palette[j], alpha=1)
-                    position += 0.8
-                    hatch = ""
+                if "weak" in policy.lower():
+                    position = 2 - 0.3
                 else:
-                    color = mcolors.to_rgba(palette[j], alpha=1)
-                    hatch = "///"
+                    position = 8 + 0.3
+            else:
 
-                ax.bar(position, data['percentage increase (%)'].values[0], bottom=0, color=color, edgecolor='white', label=year if i == 0 else "", width=0.6, hatch=hatch)
+                if "weak" in policy.lower():
+                    position = 4 - 0.3
+                else:
+                    position = 10 + 0.3
+            
+            if ev == "Yes":
+                color = mcolors.to_rgba(palette[j], alpha=1)
+                position += 0.8
+                hatch = ""
+            else:
+                color = mcolors.to_rgba(palette[j], alpha=1)
+                hatch = "//"
 
-        # Add labels and title
-        ax.set_xticks([0.1, 2.1, 4.1, 6.7, 8.7, 10.7])
-        ax.set_xticklabels(x_labels, rotation=0)
-        ax.set_xlabel("Prosumager scenario")
-        if "Voltage" in name:
-            add = "lines"
-        else:
-            add = ""
-        ax.set_ylabel(f'{name} {add} percentage increase (%)')
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
-        legend_elements = [
-            Patch(facecolor=palette[0], label="2050"),
-            Patch(facecolor=palette[1], label="2040"),
-            Patch(facecolor=palette[2], label="2030"),
-            Patch(facecolor="white", hatch="///", label="without EV", edgecolor="black"),
-            Patch(facecolor="white", hatch="", label="with EV", edgecolor="black"),
-            ]
-        ax.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax.bar(position, data['percentage increase (%)'].values[0], bottom=0, color=color, edgecolor='white', label=year if i == 0 else "", width=0.6, hatch=hatch)
 
-        ax2 = ax.twiny()
-        ax2.set_xticks([0.25, 0.75])
-        ax2.set_xticklabels(["Weak Policy", "Strong Policy"])
-        plt.tight_layout()
-        plt.savefig(path2data.parent / f"Murcia_results_{name}.svg")
-        plt.close()
+    # Add labels and title
+    ax.set_xticks([0.1, 2.1, 4.1, 6.7, 8.7, 10.7])
+    ax.set_xticklabels(x_labels, rotation=0)
+    ax.set_xlabel("Prosumager scenario")
+    if "Voltage" in name:
+        add = "lines"
+    else:
+        add = ""
+    ax.set_ylabel(f'{name} {add} percentage increase (%)'.replace("MV-LV", ""))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
+    legend_elements = [
+        Patch(facecolor=palette[0], label="2050"),
+        Patch(facecolor=palette[1], label="2040"),
+        Patch(facecolor=palette[2], label="2030"),
+        Patch(facecolor="white", hatch="///", label="without EV", edgecolor="black"),
+        Patch(facecolor="white", hatch="", label="with EV", edgecolor="black"),
+        ]
+    ax.legend(handles=legend_elements, loc='upper left')#, bbox_to_anchor=(1.05, 1))
+
+    ax2 = ax.twiny()
+    ax2.set_xticks([0.25, 0.75])
+    ax2.set_xticklabels(["Weak Policy", "Strong Policy"])
+    plt.tight_layout()
+    plt.savefig(data_path.parent / f"{region}_results_{name}.svg".replace(" ", "_"))
+    plt.close()
+
+def plot_leeuwarden_results():
+    path2data = Path(__file__).parent / "Comillas_results_Leeuwarden.xlsx"
+    for name in ["Low Voltage", "Medium Voltage", "High Voltage", "MV-LV Transformers", "HV-MV substations", "Power losses"]:
+        final_df = prepare_final_df(path_2_file=path2data, sheetname=name)
+        barplot_comillas_results(df=final_df, region="Leeuwarden", data_path=path2data, name=name)
 
 
 # show_pv_and_ac_change_over_all_scenarios()
@@ -404,7 +417,8 @@ def plot_comillas_results():
 # show_building_attributes()
 
 
-plot_comillas_results()
+plot_leeuwarden_results()
+plot_murcia_results()
 
 
 
