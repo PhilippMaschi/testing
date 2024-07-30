@@ -33,7 +33,7 @@ devices_murcia_high_eff = {
     "AC": [0.5, 0.6, 0.8, 0.9],
     "DHW tank": [0.5, 0.55, 0.6, 0.65],
     "Buffer tank": [0, 0.05, 0.15, 0.25],
-    "PV": [0.015, 0.1, 0.4, 0.6],
+    "PV": [0.015, 0.15, 0.4, 0.6],
     "Battery": [0.1, 0.12, 0.2, 0.3],
     "Prosumager low": [0, 0.05, 0.1, 0.2],
     "Prosumager medium": [0, 0.1, 0.3, 0.5],
@@ -51,7 +51,7 @@ devices_murcia_moderate_eff = {
     "AC": [0.5, 0.65, 0.8, 0.95],
     "DHW tank": [0.5, 0.55, 0.6, 0.65],
     "Buffer tank": [0, 0.05, 0.15, 0.25],
-    "PV": [0.015, 0.15, 0.3, 0.5],
+    "PV": [0.015, 0.1, 0.3, 0.5],
     "Battery": [0.1, 0.12, 0.16, 0.25],
     "Prosumager low": [0, 0.05, 0.1, 0.2],
     "Prosumager medium": [0, 0.1, 0.3, 0.5],
@@ -371,7 +371,11 @@ def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, nam
         add = "lines"
     else:
         add = ""
-    ax.set_ylabel(f'{name} {add} percentage increase (%)'.replace("MV-LV", ""))
+    if "loss" in name.lower():
+        y_label = "Incremental increase in energy losses (%)"
+    else:
+        y_label = f'Incremental cost increase in {name} {add} (%)'.replace("MV-LV", "")
+    ax.set_ylabel(y_label)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
     legend_elements = [
         Patch(facecolor=palette[0], label="2050"),
@@ -396,6 +400,98 @@ def plot_leeuwarden_results():
         barplot_comillas_results(df=final_df, region="Leeuwarden", data_path=path2data, name=name)
 
 
+def grab_ev_peaks():
+    murcia = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Murcia.csv")
+    leeuwarden = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Leeuwarden.csv")
+    df = pd.concat([murcia, leeuwarden]).rename(columns={"col_region": "Region", "col_policy": "policy scenario", "col_prosum": "prosumager scenario", "col_year": "year", "ev_peak": "ev peak (MW)"})
+    df.loc[:, "ev peak (MW)"] = df.loc[:, "ev peak (MW)"]  / 1_000
+    columns_2_drop = [col for col in df.columns if "profiles" in col]
+    df.drop(columns=columns_2_drop, inplace=True)
+    return df
+
+def grab_ev_feed():
+    murcia = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Murcia.csv")
+    leeuwarden = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Leeuwarden.csv")
+    df = pd.concat([murcia, leeuwarden]).rename(columns={"col_region": "Region", "col_policy": "policy scenario", "col_prosum": "prosumager scenario", "col_year": "year", "ev_peak": "ev load (MW)"})
+    columns_2_keep = [col for col in df.columns if not "profiles" in col]
+    columns = []
+    for col in df.columns:
+        if "profile" in col:
+            if 25 <= int(col.split("_")[-1]) <=48:
+                columns.append(col)
+    df_feed = df.loc[:, columns_2_keep + columns].copy()
+    df_feed.drop(columns=["ev load (MW)"], inplace=True)  # drop the single peaks
+    # change the name of the hour columns:
+    replace_column_names_dict = {}
+    for i, col in enumerate(columns, start=1):
+        replace_column_names_dict[col] = i
+    df_feed.rename(columns=replace_column_names_dict, inplace=True)
+
+    id_columns = [col for col in columns_2_keep if col != "ev load (MW)"]
+    df_feed_final = df_feed.melt(id_vars=id_columns, var_name="hours", value_name="load in (MW)")
+    df_feed_final.loc[:, "load in (MW)"] = df_feed_final.loc[:, "load in (MW)"]  / 1_000
+
+    # add 2020 values with 0
+    df_2020 = df_feed_final.query("year == 2030").copy()
+    df_2020.loc[:, "year"] = 2020
+    df_2020.loc[:, "load in (MW)"] = 0
+
+    df_final = pd.concat([df_feed_final, df_2020])
+    return df_final
+
+def grab_house_peak_day():
+    murcia = pd.read_csv(Path(__file__).parent / "Murcia_peak_demand_day.csv")
+    leeuwarden = pd.read_csv(Path(__file__).parent / "Leeuwarden_peak_demand_day.csv")
+
+def grab_house_feed_day():
+    murcia = pd.read_csv(Path(__file__).parent / "Murcia_peak_feed_day.csv")
+    leeuwarden = pd.read_csv(Path(__file__).parent / "Leeuwarden_peak_feed_day.csv")
+    murcia.loc[:, "hours"] -= 71
+    leeuwarden.loc[:, "hours"] -= 71
+    murcia.loc[:, "Region"] = "Murcia"
+    leeuwarden.loc[:, "Region"] = "Leeuwarden"
+    df = pd.concat([murcia, leeuwarden]).drop(columns="variable")
+    return df
+
+def calc_peak_values(df):
+     # now pick the feed peak
+    new_df = pd.DataFrame(columns=df.columns)
+    for i, (names, group) in enumerate(df.groupby(["policy scenario", "prosumager scenario", "Region", "year"])):
+        new_df.loc[i, ["policy scenario", "prosumager scenario", "Region", "year"]] = list(names)
+        new_df.loc[i, "load in (MW)"] = group.loc[:, "load in (MW)"].min()  # we need the highest feed in which is negative
+    new_df.drop(columns="hours", inplace=True)
+    return new_df
+
+def grab_feed_in_peaks():
+    ev_demand_feed_day = grab_ev_feed()
+    values_to_sort_by = ["hours", "policy scenario", "prosumager scenario", "Region", "year"]
+    ev_demand_feed_day.sort_values(by=values_to_sort_by, inplace=True)
+
+    houses_demand_feed_day = grab_house_feed_day()
+    houses_demand_feed_day.sort_values(by=values_to_sort_by, inplace=True)
+    houses_demand_feed_no_ev = houses_demand_feed_day.copy()
+    no_ev = calc_peak_values(df=houses_demand_feed_no_ev)
+    no_ev.loc[:, "EV scenario"] = "no EV"
+
+    houses_demand_feed_day.loc[:, "load in (MW)"] = houses_demand_feed_day.loc[:, "load in (MW)"].values + ev_demand_feed_day.loc[:, "load in (MW)"].values
+
+    with_ev = calc_peak_values(df=houses_demand_feed_day)
+    with_ev.loc[:, "EV scenario"] = "with EV"
+    return pd.concat([no_ev, with_ev], axis=0)
+
+def plot_peak_total_and_peak_feed_with_EV():
+    ev_peaks = grab_ev_peaks()
+
+    feed_in_peaks = grab_feed_in_peaks()
+
+   
+
+
+    # Perform the subtraction
+    merged_df['value_diff'] = merged_df['value_df1'] - merged_df['value_df2']
+    pass
+
+
 # show_pv_and_ac_change_over_all_scenarios()
 # plot_params_same_for_all()
 
@@ -417,9 +513,9 @@ def plot_leeuwarden_results():
 # show_building_attributes()
 
 
-plot_leeuwarden_results()
-plot_murcia_results()
+# plot_leeuwarden_results()
+# plot_murcia_results()
 
-
+plot_peak_total_and_peak_feed_with_EV()
 
 
