@@ -7,7 +7,7 @@ from matplotlib.ticker import PercentFormatter, FuncFormatter
 import matplotlib
 import plotly.express as px
 import matplotlib.colors as mcolors
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, ConnectionPatch
 from matplotlib.lines import Line2D
 
 YEARS = [2020, 2030, 2040, 2050]
@@ -583,32 +583,53 @@ def plot_peak_demand_as_line_plot(df, demand_or_feed: str, zoom: bool=False):
                 axins = ax.inset_axes(
                     [0.07, 0.35, 0.4, 0.4],  # linker rand,  unterer rand, rechter rand, oberer rand
                     xlim=(x1, x2), ylim=(y1, y2), xticklabels=[2040, 2050], yticklabels=[45, 50, 55, 60])
+                rect = (x1, y1, x2 - x1, y2 - y1)
+                box = ax.indicate_inset(rect, edgecolor="black", alpha=1, lw=0.7)
+
+                cp1 = ConnectionPatch(xyA=(x1, y1), xyB=(0, 0), axesA=ax, axesB=axins,
+                    coordsA="data", coordsB="axes fraction", lw=0.7, ls=":")
+                cp2 = ConnectionPatch(xyA=(x2, y2), xyB=(1, 1), axesA=ax, axesB=axins,
+                    coordsA="data", coordsB="axes fraction", lw=0.7, ls=":")
+                ax.add_patch(cp1)
+                ax.add_patch(cp2)
             if r == 0 and zoom:
                 axins.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=1.2, markersize=8)
                 axins.set_xlim(x1, x2)
                 axins.set_ylim(y1, y2)
                 axins.set_yticks([45, 50, 55, 60])
                 axins.set_xticks([2, 3])
-                ax.indicate_inset_zoom(axins, edgecolor="grey", linewidth=1, linestyle="-")
+                # ax.indicate_inset_zoom(axins, edgecolor="grey", linewidth=1, linestyle="-",)
+                
+
+                
                 axins.tick_params(axis='x', labelsize=15)  # Adjust the label size as needed
                 axins.tick_params(axis='y', labelsize=15) 
 
             # Zoom window for Murcia:
             if r == 1 and i == 0 and zoom:
                  # inset Axes....
-                x1, x2, y1, y2 = 1.9, 3.1, 85, 100  # subregion of the original image
-                axins = ax.inset_axes(
+                x1, x2, y1, y2 = 1.9, 3.1, 89, 100  # subregion of the original image
+                axins2 = ax.inset_axes(
                     [0.07, 0.35, 0.4, 0.4],  # linker rand,  unterer rand, rechter rand, oberer rand
-                    xlim=(x1, x2), ylim=(y1, y2), xticklabels=[2040, 2050], yticklabels=[85, 90, 95, 100])
+                    xlim=(x1, x2), ylim=(y1, y2), xticklabels=[2040, 2050], yticklabels=[90, 95, 100])
+                rect = (x1, y1, x2 - x1, y2 - y1)
+                box = ax.indicate_inset(rect, edgecolor="black", alpha=1, lw=0.7)
+
+                cp1 = ConnectionPatch(xyA=(x1, y1), xyB=(0, 0), axesA=ax, axesB=axins2,
+                    coordsA="data", coordsB="axes fraction", lw=0.7, ls=":")
+                cp2 = ConnectionPatch(xyA=(x2, y2), xyB=(1, 1), axesA=ax, axesB=axins2,
+                    coordsA="data", coordsB="axes fraction", lw=0.7, ls=":")
+                ax.add_patch(cp1)
+                ax.add_patch(cp2)
             if r == 1 and zoom:
-                axins.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=1.2, markersize=8)
-                axins.set_xlim(x1, x2)
-                axins.set_ylim(y1, y2)
-                axins.set_yticks([85, 90, 95, 100])
-                axins.set_xticks([2, 3])
-                ax.indicate_inset_zoom(axins, edgecolor="grey", linewidth=1, linestyle="-")
-                axins.tick_params(axis='x', labelsize=15)  # Adjust the label size as needed
-                axins.tick_params(axis='y', labelsize=15) 
+                axins2.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=1.2, markersize=8)
+                axins2.set_xlim(x1, x2)
+                axins2.set_ylim(y1, y2)
+                axins2.set_yticks([90, 95, 100])
+                axins2.set_xticks([2, 3])
+                # ax.indicate_inset_zoom(axins2, edgecolor="grey", linewidth=1, linestyle="-")
+                axins2.tick_params(axis='x', labelsize=15)  # Adjust the label size as needed
+                axins2.tick_params(axis='y', labelsize=15) 
 
         legend_elements = [
                 Line2D([0],[0], color=palette[0], label="High Prosumager share", linewidth=4),
