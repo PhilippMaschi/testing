@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 import pandas as pd
 from pathlib import Path
@@ -7,6 +8,7 @@ import matplotlib
 import plotly.express as px
 import matplotlib.colors as mcolors
 from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
 
 YEARS = [2020, 2030, 2040, 2050]
 
@@ -400,16 +402,16 @@ def plot_leeuwarden_results():
         barplot_comillas_results(df=final_df, region="Leeuwarden", data_path=path2data, name=name)
 
 
-def grab_ev_peaks():
-    murcia = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Murcia.csv")
-    leeuwarden = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Leeuwarden.csv")
-    df = pd.concat([murcia, leeuwarden]).rename(columns={"col_region": "Region", "col_policy": "policy scenario", "col_prosum": "prosumager scenario", "col_year": "year", "ev_peak": "ev peak (MW)"})
-    df.loc[:, "ev peak (MW)"] = df.loc[:, "ev peak (MW)"]  / 1_000
-    columns_2_drop = [col for col in df.columns if "profiles" in col]
-    df.drop(columns=columns_2_drop, inplace=True)
-    return df
+# def grab_ev_peaks():
+#     murcia = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Murcia.csv")
+#     leeuwarden = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Leeuwarden.csv")
+#     df = pd.concat([murcia, leeuwarden]).rename(columns={"col_region": "Region", "col_policy": "policy scenario", "col_prosum": "prosumager scenario", "col_year": "year", "ev_peak": "ev peak (MW)"})
+#     df.loc[:, "ev peak (MW)"] = df.loc[:, "ev peak (MW)"]  / 1_000
+#     columns_2_drop = [col for col in df.columns if "profiles" in col]
+#     df.drop(columns=columns_2_drop, inplace=True)
+#     return df
 
-def grab_ev_feed():
+def grab_ev_demand_at_feed_day():
     murcia = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Murcia.csv")
     leeuwarden = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Leeuwarden.csv")
     df = pd.concat([murcia, leeuwarden]).rename(columns={"col_region": "Region", "col_policy": "policy scenario", "col_prosum": "prosumager scenario", "col_year": "year", "ev_peak": "ev load (MW)"})
@@ -439,9 +441,58 @@ def grab_ev_feed():
     df_final = pd.concat([df_feed_final, df_2020])
     return df_final
 
-def grab_house_peak_day():
+def grab_ev_demand_at_demand_day():
+    murcia = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Murcia.csv")
+    leeuwarden = pd.read_csv(Path(__file__).parent / "EV_aggregated_profiles_Leeuwarden.csv")
+    df = pd.concat([murcia, leeuwarden]).rename(columns={"col_region": "Region", "col_policy": "policy scenario", "col_prosum": "prosumager scenario", "col_year": "year", "ev_peak": "ev load (MW)"})
+    columns_2_keep = [col for col in df.columns if not "profiles" in col]
+    columns = []
+    for col in df.columns:
+        if "profile" in col:
+            if 1 <= int(col.split("_")[-1]) <=24:
+                columns.append(col)
+    df_feed = df.loc[:, columns_2_keep + columns].copy()
+    df_feed.drop(columns=["ev load (MW)"], inplace=True)  # drop the single peaks
+    # change the name of the hour columns:
+    replace_column_names_dict = {}
+    for i, col in enumerate(columns, start=1):
+        replace_column_names_dict[col] = i
+    df_feed.rename(columns=replace_column_names_dict, inplace=True)
+
+    id_columns = [col for col in columns_2_keep if col != "ev load (MW)"]
+    df_feed_final = df_feed.melt(id_vars=id_columns, var_name="hours", value_name="load in (MW)")
+    df_feed_final.loc[:, "load in (MW)"] = df_feed_final.loc[:, "load in (MW)"]  / 1_000
+
+    # add 2020 values with 0
+    df_2020 = df_feed_final.query("year == 2030").copy()
+    df_2020.loc[:, "year"] = 2020
+    df_2020.loc[:, "load in (MW)"] = 0
+
+    df_final = pd.concat([df_feed_final, df_2020])
+    return df_final
+
+def grab_demand_peaks():
     murcia = pd.read_csv(Path(__file__).parent / "Murcia_peak_demand_day.csv")
     leeuwarden = pd.read_csv(Path(__file__).parent / "Leeuwarden_peak_demand_day.csv")
+    murcia.loc[:, "Region"] = "Murcia"
+    leeuwarden.loc[:, "Region"] = "Leeuwarden"
+    murcia.loc[:, "hours"] += 1
+    leeuwarden.loc[:, "hours"] += 1
+    df = pd.concat([murcia, leeuwarden]).drop(columns="variable")
+    
+    no_ev = calc_peak_values(df=df)
+    no_ev.loc[:, "EV scenario"] = "no EV"
+
+    # calculate profiles with added EV profiles:
+    values_to_sort_by = ["hours", "policy scenario", "prosumager scenario", "Region", "year"]
+    ev_demand = grab_ev_demand_at_demand_day()
+    ev_demand.sort_values(by=values_to_sort_by, inplace=True)
+    df.sort_values(by=values_to_sort_by, inplace=True)
+
+    df.loc[:, "load in (MW)"] = df.loc[:, "load in (MW)"].values + ev_demand.loc[:, "load in (MW)"].values
+    with_ev = calc_peak_values(df=df)
+    with_ev.loc[:, "EV scenario"] = "with EV"
+    return pd.concat([no_ev, with_ev], axis=0)
 
 def grab_house_feed_day():
     murcia = pd.read_csv(Path(__file__).parent / "Murcia_peak_feed_day.csv")
@@ -453,7 +504,7 @@ def grab_house_feed_day():
     df = pd.concat([murcia, leeuwarden]).drop(columns="variable")
     return df
 
-def calc_peak_values(df):
+def calc_negative_peak_values(df):
      # now pick the feed peak
     new_df = pd.DataFrame(columns=df.columns)
     for i, (names, group) in enumerate(df.groupby(["policy scenario", "prosumager scenario", "Region", "year"])):
@@ -462,34 +513,138 @@ def calc_peak_values(df):
     new_df.drop(columns="hours", inplace=True)
     return new_df
 
+def calc_peak_values(df):
+     # now pick the feed peak
+    new_df = pd.DataFrame(columns=df.columns)
+    for i, (names, group) in enumerate(df.groupby(["policy scenario", "prosumager scenario", "Region", "year"])):
+        new_df.loc[i, ["policy scenario", "prosumager scenario", "Region", "year"]] = list(names)
+        new_df.loc[i, "load in (MW)"] = group.loc[:, "load in (MW)"].max()  # we need the highest feed in which is negative
+    new_df.drop(columns="hours", inplace=True)
+    return new_df
+
 def grab_feed_in_peaks():
-    ev_demand_feed_day = grab_ev_feed()
+    ev_demand_feed_day = grab_ev_demand_at_feed_day()
     values_to_sort_by = ["hours", "policy scenario", "prosumager scenario", "Region", "year"]
     ev_demand_feed_day.sort_values(by=values_to_sort_by, inplace=True)
 
     houses_demand_feed_day = grab_house_feed_day()
     houses_demand_feed_day.sort_values(by=values_to_sort_by, inplace=True)
     houses_demand_feed_no_ev = houses_demand_feed_day.copy()
-    no_ev = calc_peak_values(df=houses_demand_feed_no_ev)
+    no_ev = calc_negative_peak_values(df=houses_demand_feed_no_ev)  # maximum feed in is negative
     no_ev.loc[:, "EV scenario"] = "no EV"
 
     houses_demand_feed_day.loc[:, "load in (MW)"] = houses_demand_feed_day.loc[:, "load in (MW)"].values + ev_demand_feed_day.loc[:, "load in (MW)"].values
 
-    with_ev = calc_peak_values(df=houses_demand_feed_day)
+    with_ev = calc_negative_peak_values(df=houses_demand_feed_day)
     with_ev.loc[:, "EV scenario"] = "with EV"
     return pd.concat([no_ev, with_ev], axis=0)
 
-def plot_peak_total_and_peak_feed_with_EV():
-    ev_peaks = grab_ev_peaks()
+def plot_peak_demand_as_line_plot(df, demand_or_feed: str, zoom: bool=False):
+    if demand_or_feed == "demand":
+        legend_locs = ["upper left", "upper right"]
+    else:
+        legend_locs = ["lower left", "lower left"]
+    matplotlib.rc("font", **{"size": 28})
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(28, 18), sharey=True)
+    
+    # Define a color palette
+    palette = sns.color_palette("hls", len(df['prosumager scenario'].unique()))
 
+    x_labels = ["2020", "2030", "2040", "2050"]
+    # Define unique groups for policy and prosumager scenarios
+    unique_groups = df[['policy scenario', 'prosumager scenario', "EV scenario"]].drop_duplicates()
+    for r, region in enumerate(["Leeuwarden", "Murcia",]):
+        for i, (policy, prosumager, ev) in enumerate(unique_groups.values):
+            group_df = df[(df['policy scenario'] == policy) & (df['prosumager scenario'] == prosumager) & (df['EV scenario'] == ev) & (df["Region"] == region)]
+            ax = axes[r]
+            y_values = group_df["load in (MW)"].to_numpy()
+
+            if "high" in group_df["prosumager scenario"].values[0].lower():
+                color = palette[0]
+            elif "medium" in group_df["prosumager scenario"].values[0].lower():
+                color = palette[1]
+            else:
+                color = palette[2]
+            if group_df["EV scenario"].values[0] == "with EV":
+                linestyle = "--"
+            else:
+                linestyle = "-"
+            if "weak" in group_df["policy scenario"].values[0].lower():
+                marker = "o"
+            else:
+                marker = "X"
+
+            ax.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=2, markersize=10)
+
+            # Zoom window for Leeuwarden:
+            if r == 0 and i ==0 and zoom:
+                # inset Axes....
+                x1, x2, y1, y2 = 1.9, 3.1, 45, 60  # subregion of the original image
+                axins = ax.inset_axes(
+                    [0.07, 0.35, 0.4, 0.4],  # linker rand,  unterer rand, rechter rand, oberer rand
+                    xlim=(x1, x2), ylim=(y1, y2), xticklabels=[2040, 2050], yticklabels=[45, 50, 55, 60])
+            if r == 0 and zoom:
+                axins.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=1.2, markersize=8)
+                axins.set_xlim(x1, x2)
+                axins.set_ylim(y1, y2)
+                axins.set_yticks([45, 50, 55, 60])
+                axins.set_xticks([2, 3])
+                ax.indicate_inset_zoom(axins, edgecolor="grey", linewidth=1, linestyle="-")
+                axins.tick_params(axis='x', labelsize=15)  # Adjust the label size as needed
+                axins.tick_params(axis='y', labelsize=15) 
+
+            # Zoom window for Murcia:
+            if r == 1 and i == 0 and zoom:
+                 # inset Axes....
+                x1, x2, y1, y2 = 1.9, 3.1, 85, 100  # subregion of the original image
+                axins = ax.inset_axes(
+                    [0.07, 0.35, 0.4, 0.4],  # linker rand,  unterer rand, rechter rand, oberer rand
+                    xlim=(x1, x2), ylim=(y1, y2), xticklabels=[2040, 2050], yticklabels=[85, 90, 95, 100])
+            if r == 1 and zoom:
+                axins.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=1.2, markersize=8)
+                axins.set_xlim(x1, x2)
+                axins.set_ylim(y1, y2)
+                axins.set_yticks([85, 90, 95, 100])
+                axins.set_xticks([2, 3])
+                ax.indicate_inset_zoom(axins, edgecolor="grey", linewidth=1, linestyle="-")
+                axins.tick_params(axis='x', labelsize=15)  # Adjust the label size as needed
+                axins.tick_params(axis='y', labelsize=15) 
+
+        legend_elements = [
+                Line2D([0],[0], color=palette[0], label="High Prosumager share", linewidth=4),
+                Line2D([0],[0], color=palette[1], label="Medium Prosumager share", linewidth=4),
+                Line2D([0],[0], color=palette[2], label="Low Prosumager share", linewidth=4),
+                Line2D([0],[0], color="black", linestyle="-", label="without EV", linewidth=4),
+                Line2D([0],[0], color="black", linestyle="--", label="with EV", linewidth=4),
+                Line2D([0],[0], color="black", linestyle="", marker="o",label="Weak policy", markersize=15),
+                Line2D([0],[0], color="black", linestyle="", marker="X",label="Strong policy", markersize=15),
+                ]
+        if r==0:
+            axes[r].legend(handles=legend_elements, loc=legend_locs[r], fontsize=24)
+        else:
+            axes[r].legend(handles=legend_elements, loc=legend_locs[r], fontsize=24)
+
+        axes[r].set_title(region)
+
+    axes[0].set_ylabel(f"total peak {demand_or_feed} (MW)")
+
+
+
+    plt.tight_layout()
+    plt.savefig(Path(__file__).parent / f"peak_{demand_or_feed}.png".replace(" ","_"))
+    plt.savefig(Path(__file__).parent / f"peak_{demand_or_feed}.svg".replace(" ","_"))
+    plt.close()
+   
+
+def plot_peak_total_and_peak_feed_with_EV():
+    demand_peaks = grab_demand_peaks()
     feed_in_peaks = grab_feed_in_peaks()
+
+    plot_peak_demand_as_line_plot(df=demand_peaks, demand_or_feed="demand", zoom=True)
+    plot_peak_demand_as_line_plot(df=feed_in_peaks, demand_or_feed="feed in", zoom=False)
 
    
 
-
-    # Perform the subtraction
-    merged_df['value_diff'] = merged_df['value_df1'] - merged_df['value_df2']
-    pass
 
 
 # show_pv_and_ac_change_over_all_scenarios()
