@@ -314,7 +314,7 @@ def prepare_final_df(path_2_file, sheetname):
 
 def plot_murcia_results():
     path2data = Path(__file__).parent / "Comillas_results_Murica.xlsx"
-    for name in ["Low Voltage", "Medium Voltage", "Transformers", "Power losses"]:
+    for name in ["Low Voltage", "Medium Voltage", "Transformers", "Power losses", "LV MV grid"]:
         final_df = prepare_final_df(path_2_file=path2data, sheetname=name)
         barplot_comillas_results(df=final_df, region="Murcia", data_path=path2data, name=name)
 
@@ -375,6 +375,8 @@ def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, nam
         add = ""
     if "loss" in name.lower():
         y_label = "Incremental increase in energy losses (%)"
+    elif "grid" in name.lower():
+        y_label = "Incremental cost increase in distribution grid (%)"
     else:
         y_label = f'Incremental cost increase in {name} {add} (%)'.replace("MV-LV", "")
     ax.set_ylabel(y_label)
@@ -397,7 +399,7 @@ def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, nam
 
 def plot_leeuwarden_results():
     path2data = Path(__file__).parent / "Comillas_results_Leeuwarden.xlsx"
-    for name in ["Low Voltage", "Medium Voltage", "High Voltage", "MV-LV Transformers", "HV-MV substations", "Power losses"]:
+    for name in ["Low Voltage", "Medium Voltage", "High Voltage", "MV-LV Transformers", "HV-MV substations", "Power losses", "LV MV grid"]:
         final_df = prepare_final_df(path_2_file=path2data, sheetname=name)
         barplot_comillas_results(df=final_df, region="Leeuwarden", data_path=path2data, name=name)
 
@@ -545,7 +547,7 @@ def plot_peak_demand_as_line_plot(df, demand_or_feed: str, zoom: bool=False):
     else:
         legend_locs = ["lower left", "lower left"]
     matplotlib.rc("font", **{"size": 28})
-    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(28, 18), sharey=True)
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(32, 18), sharey=True)
     
     # Define a color palette
     palette = sns.color_palette("hls", len(df['prosumager scenario'].unique()))
@@ -574,7 +576,7 @@ def plot_peak_demand_as_line_plot(df, demand_or_feed: str, zoom: bool=False):
             else:
                 marker = "X"
 
-            ax.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=2, markersize=10)
+            ax.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=1.2, markersize=10)
 
             # Zoom window for Leeuwarden:
             if r == 0 and i ==0 and zoom:
@@ -593,7 +595,7 @@ def plot_peak_demand_as_line_plot(df, demand_or_feed: str, zoom: bool=False):
                 ax.add_patch(cp1)
                 ax.add_patch(cp2)
             if r == 0 and zoom:
-                axins.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=1.2, markersize=8)
+                axins.plot(x_labels, y_values, color=color, linestyle=linestyle, marker=marker, linewidth=2, markersize=8)
                 axins.set_xlim(x1, x2)
                 axins.set_ylim(y1, y2)
                 axins.set_yticks([45, 50, 55, 60])
@@ -631,7 +633,9 @@ def plot_peak_demand_as_line_plot(df, demand_or_feed: str, zoom: bool=False):
                 axins2.tick_params(axis='x', labelsize=15)  # Adjust the label size as needed
                 axins2.tick_params(axis='y', labelsize=15) 
 
-        legend_elements = [
+    
+        axes[r].set_title(region)
+    legend_elements = [
                 Line2D([0],[0], color=palette[0], label="High Prosumager share", linewidth=4),
                 Line2D([0],[0], color=palette[1], label="Medium Prosumager share", linewidth=4),
                 Line2D([0],[0], color=palette[2], label="Low Prosumager share", linewidth=4),
@@ -640,16 +644,41 @@ def plot_peak_demand_as_line_plot(df, demand_or_feed: str, zoom: bool=False):
                 Line2D([0],[0], color="black", linestyle="", marker="o",label="Weak policy", markersize=15),
                 Line2D([0],[0], color="black", linestyle="", marker="X",label="Strong policy", markersize=15),
                 ]
-        if r==0:
-            axes[r].legend(handles=legend_elements, loc=legend_locs[r], fontsize=24)
-        else:
-            axes[r].legend(handles=legend_elements, loc=legend_locs[r], fontsize=24)
 
-        axes[r].set_title(region)
+
+
+    legend_elements_1 = [
+        Line2D([0], [0], color=palette[0], label="High Prosumager share", linewidth=4),
+        Line2D([0], [0], color=palette[1], label="Medium Prosumager share", linewidth=4),
+        Line2D([0], [0], color=palette[2], label="Low Prosumager share", linewidth=4),
+    ]
+
+    legend_elements_2 = [
+        Line2D([0], [0], color="black", linestyle="-", label="without EV", linewidth=4),
+        Line2D([0], [0], color="black", linestyle="--", label="with EV", linewidth=4),
+    ]
+
+    legend_elements_3 = [
+        Line2D([0], [0], color="black", linestyle="", marker="o", label="Weak policy", markersize=15),
+        Line2D([0], [0], color="black", linestyle="", marker="X", label="Strong policy", markersize=15),
+    ]
+        # if r==0:
+        #     axes[r].legend(handles=legend_elements, loc=legend_locs[r], fontsize=24)
+        # else:
+        #     axes[r].legend(handles=legend_elements, loc=legend_locs[r], fontsize=24)
 
     axes[0].set_ylabel(f"total peak {demand_or_feed} (MW)")
+    # Combine legends, each with its own ncol setting
+    legend1 = axes[0].legend(handles=legend_elements_1, loc='upper left', bbox_to_anchor=(0, 1.3), ncol=3, fontsize=18)
+    legend2 = axes[0].legend(handles=legend_elements_2, loc='upper left', bbox_to_anchor=(0, 1.2), ncol=2, fontsize=18)
+    legend3 = axes[0].legend(handles=legend_elements_3, loc='upper left', bbox_to_anchor=(0.8, 1.2), ncol=2, fontsize=18)
 
+    # Add the legends back to the axes (for overlapping legends)
+    axes[0].add_artist(legend1)
+    axes[0].add_artist(legend2)
+    axes[0].add_artist(legend3)
 
+    fig.subplots_adjust(top=0.8)
 
     plt.tight_layout()
     plt.savefig(Path(__file__).parent / f"peak_{demand_or_feed}.png".replace(" ","_"))
