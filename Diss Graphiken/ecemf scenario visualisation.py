@@ -318,6 +318,96 @@ def plot_murcia_results():
         final_df = prepare_final_df(path_2_file=path2data, sheetname=name)
         barplot_comillas_results(df=final_df, region="Murcia", data_path=path2data, name=name)
 
+def calculate_diff_between_years(df):
+    unique_groups = df[['Policy scenario', 'Prosumager scenario', "Ev scenario"]].drop_duplicates()
+    new_dfs = []
+    for i, (policy, prosumager, ev) in enumerate(unique_groups.values):
+        group_df = df[(df['Policy scenario'] == policy) & (df['Prosumager scenario'] == prosumager) & (df['Ev scenario'] == ev)]
+        new = group_df.copy()
+
+        for years in [[2020, 2030], [2030, 2040], [2040, 2050]]:
+            new.loc[group_df["Year"]==years[1], "Load in (mw)"] = abs(group_df.loc[group_df["Year"]==years[1], "Load in (mw)"].values[0] - group_df.loc[group_df["Year"]==years[0], "Load in (mw)"].values[0])
+        new_dfs.append(new)
+    return pd.concat(new_dfs)
+
+def barplot_peak_demand(df: pd.DataFrame, region: str, data_path: Path, name: str):
+    matplotlib.rc("font", **{"size": 28})
+    # Define unique groups for policy and prosumager scenarios
+    df.columns = [i.capitalize() for i in df.columns]
+    
+    df_plot = df.copy()#calculate_diff_between_years(df)
+    unique_groups = df_plot[['Policy scenario', 'Prosumager scenario', "Ev scenario"]].drop_duplicates()
+
+
+    palette = sns.color_palette("pastel6", len(df_plot['Year'].unique()))
+
+    x_labels = ["low", "medium", "high", "low", "medium", "high"]
+    color_year = {2020: palette[3], 2030: palette[1], 2040: palette[2], 2050: palette[0]}
+    position_year = {2020: -0.6, 2030: -0.2, 2040: 0.2, 2050: 0.6}
+    fig, ax = plt.subplots(figsize=(20, 16))
+    for i, (policy, prosumager, ev) in enumerate(unique_groups.values):
+        group_df = df_plot[(df_plot['Policy scenario'] == policy) & (df_plot['Prosumager scenario'] == prosumager) & (df_plot['Ev scenario'] == ev)]
+        bottom = 0
+        for j, year in enumerate(group_df['Year'].unique()):
+            data = group_df[group_df['Year'] == year]
+            
+            if "low" in prosumager.lower():
+
+                if "no" in ev.lower():
+                    position = 0 - 0.3
+                else:
+                    position = 6 + 0.3
+            elif "medium" in prosumager.lower():
+
+                if "no" in ev.lower():
+                    position = 2 - 0.3
+                else:
+                    position = 8 + 0.3
+
+            else:
+
+                if "no" in ev.lower():
+                    position = 4 - 0.3
+                else:
+                    position = 10 + 0.3
+                    
+            if "weak" in policy.lower():
+                hatch = "//"
+            else:
+                position += 0.2
+                hatch = ""
+
+            
+            color = mcolors.to_rgba(color_year[year], alpha=1)
+            # color_year[j] = year
+            ax.bar(position+position_year[year], data['Load in (mw)'].values[0], color=color, edgecolor='black', label=year if i == 0 else "", width=0.2, hatch=hatch, bottom=0)
+            bottom += data['Load in (mw)'].values[0]
+
+    # Add labels and title
+    ax.set_xticks([-0.2, 1.8, 3.8, 6.4, 8.4, 10.4])
+    ax.set_xticklabels(x_labels, rotation=0)
+    ax.set_xlabel("Prosumager scenario")
+
+    ax.set_ylabel(name)
+    legend_elements = [
+        Patch(facecolor=color_year[2050], label="2050"),
+        Patch(facecolor=color_year[2040], label="2040"),
+        Patch(facecolor=color_year[2030], label="2030"),
+        Patch(facecolor=color_year[2020], label="2020"),
+        Patch(facecolor="white", hatch="///", label="weak Policy", edgecolor="black"),
+        Patch(facecolor="white", hatch="", label="strong Policy", edgecolor="black"),
+        ]
+    ax.legend(handles=legend_elements)#, loc='upper left')#, bbox_to_anchor=(1.05, 1))
+
+    ax2 = ax.twiny()
+    ax2.set_xticks([0.25, 0.75])
+    ax2.set_xticklabels(["without EV", "with EV"])
+
+    plt.tight_layout()
+    fig.savefig(data_path / f"{name.replace(' ', '_')}_{region}.svg")
+    plt.show()
+
+
 def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, name: str):
     matplotlib.rc("font", **{"size": 28})
     fig, ax = plt.subplots(figsize=(20, 16))
@@ -363,7 +453,7 @@ def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, nam
                 color = mcolors.to_rgba(palette[j], alpha=1)
                 hatch = "//"
 
-            ax.bar(position, data['percentage increase (%)'].values[0], bottom=0, color=color, edgecolor='white', label=year if i == 0 else "", width=0.6, hatch=hatch)
+            ax.bar(position, data['percentage increase (%)'].values[0], bottom=0, color=color, edgecolor='black', label=year if i == 0 else "", width=0.6, hatch=hatch)
 
     # Add labels and title
     ax.set_xticks([0.1, 2.1, 4.1, 6.7, 8.7, 10.7])
@@ -690,8 +780,14 @@ def plot_peak_total_and_peak_feed_with_EV():
     demand_peaks = grab_demand_peaks()
     feed_in_peaks = grab_feed_in_peaks()
 
-    plot_peak_demand_as_line_plot(df=demand_peaks, demand_or_feed="demand", zoom=True)
-    plot_peak_demand_as_line_plot(df=feed_in_peaks, demand_or_feed="feed in", zoom=False)
+    barplot_peak_demand(df=demand_peaks.query("Region == 'Leeuwarden'"), region="Leeuwarden", data_path=Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken"), name="total peak demand (MW)")
+    barplot_peak_demand(df=feed_in_peaks.query("Region == 'Leeuwarden'"), region="Leeuwarden", data_path=Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken"), name="total peak feed (MW)")
+
+    barplot_peak_demand(df=demand_peaks.query("Region == 'Murcia'"), region="Murcia", data_path=Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken"), name="total peak demand (MW)")
+    barplot_peak_demand(df=feed_in_peaks.query("Region == 'Murcia'"), region="Murcia", data_path=Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken"), name="total peak feed (MW)")
+
+    # plot_peak_demand_as_line_plot(df=demand_peaks, demand_or_feed="demand", zoom=True)
+    # plot_peak_demand_as_line_plot(df=feed_in_peaks, demand_or_feed="feed in", zoom=False)
 
    
 
