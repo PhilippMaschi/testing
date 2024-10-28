@@ -296,9 +296,9 @@ def create_big_subplot_with_density_maps(region: str, region_gdf: gpd.GeoDataFra
 
         plt.tight_layout()
         if normed:
-            plt.savefig(Path("Diss Graphiken") / f"Density_map_{region}{metric}_Normed.svg")
+            plt.savefig(Path("Diss Graphiken") / f"Density_map_{region}_{metric}_Normed.png")
         else:
-            plt.savefig(Path("Diss Graphiken") / f"Density_map_{region}{metric}.svg")
+            plt.savefig(Path("Diss Graphiken") / f"Density_map_{region}_{metric}.png")
         plt.close()
         print(f"saved plot for {metric} {region}")
 
