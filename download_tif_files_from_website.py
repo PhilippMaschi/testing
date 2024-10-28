@@ -1,42 +1,55 @@
 # download tif files from a website
 
 import numpy as np
-from selenium import webdriver
-from selenium.webdriver.firefox.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.action_chains import ActionChains
+# from selenium import webdriver
+# from selenium.webdriver.firefox.service import Service
+# from selenium.webdriver.common.by import By
+# from selenium.webdriver.firefox.options import Options
+# from selenium.webdriver.support.ui import WebDriverWait
+# from selenium.webdriver.support import expected_conditions as EC
+# from selenium.webdriver.common.action_chains import ActionChains
 import time
 import os
 from pathlib import Path
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 fist_numbers = np.arange(519, 936)
 second_numbers = np.arange(1, 10)
 last_numbers = np.arange(1, 10)
 
-folder = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/input_tifs/")
-for first_nr in fist_numbers:
-    for second_nr in second_numbers:
-        for last_nr in last_numbers:
+def download_file(first_nr, second_nr, last_nr):
+    folder = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/input_tifs/")
+    url_text = f"https://descargas.icv.gva.es/dcd/02_imagen/02_ortofoto/2023_CVAL_0025/01_Imagen/01_25830_01_8bits_02_RGBI_02_TIFJPG/020201_2023CVAL0025_25830_8bits_RGBI_0{first_nr}_{second_nr}-{last_nr}.tif"
+    response = requests.get(url_text, stream=True)
 
-            url_text = f"https://descargas.icv.gva.es/dcd/02_imagen/02_ortofoto/2023_CVAL_0025/01_Imagen/01_25830_01_8bits_02_RGBI_02_TIFJPG/020201_2023CVAL0025_25830_8bits_RGBI_{first_nr}_{second_nr}-{last_nr}.tif"
-            response = requests.get(url_text, stream=True)
+    if response.status_code == 200:
+        # Define the file name based on the URL or your desired name
+        file_name = url_text.split("/")[-1]  # Extracts the last part of the URL as file name
+        file_path = folder / file_name
+        if not file_path.exists():
+            # Open a file in binary-write mode and save the content in chunks
+            with open(file_path, "wb") as file:
+                for chunk in response.iter_content(chunk_size=8192*4):
+                    if chunk:  # Filter out keep-alive new chunks
+                        file.write(chunk)
+                print(f"Downloaded file saved as: {file_name}")
 
-            if response.status_code == 200:
-                # Define the file name based on the URL or your desired name
-                file_name = url_text.split("/")[-1]  # Extracts the last part of the URL as file name
-
-                # Open a file in binary-write mode and save the content in chunks
-                with open(file_name, "wb") as file:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:  # Filter out keep-alive new chunks
-                            file.write(chunk)
-                    print(f"Downloaded file saved as: {file_name}")
-
+               
+with ThreadPoolExecutor(max_workers=4) as executor:  # Adjust max_workers as needed
+    # Create a list of all download tasks
+    download_tasks = [
+        executor.submit(download_file, first_nr, second_nr, last_nr)
+        for first_nr in fist_numbers
+        for second_nr in second_numbers
+        for last_nr in last_numbers
+    ]
+    
+    for future in as_completed(download_tasks):
+        result = future.result()  # Returns the file name or None if failed
+        if result:
+            print(f"Completed download: {result}")
 
 
 def selenium_try():  # doesnt work for the website
