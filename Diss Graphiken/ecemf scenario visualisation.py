@@ -338,7 +338,6 @@ def barplot_peak_demand(df: pd.DataFrame, region: str, data_path: Path, name: st
     df_plot = df.copy()#calculate_diff_between_years(df)
     unique_groups = df_plot[['Policy scenario', 'Prosumager scenario', "Ev scenario"]].drop_duplicates()
 
-
     palette = sns.color_palette("pastel6", len(df_plot['Year'].unique()))
 
     x_labels = ["low", "medium", "high", "low", "medium", "high"]
@@ -410,15 +409,16 @@ def barplot_peak_demand(df: pd.DataFrame, region: str, data_path: Path, name: st
 
 def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, name: str):
     matplotlib.rc("font", **{"size": 28})
-    fig, ax = plt.subplots(figsize=(20, 16))
     # Define unique groups for policy and prosumager scenarios
     unique_groups = df[['Policy scenario', 'Prosumager scenario', "EV scenario"]].drop_duplicates()
-
     # Define a color palette
     palette = sns.color_palette("pastel6", len(df['year'].unique()))
 
     x_labels = ["low", "medium", "high", "low", "medium", "high"]
+    color_year = {2030: palette[1], 2040: palette[2], 2050: palette[0]}
+    position_year = {2020: -0.6, 2030: -0.2, 2040: 0.2, 2050: 0.6}
     # Plot each year as a separate bar, stacked by the 'percentage increase (%)'
+    fig, ax = plt.subplots(figsize=(20, 16))
     for i, (policy, prosumager, ev) in enumerate(unique_groups.values):
         group_df = df[(df['Policy scenario'] == policy) & (df['Prosumager scenario'] == prosumager) & (df['EV scenario'] == ev)]
 
@@ -427,36 +427,35 @@ def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, nam
             data = group_df[group_df['year'] == year]
             
             if "low" in prosumager.lower():
-
-                if "weak" in policy.lower():
+                if "no" in ev.lower():
                     position = 0 - 0.3
                 else:
                     position = 6 + 0.3
             elif "medium" in prosumager.lower():
 
-                if "weak" in policy.lower():
+                if "no" in ev.lower():
                     position = 2 - 0.3
                 else:
                     position = 8 + 0.3
             else:
 
-                if "weak" in policy.lower():
+                if "no" in ev.lower():
                     position = 4 - 0.3
                 else:
                     position = 10 + 0.3
             
-            if ev == "Yes":
-                color = mcolors.to_rgba(palette[j], alpha=1)
-                position += 0.8
-                hatch = ""
-            else:
-                color = mcolors.to_rgba(palette[j], alpha=1)
+            if "weak" in policy.lower():
                 hatch = "//"
+            else:
+                position += 0.2
+                hatch = ""
 
-            ax.bar(position, data['percentage increase (%)'].values[0], bottom=0, color=color, edgecolor='black', label=year if i == 0 else "", width=0.6, hatch=hatch)
+            color = mcolors.to_rgba(palette[j], alpha=1)
+            ax.bar(position+position_year[int(year)], data['percentage increase (%)'].values[0], bottom=0, color=color, edgecolor='black', label=year if i == 0 else "", width=0.2, hatch=hatch)
 
     # Add labels and title
-    ax.set_xticks([0.1, 2.1, 4.1, 6.7, 8.7, 10.7])
+    ax.set_xticks([0, 2, 4, 6.6, 8.6, 10.6])
+
     ax.set_xticklabels(x_labels, rotation=0)
     ax.set_xlabel("Prosumager scenario")
     if "Voltage" in name:
@@ -475,14 +474,14 @@ def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, nam
         Patch(facecolor=palette[0], label="2050"),
         Patch(facecolor=palette[1], label="2040"),
         Patch(facecolor=palette[2], label="2030"),
-        Patch(facecolor="white", hatch="///", label="without EV", edgecolor="black"),
-        Patch(facecolor="white", hatch="", label="with EV", edgecolor="black"),
+        Patch(facecolor="white", hatch="///", label="weak Policy", edgecolor="black"),
+        Patch(facecolor="white", hatch="", label="strong Policy", edgecolor="black"),
         ]
     ax.legend(handles=legend_elements, loc='upper left')#, bbox_to_anchor=(1.05, 1))
 
     ax2 = ax.twiny()
     ax2.set_xticks([0.25, 0.75])
-    ax2.set_xticklabels(["Weak Policy", "Strong Policy"])
+    ax2.set_xticklabels(["without EV", "with EV"])
     plt.tight_layout()
     plt.savefig(data_path.parent / f"{region}_results_{name}.svg".replace(" ", "_"))
     plt.close()

@@ -14,7 +14,7 @@ def is_descendant_of(path, potential_ancestor):
     return path.parts[:len(potential_ancestor.parts)] == potential_ancestor.parts
 
 
-def copy_files_and_folders(source: Path, destination: Path, file_type=None, file_name_contains: str=None):
+def copy_files_and_folders(source: Path, destination: Path, file_type: list=None, file_name_contains: str=None):
     """
     Copies files  from the source directory to the destination directory.
     If file_type is specified, only files of that type are copied within any folder. Also files from sub directories
@@ -22,7 +22,7 @@ def copy_files_and_folders(source: Path, destination: Path, file_type=None, file
 
     :param source: Path to the source directory
     :param destination: Path to the destination directory
-    :param file_type: Optional. Extension of the files to copy (e.g., 'txt' for text files).
+    :param file_type: Optional. Extension of the files to copy (e.g., 'txt' for text files). provide as list
     Default is None, which copies all files.
     """
 
@@ -38,12 +38,17 @@ def copy_files_and_folders(source: Path, destination: Path, file_type=None, file
             # Recursively copy the folder and its content
             copy_files_and_folders(item, destination, file_type, file_name_contains)
         elif item.is_file():
+            # if "DEU_2050" in item.stem:
+            #     continue
             # Copy file if no file_type is specified or if it matches the file_type
-            type_match = file_type is None or item.suffix[1:] == file_type
+            type_match = file_type is None or item.suffix[1:] in file_type
             name_match = file_name_contains is None or file_name_contains in item.name
             if type_match and name_match:
-                # Copy file if it matches the file_type and/or file_name_contains criteria
-                shutil.copy(item, destination)
+                # check if item already exists in
+                if not (destination / f"{item.stem}{item.suffix}").exists():
+                    # Copy file if it matches the file_type and/or file_name_contains criteria
+                    shutil.copy(item, destination)
+                    print(f"copied {item}")
 
 
 
@@ -53,6 +58,6 @@ if __name__ == "__main__":
     copy_files_and_folders(
         source=source_path,
         destination=destination_path,
-        file_type="csv",
-        file_name_contains="Summary"
+        file_type=["sqlite"],  # sqlite  csv
+        file_name_contains="Summary"#"Summary", None
     )

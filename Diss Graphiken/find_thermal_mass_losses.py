@@ -1,5 +1,6 @@
 import numpy as np
 from pathlib import Path
+from joblib import Parallel, delayed
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -7,7 +8,25 @@ import matplotlib
 from matplotlib import cm
 from matplotlib.colors import LightSource
 from scipy.interpolate import griddata
+import seaborn as sns
+import plotly.express as px
+from matplotlib.ticker import PercentFormatter
+import tqdm
 
+matplotlib.rc("font", **{"size": 22})
+
+
+building_id_to_name = {
+    4: "EZFH 1 B" ,
+    5: "EZFH 1 S" ,
+    1: "EZFH 5 B" ,
+    2: "EZFH 5 S" ,
+    3: "EZFH 9 B" ,
+    8: "MFH 1 B",
+    9: "MFH 1 S",
+    6: "MFH 5 B",
+    7: "MFH 5 S",
+}
 
 def ref_HeatingCooling(T_outside, Q_solar, Buildings, initial_thermal_mass_temp=20, T_air_min=20, T_air_max=27,
                        ):
@@ -187,9 +206,8 @@ def ref_HeatingCooling(T_outside, Q_solar, Buildings, initial_thermal_mass_temp=
     return Q_Heating_noDR, Q_Cooling_noDR, operative_temperature, Tm_t
 
 
-def get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, initial_thermal_mass_temp):
+def get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, initial_thermal_mass_temp, runtime: int):
     # start time steps to calculate constant values
-    runtime = 100
     # starte mit 100 stunde, dann checken ob sich konstantes Tm_t eingestellt hat
     Temperature_outside = np.array([T_outside] * runtime)
     Q_sol = np.zeros((runtime, Buildings.shape[0]))
@@ -201,33 +219,44 @@ def get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, initia
                                                                                          T_air_max=T_max_indoor,
                                                                                          Buildings=Buildings)
     # check if stationary condition has set in
-    for i in range(T_thermalMass_noDR.shape[1]):
-        while -1e-6 >= T_thermalMass_noDR[-1, i] - T_thermalMass_noDR[-2, i] or \
-                1e-6 <= T_thermalMass_noDR[-1, i] - T_thermalMass_noDR[-2, i]:
-            runtime += 100
+    prev_difference = 0
+    while (-1e-4 >= T_thermalMass_noDR[-1, :] - T_thermalMass_noDR[-2, :]).any() or \
+            (1e-4 <= T_thermalMass_noDR[-1, :] - T_thermalMass_noDR[-2, :]).any():
+        new_difference = np.round(T_thermalMass_noDR[-1, :] - T_thermalMass_noDR[-2, :], 6)
+        if (prev_difference == new_difference).any():
+            # oscilating -> break the loop
+            break
+        else:
             Temperature_outside = np.array([T_outside] * runtime)
             Q_sol = np.zeros((runtime, Buildings.shape[0]))
             Q_Heating_noDR, Q_Cooling_noDR, T_Room_noDR, T_thermalMass_noDR = ref_HeatingCooling(
                 T_outside=Temperature_outside,
                 Q_solar=Q_sol,
-                initial_thermal_mass_temp=initial_thermal_mass_temp,
+                initial_thermal_mass_temp=T_thermalMass_noDR[-1, :],
                 T_air_min=T_min_indoor,
                 T_air_max=T_max_indoor,
                 Buildings=Buildings)
+            prev_difference = new_difference
 
     return Q_Heating_noDR, Q_Cooling_noDR, T_Room_noDR, T_thermalMass_noDR
 
 
-def calculate_LoadShiftPotential(Buildings, hours_of_preheating, hours_of_shifting, T_outside,
-                                 T_min_indoor, T_max_indoor, HouseNr, T_offset_indoor=2, plot_on=False):
+def calculate_LoadShiftPotential(Buildings: pd.DataFrame, 
+                                 hours_of_preheating: int, 
+                                 T_outside: float,
+                                 T_min_indoor: float, 
+                                 T_max_indoor: float, 
+                                #  thermal_mass_starting_temp: float,
+                                 T_offset_indoor: float=2, 
+                                 ):
     # calculate the thermal mass temperature when there is thermal equilibrium:
-    Q_Heating_noDR_constant, Q_Cooling_noDR_constant, T_Room_noDR_constant, T_thermalMass_noDR_constant = \
-        get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, initial_thermal_mass_temp=22)
+    Q_heating_constant, Q_cooling_constant, T_room_constant, T_thermalMass_constant = \
+        get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, initial_thermal_mass_temp=18, runtime=500)
     # last value is constant value:
-    Q_Heating_noDR_constant = Q_Heating_noDR_constant[-1, :]
-    Q_Cooling_noDR_constant = Q_Cooling_noDR_constant[-1, :]
-    T_Room_noDR_constant = T_Room_noDR_constant[-1, :]
-    T_thermalMass_noDR_constant = T_thermalMass_noDR_constant[-1, :]
+    Q_heating_constant = Q_heating_constant[-1, :]
+    Q_cooling_constant = Q_cooling_constant[-1, :]
+    T_room_constant = T_room_constant[-1, :]
+    T_thermalMass_constant = T_thermalMass_constant[-1, :]
 
     # create temperature and solar gains array
     Temperature_outside = np.array([T_outside] * hours_of_preheating)
@@ -235,88 +264,50 @@ def calculate_LoadShiftPotential(Buildings, hours_of_preheating, hours_of_shifti
     Q_sol = np.zeros((hours_of_preheating, Buildings.shape[0]))
     # calculate the thermal mass temperature after the time of preheating as well as heating/cooling power
     # this is done by raising the minimum indoor temperature for heating and lowering it for cooling by 2°C
-    Q_PreHeating_noDR, Q_PreCooling_noDR, T_PreRoom_noDR, T_PrethermalMass_noDR = ref_HeatingCooling(
-        Temperature_outside,
+    Q_preheating, Q_PreCooling, T_room_preheating, T_thermal_mass_preheating = ref_HeatingCooling(
+        T_outside=Temperature_outside,
         Q_solar=Q_sol,
-        initial_thermal_mass_temp=T_thermalMass_noDR_constant,
+        initial_thermal_mass_temp=T_thermalMass_constant,
         T_air_min=T_min_indoor + T_offset_indoor,
         T_air_max=T_max_indoor - T_offset_indoor,
-        Buildings=Buildings)
-
-    # now calculate the heating/cooling power with the old indoor temperature settings starting from the values
-    # calculated in the preheating:
-    # create temperature and solar gains array
-    Temperature_outside = np.array([T_outside] * hours_of_shifting)
-    # no solar gains are considered
-    Q_sol = np.zeros((hours_of_shifting, Buildings.shape[0]))
-    Q_ReducedHeating_noDR, Q_ReducedCooling_noDR, T_ReducedRoom_noDR, T_ReducedthermalMass_noDR = ref_HeatingCooling(
-        Temperature_outside,
-        Q_solar=Q_sol,
-        initial_thermal_mass_temp=T_PrethermalMass_noDR[-1, :],  # take the last one
-        T_air_min=T_min_indoor,
-        T_air_max=T_max_indoor,
-        Buildings=Buildings)
-
-    # calculate and plot the difference between steady state and shifting demand:
-    # total thermal power during preheating when load is constant:
-    Q_Heating_constant_total_preheating = Q_Heating_noDR_constant * hours_of_preheating
-    Q_Heating_constant_total_shifting = Q_Heating_noDR_constant * hours_of_shifting
-    Q_PreHeating_noDR_total = Q_PreHeating_noDR.sum(axis=0)
-    Q_ReducedHeating_noDR_total = Q_ReducedHeating_noDR.sum(axis=0)
-
-    ExcessHeatPreheat = Q_PreHeating_noDR_total - Q_Heating_constant_total_preheating
-    SaveHeatShifting = Q_Heating_constant_total_shifting - Q_ReducedHeating_noDR_total
+        Buildings=Buildings,)
+    Q_PreHeating_total = Q_preheating.sum(axis=0)
 
     # calculate the energy until static temperature is reached again:
-    Q_Heating_afterShift, Q_Cooling_afterShift, T_Room_afterShift, T_thermalMass_afterShift = \
-        get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, T_ReducedthermalMass_noDR[-1, :])
+    Q_heating_shifting, Q_cooling_shifting, T_room_shifting, T_thermal_ass_shifting = \
+        get_constant_Q_Tm_t(Buildings, T_outside, T_min_indoor, T_max_indoor, T_thermal_mass_preheating[-1, :], runtime=500)
     # total heating until steady state is reached after shifting:
-    Q_Heating_afterShift_sum = Q_Heating_afterShift.sum(axis=0)
+    Q_Heating_afterShift_sum = Q_heating_shifting.sum(axis=0)
     # Energy still stored in thermal mass after unloading
-    RemainingEnergy = (np.tile(Q_Heating_noDR_constant, (Q_Heating_afterShift.shape[0], 1)) - Q_Heating_afterShift) \
-        .sum(axis=0)
-
+    RemainingEnergy = (np.tile(Q_heating_constant, (Q_heating_shifting.shape[0], 1)) - Q_heating_shifting).sum(axis=0)
+    
+    # reference energy into building mass while pre-heating:
+    Q_Heating_constant_total_preheating = Q_heating_constant * hours_of_preheating
+    ExcessHeatPreheat = Q_PreHeating_total - Q_Heating_constant_total_preheating
     # total losses:
-    TotalLoss = ExcessHeatPreheat - SaveHeatShifting - RemainingEnergy
-    print(f"loss in %: {TotalLoss/ExcessHeatPreheat}")
-    if plot_on:
-        plot1, plot2 = plot_heat_demand_and_shifted_bars(
-            ExcessHeatPreheat / 1000,
-            SaveHeatShifting / 1000,
-            RemainingEnergy / 1000,
-            TotalLoss / 1000,
-            Q_PreHeating_noDR / 1000,
-            Q_ReducedHeating_noDR / 1000,
-            T_PrethermalMass_noDR,
-            T_ReducedRoom_noDR,
-            T_ReducedthermalMass_noDR,
-            T_PreRoom_noDR,
-            Q_Heating_noDR_constant / 1000,
-            T_thermalMass_noDR_constant,
-            T_Room_noDR_constant,
-            HouseNr,
-            hours_of_preheating,
-            hours_of_shifting,
-        )
-        return plot1, plot2
+    TotalLoss = ExcessHeatPreheat - RemainingEnergy
+    percentage_loss = TotalLoss/ExcessHeatPreheat
+    T_delta_thermal_mass = T_thermal_mass_preheating[-1, :] - T_thermalMass_constant
+    # print(f"loss in %: {percentage_loss}")
 
-    return Q_PreHeating_noDR
+    return percentage_loss, T_delta_thermal_mass, RemainingEnergy
+
+
 
 
 def plot_heat_demand_and_shifted_bars(
         ExcessHeatPreheat,
-        SaveHeatShifting,
         RemainingEnergy,
         TotalLoss,
-        Q_PreHeating_noDR,
-        Q_ReducedHeating_noDR,
-        T_PrethermalMass_noDR,
-        T_ReducedRoom_noDR,
-        T_ReducedthermalMass_noDR,
-        T_PreRoom_noDR,
-        Q_Heating_noDR_constant,
-        T_thermalMass_noDR_constant,
-        T_Room_noDR_constant,
+        Q_PreHeating,
+        Q_shifting,
+        Q_constant,
+        T_thermal_mass_pre_heating,
+        T_thermal_mass_shifting,
+        T_thermal_mass_constant,
+        T_room_pre_heating,
+        T_room_shifting,
+        T_room_constant,
         house_nr,
         preheating_hours,
         shifting_hours,
@@ -348,21 +339,21 @@ def plot_heat_demand_and_shifted_bars(
 
     # plot results for one building:
     x_achse = np.arange(preheating_hours + shifting_hours)
-    Q_Heating_plot = np.append(Q_PreHeating_noDR[:, house_nr - 1], Q_ReducedHeating_noDR[:, house_nr - 1])
-    T_thermalMass_plot = np.append(T_PrethermalMass_noDR[:, house_nr - 1], T_ReducedthermalMass_noDR[:, house_nr - 1])
-    T_Room_plot = np.append(T_PreRoom_noDR[:, house_nr - 1], T_ReducedRoom_noDR[:, house_nr - 1])
+    Q_Heating_plot = np.append(Q_PreHeating[:, house_nr - 1], Q_ReducedHeating_noDR[:, house_nr - 1])
+    T_thermalMass_plot = np.append(T_thermal_mass_pre_heating[:, house_nr - 1], T_ReducedthermalMass_noDR[:, house_nr - 1])
+    T_Room_plot = np.append(T_room_pre_heating[:, house_nr - 1], T_ReducedRoom_noDR[:, house_nr - 1])
 
     fig1, (ax1, ax2) = plt.subplots(2, 1)
     ax1.plot(x_achse, Q_Heating_plot, label="heating power", color="red")
-    ax1.axhline(Q_Heating_noDR_constant[house_nr - 1], xmin=0, xmax=1, label="constant heating power", color="black")
+    ax1.axhline(Q_constant[house_nr - 1], xmin=0, xmax=1, label="constant heating power", color="black")
     # ax1.vlines(x=0, ymin=Q_Heating_noDR_constant[0], ymax=Q_Heating_plot[0], color="red")
     ax1.axvline(x=preheating_hours - 1, color="black", linestyle="--", linewidth=0.7)
 
-    ax1.fill_between(x_achse, Q_Heating_noDR_constant[house_nr - 1], Q_Heating_plot,
-                     where=(Q_Heating_plot > Q_Heating_noDR_constant[house_nr - 1]), color='red', alpha=0.7,
+    ax1.fill_between(x_achse, Q_constant[house_nr - 1], Q_Heating_plot,
+                     where=(Q_Heating_plot > Q_constant[house_nr - 1]), color='red', alpha=0.7,
                      label='Additional Energy', interpolate=True)
-    ax1.fill_between(x_achse, Q_Heating_noDR_constant[house_nr - 1], Q_Heating_plot,
-                     where=(Q_Heating_plot < Q_Heating_noDR_constant[house_nr - 1]), color='green', alpha=0.7,
+    ax1.fill_between(x_achse, Q_constant[house_nr - 1], Q_Heating_plot,
+                     where=(Q_Heating_plot < Q_constant[house_nr - 1]), color='green', alpha=0.7,
                      label='Reduced Energy', interpolate=True)
 
     mass_temp = ax2.plot(x_achse, T_thermalMass_plot, label="Thermal mass temperature", color="purple")
@@ -409,104 +400,209 @@ def plot_heat_demand_and_shifted_bars(
     return fig0, fig1
 
 
+def pearson_correlation_loss(df):
+    # correlation between loss and other factors for each building:
+    corr_df = df.copy().drop(columns=["shifted energy"])
+    corr_df = corr_df.groupby(by="Building ID").corr()["loss"].reset_index().rename(columns={"level_1": "setting", "loss": "pearson correlation with loss"})
+    corr_df["setting"] = corr_df["setting"].map({
+        "offset_temp": "preheating \n temperature",
+        "t_delta_thermal_mass": r"$\Delta$T thermal mass",
+        "outside temperature": "outside \n temperature",
+        "loss" : r"$\xi_{building}$",
+        "shifted energy": "shifted \n energy",
+        "preheating time": "preheating \n time"
+    })
+    corr_df = corr_df.loc[corr_df["setting"]!=r"$\xi_{building}$",:]
+    fig, ax = plt.subplots(figsize=(20, 12))
+    sns.barplot(
+        corr_df,
+        x="setting",
+        y="pearson correlation with loss",
+        hue="Building ID",
+    )
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+    ax.legend(loc="lower right", fontsize=17)
+    plt.xticks(rotation=0)
+    ax.set_xlabel("")
+    ax.set_ylabel(r"pearson correlation with $\xi_{building}$")
+    plt.tight_layout()
+    plt.savefig(Path(__file__).parent / f"pearson_correlation_building_loss.png")
+    plt.savefig(Path(__file__).parent / f"pearson_correlation_building_loss.svg")
+
+def remove_no_heating_loss_values(df):
+    # when a building has a strong increase in loss with rising outside temperature it means that the building does not need to be preheated as it almost needs no heating anymore.
+    groups = []
+    for building_id, group in df.groupby("Building ID"):
+        profile = group.loc[:, "loss"].copy()
+        Q1 = np.percentile(profile, 25)
+        Q3 = np.percentile(profile, 75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.2 * IQR
+        upper_bound = Q3 + 1.2 * IQR
+        reduced_df = group.loc[group.loc[:, "loss"] < upper_bound, :].copy()
+        groups.append(reduced_df)
+    new_df = pd.concat(groups, axis=0)
+
+def create_file_with_xi_values_over_temperature(df):
+    df.groupby(["Building ID", "outside temperature"]).max().reset_index().loc[:, ["Building ID", "outside temperature", "loss"]].to_csv(
+        Path(__file__).parent / "thermal_mass_loss_based_on_outside_temperature.csv", sep=";", index=False
+    )
+
+
+
+def plot_losses_against_delta_t(results_df: pd.DataFrame):
+    # due to flaoting point errors, losses with lower than 0.1 delta T are excluded:
+    results_df["Building ID"] = results_df["Building ID"].map(building_id_to_name)
+    
+    create_file_with_xi_values_over_temperature(results_df)
+    line_plot_loss_vs_outside_temp(results_df)
+    pearson_correlation_loss(results_df)
+    plot_mean_loss_per_building(results_df)
+    line_plot_loss_vs_t_delta_thermal_mass(results_df)
+
+    # remove_no_heating_loss_values(results_df)  # no need because i need the higher loss values
+    
+    matplotlib.rc("font", **{"size": 22})
+    palette = sns.color_palette("tab10", len(results_df['outside temperature'].unique()))
+    fig, ax = plt.subplots(figsize=(20, 12))
+    sns.scatterplot(
+        data=results_df,
+        x="outside temperature",
+        y="loss",
+        hue="t_delta_thermal_mass",
+        style="Building ID",
+        # palette=palette
+    )
+    ax.legend(loc="upper right", fontsize=18)
+
+    # for i, b_id in enumerate(results_df["Building ID"].unique()):
+    #     sns.regplot(
+    #         data=results_df.loc[(results_df["Building ID"] == b_id), :],
+    #         x="outside temperature",
+    #         y="loss",
+    #         ci=100,
+    #         scatter=False,
+    #         line_kws=dict(color="grey"),
+    #         order=1
+    #     )
+    ax.set_xlabel(r"$\Delta T$ thermal mass (°C)")
+    ax.set_ylabel(r"thermal loss $\xi_{building}$ (%)")
+    ax.set_ylim(0.02, 0.15)
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+    plt.tight_layout()
+    plt.savefig(Path(__file__).parent / f"Regression_of_the_thermal_mass_losses.png")
+    plt.savefig(Path(__file__).parent / f"Regression_of_the_thermal_mass_losses.svg")
+    plt.show()
+
+
+
+    # Pearson correlation:
+    losses_per_meter = pd.read_csv(Path(__file__).parent / "heat_demand_per_square_meter.csv", sep=";").rename(columns={"ID_Building": "Building ID"})
+    losses_per_meter["Building ID"] = losses_per_meter["Building ID"].map(building_id_to_name)
+    merged = pd.merge(left=mean_loss, right=losses_per_meter, on="Building ID")
+    merged.loc[: , ["heat demand (kWh/m2)", "loss", "Af", "Hop", "Htr_w", "Hve", "CM_factor"]].corr(method="pearson")["loss"].plot(kind="bar")
+    plt.show()
+
+
+def plot_mean_loss_per_building(df):
+    # plot the average loss value of every building:
+    mean_loss = df.groupby(by=["Building ID"])["loss"].mean()
+    fig, ax = plt.subplots(figsize=(20, 12))
+    mean_loss.plot(kind="bar", color="grey")
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+    ax.set_ylabel(r"mean shifting loss factor $\xi_{building}$ (%)")
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    plt.savefig(Path(__file__).parent / f"mean_shifting_loss_factor_per_building.png")
+    plt.savefig(Path(__file__).parent / f"mean_shifting_loss_factor_per_building.svg")
+    plt.show()
+
+
+def line_plot_loss_vs_outside_temp(df):
+    palette = sns.color_palette("tab10", len(df['Building ID'].unique()))
+    df.sort_values("Building ID", inplace=True)
+    fig, ax = plt.subplots(figsize=(20, 12))
+    sns.lineplot(
+        data=df,
+        x="outside temperature",
+        y="loss",
+        hue="Building ID",
+        palette=palette,
+    )
+    plt.xticks(rotation=0)
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+    ax.set_ylabel(r"thermal loss $\xi_{building}$ (%)")
+    plt.tight_layout()
+    plt.savefig(Path(__file__).parent / f"line_plot_xi_loss_vs_outside_temperature.png")
+    plt.savefig(Path(__file__).parent / f"line_plot_xi_loss_vs_outside_temperature.svg")
+    plt.show()
+
+def line_plot_loss_vs_t_delta_thermal_mass(df):
+    palette = sns.color_palette("tab10", len(df['Building ID'].unique()))
+    df.sort_values("Building ID", inplace=True)
+    fig, ax = plt.subplots(figsize=(20, 12))
+    sns.lineplot(
+        data=df,
+        x="t_delta_thermal_mass",
+        y="loss",
+        hue="Building ID",
+        palette=palette,
+    )
+    plt.xticks(rotation=0)
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+    ax.set_ylabel(r"thermal loss $\xi_{building}$ (%)")
+    plt.tight_layout()
+    plt.savefig(Path(__file__).parent / f"line_plot_xi_loss_vs_t_delta_thermal_mass.png")
+    plt.savefig(Path(__file__).parent / f"line_plot_xi_loss_vs_t_delta_thermal_mass.svg")
+    plt.show()
+
+def process_combinations(time_pre_heating, offset_temp, outside_temp, Buildings):
+    T_min_indoor = 20
+    T_max_indoor = 27
+    loss, t_delta_thermal_mass, shifted_energy = calculate_LoadShiftPotential(
+        Buildings=Buildings,
+        hours_of_preheating=time_pre_heating,
+        T_outside=outside_temp,
+        T_min_indoor=T_min_indoor, 
+        T_max_indoor=T_max_indoor, 
+        T_offset_indoor=offset_temp,
+    )
+
+    result = []
+    for building_id in range(len(loss)):
+        result.append({
+            'preheating time': time_pre_heating,
+            'offset_temp': offset_temp,
+            'outside temperature': outside_temp,
+            'Building ID': building_id + 1,
+            'loss': loss[building_id],
+            't_delta_thermal_mass': t_delta_thermal_mass[building_id],
+            'shifted energy': shifted_energy[building_id],
+        })
+    return result
+
 if __name__ == "__main__":
     # path:
     project_directory_path = Path(__file__).parent.resolve()
     # define building data
-    Buildings = pd.read_excel(project_directory_path / "Sprungantwort_tests.xlsx", engine="openpyxl")
+    Buildings = pd.read_excel(project_directory_path / "thermal_mass_losses_buildings.xlsx", engine="openpyxl")
 
-    # Sprungantwort()
-    # compare_solar_radation()
+    combinations = [
+        (time_pre_heating, offset_temp, outside_temp)
+        for time_pre_heating in np.arange(1, 5)
+        for offset_temp in np.arange(1, 3.25, 0.25)
+        for outside_temp in range(-17, 15, 1)
+    ]
 
-    hours_of_preheating = 3
-    hours_of_shifting = 20
-    T_outside = -5
-    T_min_indoor = 20
-    T_max_indoor = 23
-    T_offset_indoor = 2
-    HouseNr = 3  # startet bei 1! nicht bei 0
-    plotON = True
-    # installierte Leistung bei -5°C
-    for houses in [1, 2, 3, 4]:
-        line_plot, barplot = calculate_LoadShiftPotential(Buildings,
-                                                          hours_of_preheating,
-                                                          hours_of_shifting,
-                                                          T_outside,
-                                                          T_min_indoor,
-                                                          T_max_indoor,
-                                                          houses,
-                                                          T_offset_indoor=T_offset_indoor,
-                                                          plot_on=True)
+    parallel = Parallel(n_jobs=-1)  # Use all available cores
+    results = parallel(delayed(process_combinations)(time_pre_heating, offset_temp, outside_temp, Buildings) for time_pre_heating, offset_temp, outside_temp in tqdm.tqdm(combinations, desc="Processing combinations"))
+    flattened_results = [item for sublist in results for item in sublist]
+
+    df_results = pd.DataFrame(flattened_results)
+    
+    plot_losses_against_delta_t(df_results)
 
 
 
-    installierte_Leistung = calculate_LoadShiftPotential(Buildings,
-                                                         hours_of_preheating,
-                                                         hours_of_shifting,
-                                                         -15,
-                                                         T_min_indoor,
-                                                         T_max_indoor,
-                                                         HouseNr,
-                                                         T_offset_indoor=T_offset_indoor,
-                                                         plot_on=False)
 
-    installierte_Leistung = installierte_Leistung[0, :]  # installierte leistung für jedes haus
 
-    eingespeicherte_energie = []
-    eingespeicherte_energie2d = []
-    # temperaturen von -15 bis 18°C
-    for temp in range(-15, 18):
-        # für temperatur 2d plot:
-        Heizleistung_Vorheizen = calculate_LoadShiftPotential(Buildings, hours_of_preheating, hours_of_shifting, temp,
-                                                              T_min_indoor, T_max_indoor, HouseNr,
-                                                              T_offset_indoor=T_offset_indoor)
-        eingespeicherte_energie2d.append(Heizleistung_Vorheizen.sum(axis=0))
-
-        # verschiedene einspeicherzeiten: 1 bis 5 stunden:
-        for preheatingHours in range(1, 5):
-            Heizleistung_Vorheizen = calculate_LoadShiftPotential(Buildings, preheatingHours, hours_of_shifting, temp,
-                                                                  T_min_indoor, T_max_indoor, HouseNr,
-                                                                  T_offset_indoor=T_offset_indoor)
-
-            eingespeicherte_energie.append([temp, preheatingHours,
-                                            Heizleistung_Vorheizen.sum(axis=0)[0],
-                                            Heizleistung_Vorheizen.sum(axis=0)[1],
-                                            Heizleistung_Vorheizen.sum(axis=0)[2]])
-
-    eingespeicherte_energie2d = np.vstack(eingespeicherte_energie2d)  # list to matrix
-    Daten = np.vstack(eingespeicherte_energie)  # list to matrix
-    fig = plt.figure(figsize=(18, 16))
-    ax = plt.axes(projection="3d")
-    x_data = Daten[:, 0]  # Temperature
-    y_data = Daten[:, 1]  # preheating duration
-    z_data1 = Daten[:, 2] / installierte_Leistung[0]  # stored energy house 1
-    z_data2 = Daten[:, 3] / installierte_Leistung[1]  # stored energy house 2
-    z_data3 = Daten[:, 4] / installierte_Leistung[2]  # stored energy house 3
-
-    ax.scatter(x_data, y_data, z_data1, color="Blue", label="House 1", marker="x", alpha=0.5, s=50)
-    # ax.scatter(x_data, y_data, z_data2, color="green", label="House 2", marker="x", alpha=0.5)
-    ax.scatter(x_data, y_data, z_data3, color="red", label="House 2", marker="o", alpha=0.5)
-
-    plt.legend(prop={"size":20})
-    ax.set_xlabel("temperature in °C", fontsize=20, labelpad=20)
-    ax.set_ylabel("preheating hours", fontsize=20, labelpad=20)
-    ax.set_zlabel(r'$\frac{stored \; energy}{installed \; HP \; power}$', fontsize=20, labelpad=20)
-
-    matplotlib.rc('xtick', labelsize=20)
-    matplotlib.rc('ytick', labelsize=20)
-    # plt.tight_layout()
-    plt.savefig(project_directory_path / "Stored_energy_3D.svg")
-    plt.show()
-
-    # 2d plot über temperatur
-    x_achse = np.arange(-15, 18)
-    for i in range(3):
-        plt.plot(x_achse, eingespeicherte_energie2d[:, i] / installierte_Leistung[i], label="House " + str(i + 1))
-
-    plt.legend()
-    plt.grid()
-    plt.xlabel("Temperature in °C")
-    plt.ylabel(r'$\frac{stored \; energy}{installed \; HP \; power}$')
-    plt.title("Stored energy to installed power, " + str(hours_of_preheating) + " hours preheating")
-    plt.savefig(project_directory_path / "Stored_energy_2D_temp.png")
-    plt.show()

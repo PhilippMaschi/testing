@@ -587,6 +587,7 @@ def read_hdf5(country: str, output_path: Path, years: list, path_dict: dict, hdf
             final_df['name'] = final_df['name'].apply(lambda x: x.decode('utf-8') if isinstance(x, bytes) else x)
             final_df.to_parquet(output_path / f'INVERT_{country}_{year}.parquet.gzip', compression='gzip', index=False)
             print_summary_data_from_invert(final_df, year, country)
+            print_percentages_of_heating_systems(final_df, year, country)
             print(f"added {year} data to {country}.")
 
 
@@ -603,6 +604,20 @@ def print_summary_data_from_invert(df: pd.DataFrame, year, country):
             f"{round((group['uedh_sh_effective'] * group['number_of_buildings']).sum() / 1_000 / 1_000)} MWh \n"  # MWh
 
         )
+
+def print_percentages_of_heating_systems(df: pd.DataFrame, year, country):
+    print(f"\n Percentages of heating systems for {country} {year}: \n")
+    total_nr_buildings = df.loc[:, "number_of_buildings"].sum()
+    conventional_percentage = (df.loc[:, "number_buildings_coal"].sum() + df.loc[:, "number_buildings_gas"].sum() + df.loc[:, "number_buildings_oil"].sum() + df.loc[:, "number_buildings_district_heating"].sum() + df.loc[:, "number_buildings_wood"].sum()) / total_nr_buildings * 100
+    hp_air_percentage = df.loc[:, "number_buildings_heat_pump_air"].sum() / total_nr_buildings * 100
+    hp_ground_percentage = df.loc[:, "number_buildings_heat_pump_ground"].sum() / total_nr_buildings * 100
+    split_percentage = df.loc[:, "number_buildings_split_system"].sum() / total_nr_buildings * 100
+    direct_elec_percentage = df.loc[:, "number_buildings_electricity"].sum() / total_nr_buildings * 100
+    print(f"conventional: {round(conventional_percentage)} % \n \
+          Air heat pump: {round(hp_air_percentage)} % \n \
+          Ground heat pump: {round(hp_ground_percentage)} % \n \
+          Split system: {round(split_percentage)} % \n \
+          Direct electric: {round(direct_elec_percentage)} % \n ")
 
 
 def copy_hdf5_files(path_dict: dict, out_path: Path, countries: list):
@@ -677,7 +692,7 @@ def clean_up(folder: Path):
 @performance_counter
 def main(paths: dict, years: list, out_path: Path):
     country_list = [
-        'AUT',
+        # 'AUT',
         # 'BEL',
         # 'BGR',
         # 'HRV',
@@ -727,19 +742,17 @@ def main(paths: dict, years: list, out_path: Path):
 if __name__ == "__main__":
     # user inputs:
     project_path = Path(
-        r"E:\projects3\2022_NewTrends\invert\output")  # Path(r"E:\projects3\2022_NewTrends\invert\out")  Path(r"E:/projects3/2021_ECEMF/invert")
-    invert_scenario = r"output_230825_hdf5_for_Philipp"  # r"output_new_trends_2022_12_20_2050"  r"output/output_ecemf_invert_eelab_secondround_231130_am_pm"
-    sub_scenario = "eff_high_electr_ab"  # "_res_hc_pw_alternative_1_ab"  "eff_high_elec_ab"
+        r"E:/projects3/2021_ECEMF/invert/output")  # NewTrends: Path(r"E:\projects3\2022_NewTrends\invert\output")     ECEMF: Path(r"E:/projects3/2021_ECEMF/invert/output")
+    invert_scenario = r"output_ecemf_invert_eelab_secondround_231130_am_pm"  # NewTrends: r"output_230825_hdf5_for_Philipp" ECEMF: r"output_ecemf_invert_eelab_secondround_231130_am_pm"  
+    sub_scenario = "eff_high_elec_ab"   # NewTrends: eff_high_elec_ab, eff_moderate_const_costpot_ab        ECEMF: eff_high_elec_ab, eff_moderate_elec_ab
     # invert input data ("input") folder
     invert_input_path = Path(
-        r"E:\projects3\2022_NewTrends\invert\input\input_invert_renovcosts_new_trend"
-        # r"W:\projects3\2021_ECEMF\invert\input\input_ecemf_invert_eelab_secondround_231115"
-
+        # r"E:\projects3\2022_NewTrends\invert\input\input_invert_renovcosts_new_trend"      # NewTrends
+        r"E:\projects3\2021_ECEMF\invert\input\input_ecemf_invert_eelab_secondround_231115"  # ECEMF
     )
     # define path where data should be saved
     output_folder = Path(
-        r"E:\projects3\Philipp\output_data_invert"
-        # r"E:/projects3/2021_ECEMF/Philipp"
+        r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data\Georgina_paper_newTrends"
     )
     years = [2020, 2030, 2040, 2050]
 

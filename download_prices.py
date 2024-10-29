@@ -31,7 +31,7 @@ __year = 2019
 
 electricity_price_config = {
     # variable price
-    "api_key": 'c06ee579-f827-486d-bc1f-8fa0d7ccd3da',
+    "api_key": 'f09ebb03-5ae0-4b72-bb02-dd63a5817921',
     "start": f"{__year}0101",
     "end": f"{__year + 1}0101",
     "grid_fee": 20,  # ct/kWh
@@ -48,10 +48,12 @@ def get_entsoe_prices(api_key: str,
     end = pd.Timestamp(f"{year + 1}0101", tz='CET')
     try:
         # Get day-ahead prices from ENTSO-E Transparency
-        DA_prices = client.query_day_ahead_prices(country_code=country_code,
-                                                  start=start,
-                                                  end=end,
-                                                  resolution="60T")
+        DA_prices = client.query_day_ahead_prices(
+            country_code=country_code,
+            start=start,
+            end=end,
+            resolution="60T"
+        )
         # check if price is hourly our subhourly:
         if len(DA_prices) > 9000:
             print(f"prices for {country_code} are given subhourly intervals.")
@@ -60,7 +62,7 @@ def get_entsoe_prices(api_key: str,
         if len(entsoe_price) != 8760:
             # just resample..
             entsoe_price = entsoe_price.resample('1H').mean()
-            #check again
+            # check again
         if len(entsoe_price) != 8760:
             # check if first or last hour is missing:
             first = pd.Timestamp(f'{year}-01-01')
@@ -118,7 +120,7 @@ def main(path, year):
         "IT_NORD_FR",
         "IT_NORD_SI",
         "IT_PRGP",
-        "IT_ROSN",   # has one missing value for 2020
+        "IT_ROSN",  # has one missing value for 2020
         "IT_SARD",
         "IT_SICI",
         "IT_SUD",
@@ -164,11 +166,12 @@ def main(path, year):
 
 if __name__ == "__main__":
     path_to_save_csv = Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\ENTSOE Prices")
-    years = [2018, 2019, 2020, 2021]
+    years = [2023]#[2018, 2019, 2020, 2021]
     input_list = [(path_to_save_csv, y) for y in years]
 
     # ---------------------------
-    # year = 2019
+    # for debugging
+    # year = 2021
     # main(path_to_save_csv, year)
     # ---------------------------
     cores = int(multiprocessing.cpu_count() / 2)
