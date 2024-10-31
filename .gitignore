@@ -16,5 +16,6 @@
 *.dbf
 *.pkl
 idea/
+*.pdf
 
 
