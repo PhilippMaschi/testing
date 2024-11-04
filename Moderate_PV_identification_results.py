@@ -140,6 +140,24 @@ def plot_identified_numbers(gdf_3035):
     plt.close()
 
 
+def plot_pvs_on_map(gdf_3035, gdf_3035_all):
+    # load valencia boundaries:
+    path_rg = Path(r"nuts_json") / "NUTS_RG_01M_2021_3035_LEVL_2.json"
+    gdf_rg = gpd.read_file(path_rg)
+    valencia = gdf_rg[gdf_rg["NAME_LATN"]=="Comunitat Valenciana"].copy()
+    # plot the identified PVs on the map 
+    fig, ax = plt.subplots(figsize=(20, 15))#, subplot_kw={'projection': cartopy.crs.epsg(3035)})
+    ax = valencia.plot(color="lightgrey")
+    gdf_3035_all.plot(ax=ax, color="blue", markersize=0.5, alpha=0.5)
+    gdf_3035.plot(ax=ax, color="red", markersize=0.5, alpha=0.5)
+    legend_elements = [
+        Line2D([0], [0], color="white", marker="o", label="Buildings", markerfacecolor='blue'),
+        Line2D([0], [0], marker="o", color="white", label="identified PV", markerfacecolor='red')
+    ]
+    ax.legend(handles=legend_elements, loc='lower right')#, bbox_to_anchor=(1.05, 1))
+    plt.savefig(Path(__file__).parent / "MODERATE_T3.4" / "Valencia.png", dpi=1200)
+
+
 def main():
 
     input_tifs = [f for f in PATH_2_INPUT_TIFS.iterdir() if f.suffix == ".tif"]
@@ -189,35 +207,10 @@ def main():
     )
     gdf_3035_all = gdf_4326_all.to_crs("EPSG:3035")
 
-    # load valencia boundaries:
-    path_rg = Path(r"nuts_json") / "NUTS_RG_01M_2021_3035_LEVL_2.json"
-    gdf_rg = gpd.read_file(path_rg)
-    valencia = gdf_rg[gdf_rg["NAME_LATN"]=="Comunitat Valenciana"].copy()
+    plot_pvs_on_map(gdf_3035, gdf_3035_all)
 
 
 
-    # plot the identified PVs on the map 
-    fig, ax = plt.subplots(figsize=(20, 15))#, subplot_kw={'projection': cartopy.crs.epsg(3035)})
-    ax = valencia.plot(color="lightgrey")
-    gdf_3035_all.plot(ax=ax, color="blue", markersize=0.5, alpha=0.5)
-    gdf_3035.plot(ax=ax, color="red", markersize=0.5, alpha=0.5)
-    legend_elements = [
-        Line2D([0], [0], color="white", marker="o", label="Buildings", markerfacecolor='blue'),
-        Line2D([0], [0], marker="o", color="white", label="identified PV", markerfacecolor='red')
-    ]
-    ax.legend(handles=legend_elements, loc='lower right')#, bbox_to_anchor=(1.05, 1))
-    plt.savefig(Path(__file__).parent / "MODERATE_T3.4" / "Valencia.png", dpi=1200)
-
-
-
-    # Plot the boundary of Valencia
-
-    # Add context features to the map
-    # ax.add_feature(cartopy.feature.COASTLINE)
-    # ax.add_feature(cartopy.feature.BORDERS, linestyle=':')
-
-    fig.savefig(Path(__file__).parent / "MODERATE_T3.4" / "Valencia.png")
-    plt.show()
 
 
 if __name__ == "__main__":
