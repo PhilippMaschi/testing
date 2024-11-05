@@ -18,6 +18,7 @@ from matplotlib.patches import Patch, ConnectionPatch
 from matplotlib.lines import Line2D
 import tqdm
 import time
+from PIL import Image
 
 
 PATH_2_INPUT_TIFS = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/input_tifs/")
@@ -31,6 +32,8 @@ VALENCIA_DATA.drop_duplicates(keep="first", inplace=True)
 
 # PATH_2_INPUT_TIFS = Path(r"X:\projects4\workspace_philippm\building-stock-analysis\T3.1-dynamic-analysis\Case-study-II-III-PV-analysis\solar-panel-classifier\new_data\input_tifs")
 # BUILDING_LOCS = {"1000248182": "39.345798,-0.571910"}
+
+MANUALLY_IDENTIFIED = pd.read_csv(Path(__file__).parent / "OSM_IDs_with_has_pv.csv", sep=";")
 
 
 
@@ -174,13 +177,71 @@ def main():
     #     regions = ox.features_from_polygon(polygon=polygon_wgs84, tags={'boundary': 'administrative', 'admin_level': '6'})
     #     buildings = ox.features_from_polygon(polygon=polygon_wgs84, tags={'building': True})
 
+    MANUALLY_IDENTIFIED.loc[MANUALLY_IDENTIFIED["has_pv"]=="yes", "osmid"]
+    hashs = [generate_hash(file_name) for file_name in [
+            "020201_2023CVAL0025_25830_8bits_RGBI_0893_1-4.tif"
+            "020201_2023CVAL0025_25830_8bits_RGBI_0893_1-5.tif",
+            "020201_2023CVAL0025_25830_8bits_RGBI_0893_1-6.tif",
+            "020201_2023CVAL0025_25830_8bits_RGBI_0893_2-4.tif",
+            "020201_2023CVAL0025_25830_8bits_RGBI_0893_2-5.tif",
+            "020201_2023CVAL0025_25830_8bits_RGBI_0893_2-6.tif",
+        ]
+    ]
+
+    OSM_csv = MANUALLY_IDENTIFIED.copy()
+    man_ids = []
+    for h in hashs:
+        for a in all:
+            if h in a:
+                man_ids.append(a)
+    
+    osm_ids = OSM_csv.loc[:, "osmid"].copy()
+    i = 0
+    for m in man_ids:
+        for osmID in list(osm_ids):
+            if str(osmID) in m:
+                OSM_csv.loc[OSM_csv.loc[:, "osmid"]==osmID, "osmid"] = str(m)
+                i+=1
+
+
+    migrated = OSM_csv[OSM_csv["osmid"].astype(str).apply(lambda x: len(x)>12)].copy().reset_index(drop=True)
+
+    manually_identified = []
+    for osmid in MANUALLY_IDENTIFIED.loc[MANUALLY_IDENTIFIED["has_pv"]=="yes", "osmid"].astype(str):
+        for a in man_ids:
+            if osmid in a:
+                manually_identified.append(a)
+
+    # find the manually identified npy file and save it as png to check if its the same and correct:
+    # for m in manually_identified:
+    #     name = f"building_{m}.npy"
+    #     file = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/processed/")
+    #     file_name = file / name
+    #     image_array = np.load(file_name)
+    #     img = np.moveaxis(image_array, 0, -1) 
+    #     img = Image.fromarray(img.astype('uint8'))
+    #     img.save(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/testing/checkimg/") / f"{name.replace('.npy', '')}.png")
+
+
+
+    identified = [name.split("_")[1] for name in CLASSIFIER_RESULTS.loc[CLASSIFIER_RESULTS["prediction"]==1, "OSM_ID"]]
+    all = [name.replace("building_", "") for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
+    all_oms = [name.replace("building_", "").split("_")[0] for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
+    all_hashs = ["".join(name.replace("building_", "").split("_")[1:]) for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
+
+    wrong = []
+    for i in MANUALLY_IDENTIFIED.loc[MANUALLY_IDENTIFIED["has_pv"]=="yes", "osmid"]:
+        if str(i) not in identified:
+            wrong.append(i)
+        if str(i) not in all_oms:
+            print("FUCK")
+    
 
 
     lats_pv = []
     lons_pv = []
     lats = []
     lons = []
-    identified = [name.split("_")[1] for name in CLASSIFIER_RESULTS.loc[CLASSIFIER_RESULTS["prediction"]==1, "OSM_ID"]]
     for osmid, lat_lon_str in BUILDING_LOCS.items():
         lat, lon = float(lat_lon_str.split(",")[0]), float(lat_lon_str.split(",")[1])
         lats.append(lat)
