@@ -17,5 +17,7 @@
 *.pkl
 idea/
 *.pdf
-
+*.json
+*.zip
+*.txt
 
