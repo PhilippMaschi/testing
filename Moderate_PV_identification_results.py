@@ -33,7 +33,7 @@ VALENCIA_DATA.drop_duplicates(keep="first", inplace=True)
 # PATH_2_INPUT_TIFS = Path(r"X:\projects4\workspace_philippm\building-stock-analysis\T3.1-dynamic-analysis\Case-study-II-III-PV-analysis\solar-panel-classifier\new_data\input_tifs")
 # BUILDING_LOCS = {"1000248182": "39.345798,-0.571910"}
 
-MANUALLY_IDENTIFIED = pd.read_csv(Path(__file__).parent / "OSM_IDs_with_has_pv.csv", sep=";")
+MANUALLY_IDENTIFIED = pd.read_csv(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/") / "OSM_IDs_labeled.csv", sep=";")
 
 
 
@@ -148,17 +148,29 @@ def plot_pvs_on_map(gdf_3035, gdf_3035_all):
     path_rg = Path(r"nuts_json") / "NUTS_RG_01M_2021_3035_LEVL_2.json"
     gdf_rg = gpd.read_file(path_rg)
     valencia = gdf_rg[gdf_rg["NAME_LATN"]=="Comunitat Valenciana"].copy()
+    path_rg3 = Path(r"nuts_json") / "NUTS_RG_01M_2021_3035_LEVL_3.json"
+    gdf_rg3 = gpd.read_file(path_rg3)
+    spain = gdf_rg3[gdf_rg3["CNTR_CODE"]=="ES"].copy()
+    valencia3 = spain[spain.within(valencia.geometry.iloc[0])]
     # plot the identified PVs on the map 
-    fig, ax = plt.subplots(figsize=(20, 15))#, subplot_kw={'projection': cartopy.crs.epsg(3035)})
-    ax = valencia.plot(color="lightgrey")
-    gdf_3035_all.plot(ax=ax, color="blue", markersize=0.5, alpha=0.5)
-    gdf_3035.plot(ax=ax, color="red", markersize=0.5, alpha=0.5)
+    fig, axes = plt.subplots(ncols=2, nrows=1, figsize=(20, 15))#, subplot_kw={'projection': cartopy.crs.epsg(3035)})
+    valencia3.plot(ax=axes[0], color="lightgrey")
+    valencia3.plot(ax=axes[1], color="lightgrey")
+    gdf_3035_all.plot(ax=axes[1], color="blue", markersize=0.5, alpha=0.5)
+    gdf_3035.plot(ax=axes[0], color="red", markersize=0.5, alpha=0.5)
     legend_elements = [
         Line2D([0], [0], color="white", marker="o", label="Buildings", markerfacecolor='blue'),
         Line2D([0], [0], marker="o", color="white", label="identified PV", markerfacecolor='red')
     ]
-    ax.legend(handles=legend_elements, loc='lower right')#, bbox_to_anchor=(1.05, 1))
+    fig.legend(handles=legend_elements, loc='lower right', bbox_to_anchor=(0.9, 0.1),  prop={'size': 20})
+    for ax in axes:
+        ax.set_ylabel("")
+        ax.set_xlabel("")
+        ax.set_xticks([])  # Remove x-axis ticks
+        ax.set_yticks([])
+    plt.tight_layout()
     plt.savefig(Path(__file__).parent / "MODERATE_T3.4" / "Valencia.png", dpi=1200)
+    plt.close()
 
 
 def main():
@@ -177,40 +189,16 @@ def main():
     #     regions = ox.features_from_polygon(polygon=polygon_wgs84, tags={'boundary': 'administrative', 'admin_level': '6'})
     #     buildings = ox.features_from_polygon(polygon=polygon_wgs84, tags={'building': True})
 
-    MANUALLY_IDENTIFIED.loc[MANUALLY_IDENTIFIED["has_pv"]=="yes", "osmid"]
-    hashs = [generate_hash(file_name) for file_name in [
-            "020201_2023CVAL0025_25830_8bits_RGBI_0893_1-4.tif"
-            "020201_2023CVAL0025_25830_8bits_RGBI_0893_1-5.tif",
-            "020201_2023CVAL0025_25830_8bits_RGBI_0893_1-6.tif",
-            "020201_2023CVAL0025_25830_8bits_RGBI_0893_2-4.tif",
-            "020201_2023CVAL0025_25830_8bits_RGBI_0893_2-5.tif",
-            "020201_2023CVAL0025_25830_8bits_RGBI_0893_2-6.tif",
-        ]
-    ]
+    # hashs = [generate_hash(file_name) for file_name in [
+    #         "020201_2023CVAL0025_25830_8bits_RGBI_0893_1-4.tif"
+    #         "020201_2023CVAL0025_25830_8bits_RGBI_0893_1-5.tif",
+    #         "020201_2023CVAL0025_25830_8bits_RGBI_0893_1-6.tif",
+    #         "020201_2023CVAL0025_25830_8bits_RGBI_0893_2-4.tif",
+    #         "020201_2023CVAL0025_25830_8bits_RGBI_0893_2-5.tif",
+    #         "020201_2023CVAL0025_25830_8bits_RGBI_0893_2-6.tif",
+    #     ]
+    # ]
 
-    OSM_csv = MANUALLY_IDENTIFIED.copy()
-    man_ids = []
-    for h in hashs:
-        for a in all:
-            if h in a:
-                man_ids.append(a)
-    
-    osm_ids = OSM_csv.loc[:, "osmid"].copy()
-    i = 0
-    for m in man_ids:
-        for osmID in list(osm_ids):
-            if str(osmID) in m:
-                OSM_csv.loc[OSM_csv.loc[:, "osmid"]==osmID, "osmid"] = str(m)
-                i+=1
-
-
-    migrated = OSM_csv[OSM_csv["osmid"].astype(str).apply(lambda x: len(x)>12)].copy().reset_index(drop=True)
-
-    manually_identified = []
-    for osmid in MANUALLY_IDENTIFIED.loc[MANUALLY_IDENTIFIED["has_pv"]=="yes", "osmid"].astype(str):
-        for a in man_ids:
-            if osmid in a:
-                manually_identified.append(a)
 
     # find the manually identified npy file and save it as png to check if its the same and correct:
     # for m in manually_identified:
@@ -224,17 +212,16 @@ def main():
 
 
 
-    identified = [name.split("_")[1] for name in CLASSIFIER_RESULTS.loc[CLASSIFIER_RESULTS["prediction"]==1, "OSM_ID"]]
-    all = [name.replace("building_", "") for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
-    all_oms = [name.replace("building_", "").split("_")[0] for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
-    all_hashs = ["".join(name.replace("building_", "").split("_")[1:]) for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
+    identified = [name.replace("building_", "") for name in CLASSIFIER_RESULTS.loc[CLASSIFIER_RESULTS["prediction"]==1, "OSM_ID"]]
+    all_oms = [name.replace("building_", "") for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
+    # all_hashs = ["".join(name.replace("building_", "").split("_")[1:]) for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
 
-    wrong = []
-    for i in MANUALLY_IDENTIFIED.loc[MANUALLY_IDENTIFIED["has_pv"]=="yes", "osmid"]:
-        if str(i) not in identified:
-            wrong.append(i)
-        if str(i) not in all_oms:
-            print("FUCK")
+    # wrong = []
+    # for i in MANUALLY_IDENTIFIED.loc[MANUALLY_IDENTIFIED["has_pv"]=="yes", "osmid"]:
+    #     if str(i) not in identified:
+    #         wrong.append(i)
+    #     if str(i) not in all_oms:
+    #         print("FUCK")
     
 
 
