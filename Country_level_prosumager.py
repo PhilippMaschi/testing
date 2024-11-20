@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import sqlite3
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
@@ -39,6 +38,36 @@ EUROPEAN_COUNTRIES = {
     'SWE': 'Sweden'  #
 }
 
+COUNTRY_CODES = {
+    'AUT': "AT",
+    'BEL': "BE",
+    'BGR': "BG",
+    'HRV': "HR",
+    "CYP": "CZ",
+    'CZE': "CZ",
+    'DNK': "DK",
+    'EST': "ES",
+    'FIN': "FI",
+    'FRA': "FR",
+    'DEU': "DE",
+    'GRC': "GR",
+    'HUN': "HU",
+    'IRL': "IE",
+    'ITA': "IT",
+    'LVA': "LV",
+    'LTU': "LT",
+    'LUX': "LU",
+    'MLT': "" ,
+    'NLD': "" ,
+    'POL': "PL",
+    'PRT': "PT",
+    'ROU': "RO",
+    'SVK': "SK",
+    'SVN': "" ,
+    'ESP': "ES",
+    'SWE': "SE",
+}
+
 # match ID to size
 DHWTANK = {
     1: 0,
@@ -61,7 +90,47 @@ BOILER = {
 # no PV
 # no battery
 
+def flexibility_factor(consumer_profile: np.array, prosumager_profile: np.array, national_demand_profile: np.array) -> float:
+    """This ratio is the amount of energy shifted relative to the total energy consumed, indicating the proportion of demand that could be shifted."""
+    difference = consumer_profile - prosumager_profile
+    difference[difference<0] = 0  # only consider energy that is shifted "away", so the reduced energy
 
+    return  difference.sum() / national_demand_profile.sum() * 100  # %
+
+def flexibility_factor_hourly(consumer_profile: np.array, prosumager_profile: np.array, national_demand_profile: np.array) -> np.array:
+    """This ratio is the amount of energy shifted relative to the total energy consumed, indicating the proportion of demand that could be shifted in every hour as percentage"""
+    difference = consumer_profile - prosumager_profile
+    difference[difference<0] = 0  # only consider energy that is shifted "away", so the reduced energy
+
+    return  difference / national_demand_profile * 100  # %
+
+def supply_and_demand_matching(price_profile: np.array, price_threshold: float, consumer_profile: np.array, prosumager_profile: np.array) -> float:
+    """set price threshold and if the price is below that threshold the used electricity is “renewable”. Check how much more “renewable” electricity can be used
+    returns the differnce betwen prosumager demand at low prices and consumer demand at low prices"""
+
+    consumer_match = 0
+    prosumager_match = 0
+    for i, price in enumerate(price_profile):
+        if price <= price_threshold:
+            consumer_match += consumer_profile[i]
+            prosumager_match += prosumager_profile[i]
+
+    return prosumager_match - consumer_match 
+
+def flexible_storage_efficiency(consumer_profile: np.array, prosumager_profile: np.array) -> float:
+    """calculates the upward storage efficiency between 0 and 1"""
+    # diff negative is the energy that is taken out of the building during "discharging"
+    discharging_energy = prosumager_profile - consumer_profile
+    discharging_energy[discharging_energy > 0] = 0
+
+    # diff positve is the energy that is stored in the building during "charging"
+    charging_energy = prosumager_profile - consumer_profile
+    charging_energy[charging_energy < 0] = 0
+
+    #  eta from https://doi.org/10.1016/j.apenergy.2017.04.061
+    eta = 1 - (prosumager_profile - consumer_profile).sum() / charging_energy.sum()
+    # if eta is negative than the prosumager uses less energy! which can be the case if there is PV for example
+    return eta
 
 class DB:
     def __init__(self, path):
@@ -145,7 +214,6 @@ def calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings):
 
 def define_tech_scenario(prob_dhw: float, prob_buffer: float, df_scenarios: pd.DataFrame, df_hp: pd.DataFrame) -> pd.DataFrame:
     """based on the adaption values (0 to 1) the buildings having the technology are randomly selected"""
-    random.seed(42)
     results = {  # the ids for the tanks in order in which they come ot of calculate the counts of each id function
         0: {"ID_HotWaterTank": [1], "ID_SpaceHeatingTank": [1]},
         1: {"ID_HotWaterTank": [1], "ID_SpaceHeatingTank": [2, 3]},
@@ -200,22 +268,81 @@ def get_country_load_profiles(folder_name: Path, percentage_dhw_tanks: float, pe
 
     return country_load_df
 
-def main():
+
+def get_national_demand_profiles():
+    gen_file = Path(__file__).parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
+    df = pd.read_csv(gen_file, sep=";")
+    return df
+
+
+def get_price_profile(folder_name: Path):
+    db = DB(path=folder_name / f"{folder_name.name}.sqlite")
+    price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1"])
+    return price_table
+
+
+def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects/Philipp/PycharmProjects/data/output/")
     folder_names = [f"D5.4_{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
     folder_names_low_scenario = [f"D5.4_low_{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]] 
 
+    national_demand = get_national_demand_profiles()
 
-    folder = path_2_model_results / folder_names[0]
-    country_loads = get_country_load_profiles(
-        folder_name=folder,
-        percentage_dhw_tanks=0.1,
-        percentage_buffer_tanks=0.1
-    )
+    flexiblity_factor = {}
+    flexiblity_factor_hourly = {}
+    s_and_d_matching_dict = {}
+    storage_efficiency = {}
+
+    for folder_name in folder_names:
+        folder = path_2_model_results / folder_name
+        country_loads = get_country_load_profiles(
+            folder_name=folder,
+            percentage_dhw_tanks=percentage_dhw_tanks,
+            percentage_buffer_tanks=percentage_buffer_tanks
+        )
+        # add the country loads from different building types together:
+        consumers_MW = np.array(country_loads.groupby(["Hour"]).sum()["ref_grid_demand_stock_MW"])
+        prosumer_MW = np.array(country_loads.groupby(["Hour"]).sum()["opt_grid_demand_stock_MW"])
+
+        # calcualte the factors:
+        country = folder.name.split("_")[-2]
+        year = folder.name.split("_")[-1]
+        price = np.array(get_price_profile(folder).iloc[:, 0])
+
+        flexiblity_factor[f"{country}_{year}"] = flexibility_factor(
+            consumer_profile=consumers_MW, 
+            prosumager_profile=prosumer_MW, 
+            national_demand_profile=np.array(national_demand[COUNTRY_CODES[country]])
+        )
+        flexiblity_factor_hourly[f"{country}_{year}"] = flexibility_factor_hourly(
+            consumer_profile=consumers_MW,
+            prosumager_profile=prosumer_MW,
+            national_demand_profile=np.array(national_demand[COUNTRY_CODES[country]])
+        )
+
+        s_and_d_matching_dict[f"{country}_{year}"]  = supply_and_demand_matching(
+            price_profile=price,
+            price_threshold=0.001,  # from [https://www.ise.fraunhofer.de/en/publications/studies/cost-of-electricity.html] (10 cent/kWh)
+            consumer_profile=consumers_MW,
+            prosumager_profile=prosumer_MW
+            )
+
+        storage_efficiency[f"{country}_{year}"] = flexible_storage_efficiency(
+            consumer_profile=consumers_MW,
+            prosumager_profile=prosumer_MW
+        )
+
+
 
 
 
 
 
 if __name__ == "__main__":
-    main()
+    main(
+        percentage_dhw_tanks=0.1, 
+        percentage_buffer_tanks=0.1
+    )
+
+    # 10 cent/kWh levelized cost for offshore wind, onshore and PV are below that [https://www.ise.fraunhofer.de/en/publications/studies/cost-of-electricity.html]
+    # 10 cent/kWh = 0.001 cent/Wh , I use this as my thresholds price 
