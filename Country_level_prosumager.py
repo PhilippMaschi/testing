@@ -114,8 +114,8 @@ def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.Da
     opts = []
     simus = []
     for scen_id in scenario_ids:
-        opts.append(read_parquet(table_name="OperationResult_OptimizationHour", scenario_ID=scen_id, folder=folder, column_names=["Grid", "ID_Scenario"]))
-        simus.append(read_parquet(table_name="OperationResult_ReferenceHour", scenario_ID=scen_id, folder=folder, column_names=["Grid", "ID_Scenario"]))
+        opts.append(read_parquet(table_name="OperationResult_OptimizationHour", scenario_ID=scen_id, folder=folder, column_names=["Grid", "ID_Scenario", "Hour"]))
+        simus.append(read_parquet(table_name="OperationResult_ReferenceHour", scenario_ID=scen_id, folder=folder, column_names=["Grid", "ID_Scenario", "Hour"]))
     
     df_opt = pd.concat(opts)
     df_simus = pd.concat(simus)
@@ -143,7 +143,7 @@ def calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings):
     
     return scaled_counts
 
-def define_tech_scenario(prob_dhw: float, prob_buffer: float, df_scenarios: pd.DataFrame, df_hp: pd.DataFrame):
+def define_tech_scenario(prob_dhw: float, prob_buffer: float, df_scenarios: pd.DataFrame, df_hp: pd.DataFrame) -> pd.DataFrame:
     """based on the adaption values (0 to 1) the buildings having the technology are randomly selected"""
     random.seed(42)
     results = {  # the ids for the tanks in order in which they come ot of calculate the counts of each id function
@@ -155,20 +155,22 @@ def define_tech_scenario(prob_dhw: float, prob_buffer: float, df_scenarios: pd.D
     scenarios_with_numbers = []
     for building_id, group in df_scenarios.groupby("ID_Building"):
         building = df_hp[df_hp["ID_Building"]==building_id].copy()
-        num_buildings = int(building["number_buildings_heat_pump_air"][0] + building["number_buildings_heat_pump_ground"][0])
-
+        num_buildings = int(building["number_buildings_heat_pump_air"].values[0] + building["number_buildings_heat_pump_ground"].values[0])
 
         counts = calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings)
         for index, id_dict in results.items():
             group.loc[(group.loc[:, "ID_HotWaterTank"].isin(id_dict["ID_HotWaterTank"])) & (group.loc[:, "ID_SpaceHeatingTank"].isin(id_dict["ID_SpaceHeatingTank"])), "number_buildings"] = counts[index]
 
         scenarios_with_numbers.append(group)
+    
+    scenario_numbers_df = pd.concat(scenarios_with_numbers).reset_index(drop=True)
+    return scenario_numbers_df
 
 
 
 
 
-def get_sqlite_result_file(folder_name: Path):
+def get_country_load_profiles(folder_name: Path, percentage_dhw_tanks: float, percentage_buffer_tanks: float):
     db = DB(path=folder_name / f"{folder_name.name}.sqlite")
     scenario_table = db.read_dataframe(table_name="OperationScenario")
 
@@ -178,14 +180,25 @@ def get_sqlite_result_file(folder_name: Path):
 
     filtered_scenarios = scenario_table.loc[scenario_table["ID_Building"].isin(list(hp_df.ID_Building)), :]
 
-    define_tech_scenario(
-        prob_dhw=0.1,
-        prob_buffer=0.1,
+    scenario_df = define_tech_scenario(
+        prob_dhw=percentage_dhw_tanks,
+        prob_buffer=percentage_buffer_tanks,
         df_scenarios=filtered_scenarios,
         df_hp=hp_df
     )
 
+    opt_loads, ref_loads = load_electricity_demand_profiles(scenario_ids=list(scenario_df["ID_Scenario"]), folder=folder_name)
 
+    # merge the numbers of each building scenario with the opt and ref loads:
+    building_numbers = scenario_df.loc[:, ['ID_Scenario', "number_buildings"]].copy().set_index("ID_Scenario").sort_index()
+    opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+    opt_stock["opt_grid_demand_stock_MW"] = opt_stock["Grid"] * opt_stock["number_buildings"] / 1_000_000  # MW
+    ref_stock = ref_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+    ref_stock["ref_grid_demand_stock_MW"] = ref_stock["Grid"] * ref_stock["number_buildings"] / 1_000_000  # MW
+
+    country_load_df = pd.concat([opt_stock, ref_stock["ref_grid_demand_stock_MW"]], axis=1)
+
+    return country_load_df
 
 def main():
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects/Philipp/PycharmProjects/data/output/")
@@ -194,7 +207,11 @@ def main():
 
 
     folder = path_2_model_results / folder_names[0]
-    get_sqlite_result_file(folder_name=folder)
+    country_loads = get_country_load_profiles(
+        folder_name=folder,
+        percentage_dhw_tanks=0.1,
+        percentage_buffer_tanks=0.1
+    )
 
 
 
