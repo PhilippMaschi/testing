@@ -57,12 +57,9 @@ BOILER = {
     2: "ground HP"
 }
 
-BATTERY = {
-    1: 0,
-    2: 7000   # Wh
-}
 
 # no PV
+# no battery
 
 
 
@@ -124,9 +121,50 @@ def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.Da
     df_simus = pd.concat(simus)
     return df_opt, df_simus
 
-def define_tech_scenario(dhw_adaption: float, buffer_adaption: float, battery_adaption: float, df_scenarios: pd.DataFrame):
+def calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings):
+    subcategory_probabilities = [
+        (dhw, buffer, prob_dhw * prob_buffer if dhw and buffer else
+        prob_dhw * (1 - prob_buffer) if dhw and not buffer else
+        (1 - prob_dhw) * prob_buffer if not dhw and buffer else
+        (1 - prob_dhw) * (1 - prob_buffer)) 
+        for dhw in [False, True]
+        for buffer in [False, True]
+    ]
+        # Scale the probabilities to match the number buildings
+    total_prob = sum(prob for _, _, prob in subcategory_probabilities)
+    scaled_counts = [int(round(prob / total_prob * num_buildings)) for _, _, prob in subcategory_probabilities]
+
+    # Adjust the counts to ensure the total is exactly 1000
+    difference = num_buildings - sum(scaled_counts)
+    if difference != 0:
+        for i in range(abs(difference)):
+            index = i % len(scaled_counts)
+            scaled_counts[index] += 1 if difference > 0 else -1
+    
+    return scaled_counts
+
+def define_tech_scenario(prob_dhw: float, prob_buffer: float, df_scenarios: pd.DataFrame, df_hp: pd.DataFrame):
     """based on the adaption values (0 to 1) the buildings having the technology are randomly selected"""
     random.seed(42)
+    results = {  # the ids for the tanks in order in which they come ot of calculate the counts of each id function
+        0: {"ID_HotWaterTank": [1], "ID_SpaceHeatingTank": [1]},
+        1: {"ID_HotWaterTank": [1], "ID_SpaceHeatingTank": [2, 3]},
+        2: {"ID_HotWaterTank": [2, 3], "ID_SpaceHeatingTank": [1]},
+        3: {"ID_HotWaterTank": [2, 3], "ID_SpaceHeatingTank": [2, 3]},
+    }
+    scenarios_with_numbers = []
+    for building_id, group in df_scenarios.groupby("ID_Building"):
+        building = df_hp[df_hp["ID_Building"]==building_id].copy()
+        num_buildings = int(building["number_buildings_heat_pump_air"][0] + building["number_buildings_heat_pump_ground"][0])
+
+
+        counts = calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings)
+        for index, id_dict in results.items():
+            group.loc[(group.loc[:, "ID_HotWaterTank"].isin(id_dict["ID_HotWaterTank"])) & (group.loc[:, "ID_SpaceHeatingTank"].isin(id_dict["ID_SpaceHeatingTank"])), "number_buildings"] = counts[index]
+
+        scenarios_with_numbers.append(group)
+
+
 
 
 
@@ -140,7 +178,12 @@ def get_sqlite_result_file(folder_name: Path):
 
     filtered_scenarios = scenario_table.loc[scenario_table["ID_Building"].isin(list(hp_df.ID_Building)), :]
 
-
+    define_tech_scenario(
+        prob_dhw=0.1,
+        prob_buffer=0.1,
+        df_scenarios=filtered_scenarios,
+        df_hp=hp_df
+    )
 
 
 
