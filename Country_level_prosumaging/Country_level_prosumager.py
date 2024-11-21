@@ -90,7 +90,6 @@ BOILER = {
     2: "ground HP"
 }
 
-
 # no PV
 # no battery
 
@@ -145,7 +144,7 @@ def flexible_storage_efficiency(consumer_profile: np.array, prosumager_profile: 
 
     #  eta from https://doi.org/10.1016/j.apenergy.2017.04.061
     eta = 1 - np.sum(prosumager_profile - consumer_profile) / np.sum(charging_energy)
-    return max(eta, 0)
+    return eta
 
 class DB:
     def __init__(self, path):
@@ -179,7 +178,6 @@ class DB:
                 query = query.where(table.columns[key] == value)
         with self.engine.connect() as conn:
             return pd.read_sql(query, conn)
-
 
 def read_parquet(table_name: str, scenario_ID: int, folder: Path, column_names: List[str] = None) -> pd.DataFrame:
     """
@@ -262,10 +260,6 @@ def define_tech_scenario(prob_dhw: float, prob_buffer: float, df_scenarios: pd.D
     scenario_numbers_df = pd.concat(scenarios_with_numbers).reset_index(drop=True)
     return scenario_numbers_df
 
-
-
-
-
 def get_country_load_profiles(folder_name: Path, percentage_dhw_tanks: float, percentage_buffer_tanks: float):
     db = DB(path=folder_name / f"{folder_name.name}.sqlite")
     scenario_table = db.read_dataframe(table_name="OperationScenario")
@@ -296,18 +290,15 @@ def get_country_load_profiles(folder_name: Path, percentage_dhw_tanks: float, pe
 
     return country_load_df
 
-
 def get_national_demand_profiles():
     gen_file = Path(__file__).parent.parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
     df = pd.read_csv(gen_file, sep=";")
     return df
 
-
 def get_price_profile(folder_name: Path):
     db = DB(path=folder_name / f"{folder_name.name}.sqlite")
     price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1"])
     return price_table
-
 
 def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects/Philipp/PycharmProjects/data/output/")
@@ -361,13 +352,10 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
             prosumager_profile=prosumer_MW
         )
 
-
         plot_supply_and_demand_matching_over_price(price=price,
                                                    s_d_match=s_and_d_matching_dict[f"{country}_{year}"],
                                                    country=country,
                                                    year=year)
-
-
 
 if __name__ == "__main__":
     main(
