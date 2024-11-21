@@ -6,7 +6,11 @@ from pathlib import Path
 import sqlalchemy
 from typing import List
 import random
+from country_level_prosumaging_figures import plot_supply_and_demand_matching_over_price
+from joblib import Parallel, delayed
+import os
 
+CPU_COUNT = os.cpu_count()
 
 EUROPEAN_COUNTRIES = {
     'AUT': 'Austria',  #
@@ -104,18 +108,22 @@ def flexibility_factor_hourly(consumer_profile: np.array, prosumager_profile: np
 
     return  difference / national_demand_profile * 100  # %
 
-def supply_and_demand_matching(price_profile: np.array, price_threshold: float, consumer_profile: np.array, prosumager_profile: np.array) -> float:
+def supply_and_demand_matching(price_profile: np.array, consumer_profile: np.array, prosumager_profile: np.array) -> dict:
     """set price threshold and if the price is below that threshold the used electricity is “renewable”. Check how much more “renewable” electricity can be used
     returns the differnce betwen prosumager demand at low prices and consumer demand at low prices"""
+    match = {}
+    for quantile in np.arange(0, 1.05, 0.05):
+        price_threshold = np.quantile(price_profile, quantile)
+        consumer_match = 0
+        prosumager_match = 0
+        for i, price in enumerate(price_profile):
+            if price <= price_threshold:
+                consumer_match += consumer_profile[i]
+                prosumager_match += prosumager_profile[i]
+        
+        match[price_threshold * 1_000] = prosumager_match - consumer_match
 
-    consumer_match = 0
-    prosumager_match = 0
-    for i, price in enumerate(price_profile):
-        if price <= price_threshold:
-            consumer_match += consumer_profile[i]
-            prosumager_match += prosumager_profile[i]
-
-    return prosumager_match - consumer_match 
+    return match 
 
 def flexible_storage_efficiency(consumer_profile: np.array, prosumager_profile: np.array) -> float:
     """calculates the upward storage efficiency between 0 and 1"""
@@ -180,14 +188,32 @@ def read_parquet(table_name: str, scenario_ID: int, folder: Path, column_names: 
 
 
 def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.DataFrame, pd.DataFrame):
-    opts = []
-    simus = []
-    for scen_id in scenario_ids:
-        opts.append(read_parquet(table_name="OperationResult_OptimizationHour", scenario_ID=scen_id, folder=folder, column_names=["Grid", "ID_Scenario", "Hour"]))
-        simus.append(read_parquet(table_name="OperationResult_ReferenceHour", scenario_ID=scen_id, folder=folder, column_names=["Grid", "ID_Scenario", "Hour"]))
+    def load_data(scen_id):
+        """Helper function to load data for a single scenario."""
+        opt = read_parquet(
+            table_name="OperationResult_OptimizationHour",
+            scenario_ID=scen_id,
+            folder=folder,
+            column_names=["Grid", "ID_Scenario", "Hour"]
+        )
+        sim = read_parquet(
+            table_name="OperationResult_ReferenceHour",
+            scenario_ID=scen_id,
+            folder=folder,
+            column_names=["Grid", "ID_Scenario", "Hour"]
+        )
+        return opt, sim
+
+    # Parallelize the loading of data
+    results = Parallel(n_jobs=max(1, int(CPU_COUNT*0.75)))(delayed(load_data)(scen_id) for scen_id in scenario_ids)
     
+    # Unpack results
+    opts, simus = zip(*results)
+    
+    # Concatenate all results
     df_opt = pd.concat(opts)
     df_simus = pd.concat(simus)
+    
     return df_opt, df_simus
 
 def calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings):
@@ -270,7 +296,7 @@ def get_country_load_profiles(folder_name: Path, percentage_dhw_tanks: float, pe
 
 
 def get_national_demand_profiles():
-    gen_file = Path(__file__).parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
+    gen_file = Path(__file__).parent.parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
     df = pd.read_csv(gen_file, sep=";")
     return df
 
@@ -293,7 +319,9 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
     s_and_d_matching_dict = {}
     storage_efficiency = {}
 
+    folder_names = folder_names[:4]
     for folder_name in folder_names:
+        print(f"analysing {country} {year}")
         folder = path_2_model_results / folder_name
         country_loads = get_country_load_profiles(
             folder_name=folder,
@@ -322,10 +350,9 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
 
         s_and_d_matching_dict[f"{country}_{year}"]  = supply_and_demand_matching(
             price_profile=price,
-            price_threshold=0.001,  # from [https://www.ise.fraunhofer.de/en/publications/studies/cost-of-electricity.html] (10 cent/kWh)
             consumer_profile=consumers_MW,
             prosumager_profile=prosumer_MW
-            )
+        )
 
         storage_efficiency[f"{country}_{year}"] = flexible_storage_efficiency(
             consumer_profile=consumers_MW,
@@ -333,8 +360,10 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
         )
 
 
-
-
+        plot_supply_and_demand_matching_over_price(price=price,
+                                                  s_d_match=s_and_d_matching_dict[f"{country}_{year}"],
+                                                  country=country,
+                                                  year=year)
 
 
 
