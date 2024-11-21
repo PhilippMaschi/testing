@@ -24,4 +24,8 @@ def plot_supply_and_demand_matching_over_price(price: np.array, s_d_match: dict,
     plt.close()
 
 
+    plt.scatter(x["price"] * 1_000, x["change in electricity demand"])
+    plt.savefig(Path(__file__).parent / "single_country_plots" / f"supply_demand_matching_{country}_{year}.png")
+    plt.close()
+
 

@@ -111,17 +111,29 @@ def flexibility_factor_hourly(consumer_profile: np.array, prosumager_profile: np
 def supply_and_demand_matching(price_profile: np.array, consumer_profile: np.array, prosumager_profile: np.array) -> dict:
     """set price threshold and if the price is below that threshold the used electricity is “renewable”. Check how much more “renewable” electricity can be used
     returns the differnce betwen prosumager demand at low prices and consumer demand at low prices"""
-    match = {}
+    match_increase = {}
+    match_decrease = {}
     for quantile in np.arange(0, 1.05, 0.05):
         price_threshold = np.quantile(price_profile, quantile)
         consumer_match = 0
         prosumager_match = 0
         for i, price in enumerate(price_profile):
             if price <= price_threshold:
-                consumer_match += consumer_profile[i]
-                prosumager_match += prosumager_profile[i]
+                diff =  prosumager_profile[i] - consumer_profile[i]
+                if diff < 0:
+                    match_decrease
+                
         
-        match[price_threshold * 1_000] = prosumager_match - consumer_match
+        diff = prosumager_match - consumer_match
+        diff[diff<0] = 0
+
+    matching = []
+    for i, price in enumerate(price_profile):
+        diff =  prosumager_profile[i] - consumer_profile[i]
+        matching.append(diff)
+    x = pd.DataFrame({"price": price_profile, "change in electricity demand": matching})
+    x.reset_index(drop=True).to_csv(Path(__file__).parent / "single_country_plots"/"change_demand.csv", index=False, sep=";")
+    # match[price_threshold * 1_000] = diff
 
     return match 
 
@@ -321,8 +333,11 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
 
     folder_names = folder_names[:4]
     for folder_name in folder_names:
-        print(f"analysing {country} {year}")
         folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[-2]
+        year = folder.name.split("_")[-1]
+        print(f"analysing {country} {year}")
+
         country_loads = get_country_load_profiles(
             folder_name=folder,
             percentage_dhw_tanks=percentage_dhw_tanks,
@@ -332,11 +347,8 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
         consumers_MW = np.array(country_loads.groupby(["Hour"]).sum()["ref_grid_demand_stock_MW"])
         prosumer_MW = np.array(country_loads.groupby(["Hour"]).sum()["opt_grid_demand_stock_MW"])
 
-        # calcualte the factors:
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
         price = np.array(get_price_profile(folder).iloc[:, 0])
-
+        # calcualte the factors:
         flexiblity_factor[f"{country}_{year}"] = flexibility_factor(
             consumer_profile=consumers_MW, 
             prosumager_profile=prosumer_MW, 
