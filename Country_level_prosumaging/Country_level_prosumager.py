@@ -47,7 +47,7 @@ COUNTRY_CODES = {
     'BEL': "BE",
     'BGR': "BG",
     'HRV': "HR",
-    "CYP": "CZ",
+    "CYP": "CY",
     'CZE': "CZ",
     'DNK': "DK",
     'EST': "ES",
@@ -96,17 +96,13 @@ BOILER = {
 
 def flexibility_factor(consumer_profile: np.array, prosumager_profile: np.array, national_demand_profile: np.array) -> float:
     """This ratio is the amount of energy shifted relative to the total energy consumed, indicating the proportion of demand that could be shifted."""
-    difference = consumer_profile - prosumager_profile
-    difference[difference<0] = 0  # only consider energy that is shifted "away", so the reduced energy
-
-    return  difference.sum() / national_demand_profile.sum() * 100  # %
+    difference = np.maximum(consumer_profile - prosumager_profile, 0)
+    return difference.sum() / national_demand_profile.sum() * 100  # %
 
 def flexibility_factor_hourly(consumer_profile: np.array, prosumager_profile: np.array, national_demand_profile: np.array) -> np.array:
     """This ratio is the amount of energy shifted relative to the total energy consumed, indicating the proportion of demand that could be shifted in every hour as percentage"""
-    difference = consumer_profile - prosumager_profile
-    difference[difference<0] = 0  # only consider energy that is shifted "away", so the reduced energy
-
-    return  difference / national_demand_profile * 100  # %
+    difference = np.maximum(consumer_profile - prosumager_profile, 0)
+    return difference / national_demand_profile * 100  # %
 
 def supply_and_demand_matching(price_profile: np.array, consumer_profile: np.array, prosumager_profile: np.array) -> dict:
     """set price threshold and if the price is below that threshold the used electricity is “renewable”. Check how much more “renewable” electricity can be used
@@ -148,9 +144,8 @@ def flexible_storage_efficiency(consumer_profile: np.array, prosumager_profile: 
     charging_energy[charging_energy < 0] = 0
 
     #  eta from https://doi.org/10.1016/j.apenergy.2017.04.061
-    eta = 1 - (prosumager_profile - consumer_profile).sum() / charging_energy.sum()
-    # if eta is negative than the prosumager uses less energy! which can be the case if there is PV for example
-    return eta
+    eta = 1 - np.sum(prosumager_profile - consumer_profile) / np.sum(charging_energy)
+    return max(eta, 0)
 
 class DB:
     def __init__(self, path):
@@ -161,14 +156,14 @@ class DB:
     def read_dataframe(self, table_name: str, filter: dict = None, column_names: List[str] = None) -> pd.DataFrame:
         """Reads data from a database table with optional filtering and column selection.
 
-                Args:
-                    table_name (str): Name of the table to query.
-                    filter (dict, optional): Dictionary with {column_name: value} to filter the data.
-                    column_names (list of str, optional): List of column names to extract.
+        Args:
+            table_name (str): Name of the table to query.
+            filter (dict, optional): Dictionary with {column_name: value} to filter the data.
+            column_names (list of str, optional): List of column names to extract.
 
-                Returns:
-                    pd.DataFrame: Resulting dataframe.
-                """
+        Returns:
+            pd.DataFrame: Resulting dataframe.
+        """
         table = self.metadata.tables[table_name]
 
         if column_names:
@@ -192,12 +187,7 @@ def read_parquet(table_name: str, scenario_ID: int, folder: Path, column_names: 
     """
     file_name = f"{table_name}_{scenario_ID}.parquet.gzip"
     path_to_file = folder / file_name
-    if column_names:
-        df = pd.read_parquet(path=path_to_file, engine="auto", columns=column_names)
-    else:
-        df = pd.read_parquet(path=path_to_file, engine="auto")
-    return df
-
+    return pd.read_parquet(path=path_to_file, columns=column_names) if column_names else pd.read_parquet(path=path_to_file)
 
 def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.DataFrame, pd.DataFrame):
     def load_data(scen_id):
@@ -217,7 +207,7 @@ def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.Da
         return opt, sim
 
     # Parallelize the loading of data
-    results = Parallel(n_jobs=max(1, int(CPU_COUNT*0.75)))(delayed(load_data)(scen_id) for scen_id in scenario_ids)
+    results = Parallel(n_jobs=max(1, int(CPU_COUNT * 0.75)))(delayed(load_data)(scen_id) for scen_id in scenario_ids)
     
     # Unpack results
     opts, simus = zip(*results)
@@ -251,8 +241,8 @@ def calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings):
     return scaled_counts
 
 def define_tech_scenario(prob_dhw: float, prob_buffer: float, df_scenarios: pd.DataFrame, df_hp: pd.DataFrame) -> pd.DataFrame:
-    """based on the adaption values (0 to 1) the buildings having the technology are randomly selected"""
-    results = {  # the ids for the tanks in order in which they come ot of calculate the counts of each id function
+    """Based on the adaption values (0 to 1) the buildings having the technology are randomly selected"""
+    results = {  # the ids for the tanks in order in which they come out of calculate_the_counts_of_each_id function
         0: {"ID_HotWaterTank": [1], "ID_SpaceHeatingTank": [1]},
         1: {"ID_HotWaterTank": [1], "ID_SpaceHeatingTank": [2, 3]},
         2: {"ID_HotWaterTank": [2, 3], "ID_SpaceHeatingTank": [1]},
@@ -260,12 +250,12 @@ def define_tech_scenario(prob_dhw: float, prob_buffer: float, df_scenarios: pd.D
     }
     scenarios_with_numbers = []
     for building_id, group in df_scenarios.groupby("ID_Building"):
-        building = df_hp[df_hp["ID_Building"]==building_id].copy()
+        building = df_hp[df_hp["ID_Building"] == building_id].copy()
         num_buildings = int(building["number_buildings_heat_pump_air"].values[0] + building["number_buildings_heat_pump_ground"].values[0])
 
         counts = calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings)
         for index, id_dict in results.items():
-            group.loc[(group.loc[:, "ID_HotWaterTank"].isin(id_dict["ID_HotWaterTank"])) & (group.loc[:, "ID_SpaceHeatingTank"].isin(id_dict["ID_SpaceHeatingTank"])), "number_buildings"] = counts[index]
+            group.loc[(group["ID_HotWaterTank"].isin(id_dict["ID_HotWaterTank"])) & (group["ID_SpaceHeatingTank"].isin(id_dict["ID_SpaceHeatingTank"])), "number_buildings"] = counts[index]
 
         scenarios_with_numbers.append(group)
     
@@ -296,7 +286,7 @@ def get_country_load_profiles(folder_name: Path, percentage_dhw_tanks: float, pe
     opt_loads, ref_loads = load_electricity_demand_profiles(scenario_ids=list(scenario_df["ID_Scenario"]), folder=folder_name)
 
     # merge the numbers of each building scenario with the opt and ref loads:
-    building_numbers = scenario_df.loc[:, ['ID_Scenario', "number_buildings"]].copy().set_index("ID_Scenario").sort_index()
+    building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_buildings"]].copy().set_index("ID_Scenario").sort_index()
     opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
     opt_stock["opt_grid_demand_stock_MW"] = opt_stock["Grid"] * opt_stock["number_buildings"] / 1_000_000  # MW
     ref_stock = ref_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
@@ -348,7 +338,7 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
         prosumer_MW = np.array(country_loads.groupby(["Hour"]).sum()["opt_grid_demand_stock_MW"])
 
         price = np.array(get_price_profile(folder).iloc[:, 0])
-        # calcualte the factors:
+        # calculate the factors:
         flexiblity_factor[f"{country}_{year}"] = flexibility_factor(
             consumer_profile=consumers_MW, 
             prosumager_profile=prosumer_MW, 
@@ -360,7 +350,7 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
             national_demand_profile=np.array(national_demand[COUNTRY_CODES[country]])
         )
 
-        s_and_d_matching_dict[f"{country}_{year}"]  = supply_and_demand_matching(
+        s_and_d_matching_dict[f"{country}_{year}"] = supply_and_demand_matching(
             price_profile=price,
             consumer_profile=consumers_MW,
             prosumager_profile=prosumer_MW
@@ -373,15 +363,15 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
 
 
         plot_supply_and_demand_matching_over_price(price=price,
-                                                  s_d_match=s_and_d_matching_dict[f"{country}_{year}"],
-                                                  country=country,
-                                                  year=year)
+                                                   s_d_match=s_and_d_matching_dict[f"{country}_{year}"],
+                                                   country=country,
+                                                   year=year)
 
 
 
 if __name__ == "__main__":
     main(
-        percentage_dhw_tanks=0.1, 
+        percentage_dhw_tanks=0.1,
         percentage_buffer_tanks=0.1
     )
 
