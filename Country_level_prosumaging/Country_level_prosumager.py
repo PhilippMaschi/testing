@@ -6,7 +6,6 @@ from pathlib import Path
 import sqlalchemy
 from typing import List
 import random
-from country_level_prosumaging_figures import plot_supply_and_demand_matching_over_price
 from joblib import Parallel, delayed
 import os
 
@@ -43,33 +42,33 @@ EUROPEAN_COUNTRIES = {
 }
 
 COUNTRY_CODES = {
-    'AUT': "AT",
-    'BEL': "BE",
-    'BGR': "BG",
-    'HRV': "HR",
-    "CYP": "CY",
-    'CZE': "CZ",
-    'DNK': "DK",
-    'EST': "ES",
-    'FIN': "FI",
-    'FRA': "FR",
-    'DEU': "DE",
-    'GRC': "GR",
-    'HUN': "HU",
-    'IRL': "IE",
-    'ITA': "IT",
-    'LVA': "LV",
-    'LTU': "LT",
-    'LUX': "LU",
-    'MLT': "" ,
-    'NLD': "" ,
-    'POL': "PL",
-    'PRT': "PT",
-    'ROU': "RO",
-    'SVK': "SK",
-    'SVN': "" ,
-    'ESP': "ES",
-    'SWE': "SE",
+    "AT": 'AUT',
+    "BE": 'BEL',
+    "BG": 'BGR',
+    "HR": 'HRV',
+    "CY": "CYP",
+    "CZ": 'CZE',
+    "DK": 'DNK',
+    "EE": 'EST',
+    "FI": 'FIN',
+    "FR": 'FRA',
+    "DE": 'DEU',
+    "GR": 'GRC',
+    "HU": 'HUN',
+    "IE": 'IRL',
+    "IT": 'ITA',
+    "LV": 'LVA',
+    "LT": 'LTU',
+    "LU": 'LUX',
+    "MT": 'MLT' ,
+    "NL": 'NLD' ,
+    "PL": 'POL',
+    "PT": 'PRT',
+    "RO": 'ROU',
+    "SK": 'SVK',
+    "SI": 'SVN' ,
+    "ES": 'ESP',
+    "SE": 'SWE',
 }
 
 # match ID to size
@@ -92,6 +91,25 @@ BOILER = {
 
 # no PV
 # no battery
+
+
+def get_national_demand_profiles():
+    gen_file = Path(__file__).parent.parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
+    entsoe = pd.read_csv(gen_file, sep=";")
+    demand = entsoe.drop(columns=["Unnamed: 0"]).melt(var_name="country", value_name="generation")
+    demand["year"] = 2019
+    demand["scenario"] = "baseyear"
+    levethian = pd.read_csv(Path(__file__).parent / "gen_data_leviathan.csv", sep=",")
+    levethian["scenario"] = "levethian"
+    shiny_happy = pd.read_csv(Path(__file__).parent / "gen_data_shiny.csv", sep=",")
+    shiny_happy["scenario"] = "shiny happy"
+
+    df = pd.concat([demand, shiny_happy, levethian], axis=0)
+    # replace the 2 digit country code with 3 digits
+    df["country"] = df["country"].map(COUNTRY_CODES)
+    assert not df.country.isna().any()
+    return df
+
 
 def flexibility_factor(consumer_profile: np.array, prosumager_profile: np.array, national_demand_profile: np.array) -> float:
     """This ratio is the amount of energy shifted relative to the total energy consumed, indicating the proportion of demand that could be shifted."""
@@ -297,10 +315,6 @@ def get_country_load_profiles(folder_name: Path, percentage_dhw_tanks: float, pe
 
         return country_load_df
 
-def get_national_demand_profiles():
-    gen_file = Path(__file__).parent.parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
-    df = pd.read_csv(gen_file, sep=";")
-    return df
 
 def get_price_profile(folder_name: Path):
     db = DB(path=folder_name / f"{folder_name.name}.sqlite")
@@ -377,36 +391,9 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
 
     create_national_demand_profiles_parquet(percentage_dhw_tanks, percentage_buffer_tanks, parquet_file)
 
-    df = pd.read_parquet(Path(__file__).parent / f"EU27_loads_dhw-{percentage_dhw_tanks}_buffer-{percentage_buffer_tanks}.parquet.gzip")
-    national_demand = get_national_demand_profiles()
 
-    # calculate the factors:
-    # flexiblity_factor[f"{country}_{year}"] = flexibility_factor(
-    #     consumer_profile=consumers_MW, 
-    #     prosumager_profile=prosumer_MW, 
-    #     national_demand_profile=np.array(national_demand[COUNTRY_CODES[country]])
-    # )
-    # flexiblity_factor_hourly[f"{country}_{year}"] = flexibility_factor_hourly(
-    #     consumer_profile=consumers_MW,
-    #     prosumager_profile=prosumer_MW,
-    #     national_demand_profile=np.array(national_demand[COUNTRY_CODES[country]])
-    # )
 
-    # s_and_d_matching_dict[f"{country}_{year}"] = supply_and_demand_matching(
-    #     price_profile=price,
-    #     consumer_profile=consumers_MW,
-    #     prosumager_profile=prosumer_MW
-    # )
 
-    # storage_efficiency[f"{country}_{year}"] = flexible_storage_efficiency(
-    #     consumer_profile=consumers_MW,
-    #     prosumager_profile=prosumer_MW
-    # )
-
-    # plot_supply_and_demand_matching_over_price(price=price,
-    #                                             s_d_match=s_and_d_matching_dict[f"{country}_{year}"],
-    #                                             country=country,
-    #                                             year=year)
 
 if __name__ == "__main__":
     main(
