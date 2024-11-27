@@ -73,7 +73,9 @@ def plot_flexibility_factor_peak_demand_hour(loads: pd.DataFrame, national: pd.D
             else:
                 ref_col = f"{country}_{year}_ref_load_MW"
                 opt_col = f"{country}_{year}_opt_load_MW"
-                new_df[f"{country}_{year}_load_factor_percent"] = (loads[ref_col] - loads[opt_col]) / national.loc[(national["country"]==country) & (national["year"]==year), "generation"].reset_index(drop=True) * 100
+                new_df[f"{country}_{year}_load_factor_percent"] = (loads[ref_col] - loads[opt_col]) / national.loc[
+                    (national["country"]==country) & (national["year"]==year), "generation"
+                    ].reset_index(drop=True) * 100
 
     plot_df = new_df.melt(value_name="ref-opt MW")
     plot_df[["country", "year", "type"]] = plot_df["variable"].str.split('_', expand=True, n=2)

@@ -115,9 +115,12 @@ def get_national_demand_profiles():
             extended_group = pd.DataFrame({
                 'country': [country] * 8760,
                 'year': [year] * 8760,
+                'scenario': [scenario] * 8760,
                 'generation': extended_values
             })
             extended_data.append(extended_group)
+        else:
+            extended_data.append(group)
     extended_df = pd.concat(extended_data, ignore_index=True)
     
     # replace the 2 digit country code with 3 digits
