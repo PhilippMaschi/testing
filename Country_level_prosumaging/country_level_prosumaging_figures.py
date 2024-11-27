@@ -64,39 +64,82 @@ def plot_supply_and_demand_matching_over_price(price: np.array, s_d_match: pd.Da
     plt.close()
 
 
-def plot_flexibility_factor_peak_demand_hour(loads: pd.DataFrame, national: pd.DataFrame):
-    new_df = pd.DataFrame()
+def plot_flexibility_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str):
+    plot_df = pd.DataFrame()
+    i = 0
     for country in Cp.EUROPEAN_COUNTRIES.keys():
         for year in [2020, 2030, 2040, 2050]:
-            if year == 2020 and (country == "CYP" or country=="MLT"):
+            if year == 2020 and (country == "CYP" or country=="MLT" or country=="NLD"):
                 continue
             else:
+                demand = national.loc[(national["country"]==country) & (national["year"]==year), "generation"].reset_index(drop=True)
+                peak_demand_hour = demand.idxmax()
+                min_demand_hour = demand.idxmin()
                 ref_col = f"{country}_{year}_ref_load_MW"
                 opt_col = f"{country}_{year}_opt_load_MW"
-                new_df[f"{country}_{year}_load_factor_percent"] = (loads[ref_col] - loads[opt_col]) / national.loc[
-                    (national["country"]==country) & (national["year"]==year), "generation"
-                    ].reset_index(drop=True) * 100
+                # peak demand
+                plot_df.loc[i, "country"] = country
+                plot_df.loc[i, "year"] = year
+                plot_df.loc[i, f"peak_demand_load_factor"] = (loads.loc[peak_demand_hour, ref_col] - loads.loc[peak_demand_hour, opt_col]) / demand[peak_demand_hour] * 100
+                plot_df.loc[i, "min_demand_load_factor"] = (loads.loc[min_demand_hour, ref_col] - loads.loc[min_demand_hour, opt_col]) / demand[min_demand_hour] * 100
 
-    plot_df = new_df.melt(value_name="ref-opt MW")
-    plot_df[["country", "year", "type"]] = plot_df["variable"].str.split('_', expand=True, n=2)
+                # peak price
+                peak_price_hour = loads[f"{country}_{year}_price"].idxmax()
+                min_price_hour = loads[f"{country}_{year}_price"].idxmin()
+
+                plot_df.loc[i, f"peak_price_load_factor"] = (loads.loc[peak_price_hour, ref_col] - loads.loc[peak_price_hour, opt_col]) / demand[peak_price_hour] * 100
+                plot_df.loc[i, f"min_price_load_factor"] = (loads.loc[min_price_hour, ref_col] - loads.loc[min_price_hour, opt_col]) / demand[min_price_hour] * 100
+
+                i += 1
+
 
     sns.barplot(
         data=plot_df,
         x="country",
-        y="ref-opt MW",
+        y="peak_demand_load_factor",
         hue="year"
     )
+    plt.suptitle("peak demand load factor")
+    plt.xticks(rotation=90)
     plt.show()
 
+    sns.barplot(
+        data=plot_df,
+        x="country",
+        y="min_demand_load_factor",
+        hue="year"
+    )
+    plt.suptitle("min demand load factor")
+    plt.xticks(rotation=90)
+    plt.show()
 
+    sns.barplot(
+        data=plot_df,
+        x="country",
+        y="peak_price_load_factor",
+        hue="year"
+    )
+    plt.suptitle("peak price load factor")
+    plt.xticks(rotation=90)
+    plt.show()
 
+    sns.barplot(
+        data=plot_df,
+        x="country",
+        y="min_price_load_factor",
+        hue="year"
+    )
+    plt.xticks(rotation=90)
+    plt.suptitle("min price load factor")
+    plt.show()
 
 def main(percentage_dhw_tanks, percentage_buffer_tanks, scenario: str):
 
     df = pd.read_parquet(Path(__file__).parent / f"EU27_loads_dhw-{percentage_dhw_tanks}_buffer-{percentage_buffer_tanks}.parquet.gzip")
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]==scenario) | (national_demand["scenario"]=="baseyear"), :]
-    plot_flexibility_factor_peak_demand_hour(loads=df, national=national_demand)
+    
+    plot_flexibility_factor(loads=df, national=national_demand, scenario=scenario)
 
     # calculate the factors:
 
