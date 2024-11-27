@@ -105,10 +105,24 @@ def get_national_demand_profiles():
     shiny_happy["scenario"] = "shiny happy"
 
     df = pd.concat([demand, shiny_happy, levethian], axis=0)
-    # replace the 2 digit country code with 3 digits
     df["country"] = df["country"].map(COUNTRY_CODES)
-    assert not df.country.isna().any()
-    return df
+
+    # AURES data only contains 8735 values: duplicate the last ones
+    extended_data = []
+    for (country, year, scenario), group in df.groupby(["country", "year", "scenario"]):
+        if len(group) != 8760:
+            extended_values = group['generation'].tolist() + group["generation"].iloc[-24:].to_list()
+            extended_group = pd.DataFrame({
+                'country': [country] * 8760,
+                'year': [year] * 8760,
+                'generation': extended_values
+            })
+            extended_data.append(extended_group)
+    extended_df = pd.concat(extended_data, ignore_index=True)
+    
+    # replace the 2 digit country code with 3 digits
+    assert not extended_df.country.isna().any()
+    return extended_df
 
 
 def flexibility_factor(consumer_profile: np.array, prosumager_profile: np.array, national_demand_profile: np.array) -> float:

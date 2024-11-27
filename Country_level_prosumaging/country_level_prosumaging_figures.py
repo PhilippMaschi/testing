@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlalchemy
 from typing import List
 import matplotlib.gridspec as gridspec
-
+import Country_level_prosumager as Cp
 
 
 
@@ -23,8 +23,7 @@ def plot_supply_and_demand_matching_over_price(price: np.array, s_d_match: pd.Da
         df.loc[group.index, "cumulative energy"] = group["change in electricity demand"].sum()
 
     df["cumulative energy"] = df["cumulative energy"] / 1_000  # GWh
-
-        
+      
 
     fig = plt.figure(constrained_layout=True)
     gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3], figure=fig)  # Two rows, stacked vertically with height ratios
@@ -63,3 +62,69 @@ def plot_supply_and_demand_matching_over_price(price: np.array, s_d_match: pd.Da
 
     # Close the plot to free up memory
     plt.close()
+
+
+def plot_flexibility_factor_peak_demand_hour(loads: pd.DataFrame, national: pd.DataFrame):
+    new_df = pd.DataFrame()
+    for country in Cp.EUROPEAN_COUNTRIES.keys():
+        for year in [2020, 2030, 2040, 2050]:
+            if year == 2020 and (country == "CYP" or country=="MLT"):
+                continue
+            else:
+                ref_col = f"{country}_{year}_ref_load_MW"
+                opt_col = f"{country}_{year}_opt_load_MW"
+                new_df[f"{country}_{year}_load_factor_percent"] = (loads[ref_col] - loads[opt_col]) / national.loc[(national["country"]==country) & (national["year"]==year), "generation"].reset_index(drop=True) * 100
+
+    plot_df = new_df.melt(value_name="ref-opt MW")
+    plot_df[["country", "year", "type"]] = plot_df["variable"].str.split('_', expand=True, n=2)
+
+    sns.barplot(
+        data=plot_df,
+        x="country",
+        y="ref-opt MW",
+        hue="year"
+    )
+    plt.show()
+
+
+
+
+def main(percentage_dhw_tanks, percentage_buffer_tanks, scenario: str):
+
+    df = pd.read_parquet(Path(__file__).parent / f"EU27_loads_dhw-{percentage_dhw_tanks}_buffer-{percentage_buffer_tanks}.parquet.gzip")
+    national_demand = Cp.get_national_demand_profiles()
+    national_demand = national_demand.loc[(national_demand["scenario"]==scenario) | (national_demand["scenario"]=="baseyear"), :]
+    plot_flexibility_factor_peak_demand_hour(loads=df, national=national_demand)
+
+    # calculate the factors:
+
+    # flexiblity_factor_hourly[f"{country}_{year}"] = flexibility_factor_hourly(
+    #     consumer_profile=consumers_MW,
+    #     prosumager_profile=prosumer_MW,
+    #     national_demand_profile=np.array(national_demand[COUNTRY_CODES[country]])
+    # )
+
+    # s_and_d_matching_dict[f"{country}_{year}"] = supply_and_demand_matching(
+    #     price_profile=price,
+    #     consumer_profile=consumers_MW,
+    #     prosumager_profile=prosumer_MW
+    # )
+
+    # storage_efficiency[f"{country}_{year}"] = flexible_storage_efficiency(
+    #     consumer_profile=consumers_MW,
+    #     prosumager_profile=prosumer_MW
+    # )
+
+    # plot_supply_and_demand_matching_over_price(price=price,
+    #                                             s_d_match=s_and_d_matching_dict[f"{country}_{year}"],
+    #                                             country=country,
+    #                                             year=year)
+
+
+if __name__ == "__main__":
+
+    main(
+        percentage_dhw_tanks=0.1,
+        percentage_buffer_tanks=0.1,
+        scenario="shiny happy"
+    )
