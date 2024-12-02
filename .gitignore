@@ -24,4 +24,5 @@ idea/
 !PVGIS_data/NUTS1.json
 !PVGIS_data/NUTS2.json
 !PVGIS_data/NUTS3.json
+!PVGIS_data/residential_floor_area.json
 

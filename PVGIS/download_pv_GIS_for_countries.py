@@ -5,8 +5,10 @@ import geopandas as gpd
 from pyproj import CRS, Transformer
 import urllib.error
 import os
+import requests
+import json
 
-TEMP_DATA = Path(__file__).parent.parent / "PVGIS" / "temp"
+TEMP_DATA = Path(__file__).parent.parent / "PVGIS_data" / "temp"
 TEMP_DATA.mkdir(exist_ok=True, parents=True)
 
 
@@ -57,32 +59,37 @@ class PVGIS:
         optimalAngles = 1  # Calculate the optimum inclination AND orientation angles. Value of 1 for "yes".
         # All other values (or no value) mean "no". Not relevant for tracking planes.
 
-        req = f"https://re.jrc.ec.europa.eu/api/v5_2/seriescalc?lat={lat}&" \
-              f"lon={lon}&" \
-              f"startyear={startyear}&" \
-              f"endyear={endyear}&" \
-              f"pvcalculation={pvCalculation}&" \
-              f"peakpower={peakPower}&" \
-              f"loss={pvLoss}&" \
-              f"pvtechchoice={pvTechChoice}&" \
-              f"components={1}&" \
-              f"trackingtype={trackingtype}&" \
-              f"optimalinclination={optimalInclination}&" \
-              f"optimalangles={optimalAngles}"
+        r = f"https://re.jrc.ec.europa.eu/api/v5_3/seriescalc?" \
+            f"lat={lat}&" \
+            f"lon={lon}&" \
+            f"raddatabase=PVGIS-SARAH3&" \
+            f"browser=1&" \
+            f"outputformat=json&"  \
+            f"userhorizon=&" \
+            f"usehorizon=1&" \
+            f"angle=&"  \
+            f"aspect=&"  \
+            f"startyear={startyear}&"  \
+            f"endyear={endyear}&" \
+            f"mountingplace=free&" \
+            f"optimalinclination={optimalInclination}&" \
+            f"optimalangles={optimalAngles}&" \
+            f"js=1&" \
+            f"select_database_hourly=PVGIS-SARAH3&" \
+            f"hstartyear={startyear}&" \
+            f"hendyear={endyear}&" \
+            f"trackingtype={trackingtype}&" \
+            f"hourlyoptimalangles=0&" \
+            f"pvcalculation={pvCalculation}&" \
+            f"pvtechchoice={pvTechChoice}&" \
+            f"peakpower={peakPower}&" \
+            f"loss={pvLoss}&" \
+            f"components=1"
 
         try:
-            # read the csv from api and set column names to list of 20 because depending on input parameters the number
-            # of rows will vary. This way all parameters are included for sure, empty rows are dropped afterwards:
-            df = pd.read_csv(req, sep=",", header=None, names=range(20)).dropna(how="all", axis=1)
-            # drop rows with nan:
-            df = df.dropna().reset_index(drop=True)
-            # set header to first column
-            header = df.iloc[0]
-            df = df.iloc[1:, :]
-            df.columns = header
-            df = df.reset_index(drop=True)
-            PV_Profile = pd.to_numeric(df["P"]).to_numpy()  # W
-            return PV_Profile
+            response = requests.get(r).text
+            df = pd.DataFrame(json.loads(response)["outputs"]["hourly"])
+            return df
         except urllib.error.HTTPError:  # Error when nuts center is somewhere where there is no PVGIS data
             PV_Profile = None
             print("PV Data is not available for this location {}".format(nuts_id))
@@ -92,45 +99,37 @@ class PVGIS:
         # % JRC data
         # possible years are 2005 to 2017
         pvCalculation = 0  # 0 for no and 1 for yes
-        peakPower = 1  # kWp
-        pvLoss = 14  # system losses in %
-        pvTechChoice = "crystSi"  # Choices are: "crystSi", "CIS", "CdTe" and "Unknown".
-        trackingtype = 0  # Type of suntracking used, 0=fixed, 1=single horizontal axis aligned north-south,
-        # 2=two-axis tracking, 3=vertical axis tracking, 4=single horizontal axis aligned east-west,
-        # 5=single inclined axis aligned north-south.
         # angle is set to 90° because we are looking at a vertical plane
         angle = 90  # Inclination angle from horizontal plane
-        optimalInclination = 0  # Calculate the optimum inclination angle. Value of 1 for "yes".
-        # All other values (or no value) mean "no". Not relevant for 2-axis tracking.
-        optimalAngles = 0  # Calculate the optimum inclination AND orientation angles. Value of 1 for "yes".
-        # All other values (or no value) mean "no". Not relevant for tracking planes.
 
-        req = f"https://re.jrc.ec.europa.eu/api/v5_2/seriescalc?lat={lat}&" \
-              f"lon={lon}&" \
-              f"startyear={startyear}&" \
-              f"endyear={endyear}&" \
-              f"pvcalculation={pvCalculation}&" \
-              f"peakpower={peakPower}&" \
-              f"loss={pvLoss}&" \
-              f"pvtechchoice={pvTechChoice}&" \
-              f"components={1}&" \
-              f"trackingtype={trackingtype}&" \
-              f"optimalinclination={optimalInclination}&" \
-              f"optimalangles={optimalAngles}&" \
-              f"angle={angle}&" \
-              f"aspect={aspect}"
-
+        r = f"https://re.jrc.ec.europa.eu/api/v5_3/seriescalc?" \
+            f"lat={lat}&" \
+            f"lon={lon}&" \
+            f"raddatabase=PVGIS-SARAH3&" \
+            f"browser=1&" \
+            f"outputformat=json&"  \
+            f"userhorizon=&" \
+            f"usehorizon=1&" \
+            f"angle={angle}&"  \
+            f"aspect={aspect}&"  \
+            f"startyear={startyear}&"  \
+            f"endyear={endyear}&" \
+            f"mountingplace=free&" \
+            f"js=1&" \
+            f"select_database_hourly=PVGIS-SARAH3&" \
+            f"hstartyear={startyear}&" \
+            f"hendyear={endyear}&" \
+            f"hourlyoptimalangles=0&" \
+            f"pvcalculation={pvCalculation}&" \
+            f"components=1"
+            
         # read the csv from api and set column names to list of 20 because depending on input parameters the number
         # of rows will vary. This way all parameters are included for sure, empty rows are dropped afterwards:
         nuts_not_working = []
         try:
-            df = pd.read_csv(req, sep=",", header=None, names=range(20)).dropna(how="all", axis=1)
-            # drop rows with nan:
-            df = df.dropna().reset_index(drop=True)
-            # set header to first column
-            header = df.iloc[0]
-            df = df.iloc[1:, :]
-            df.columns = header
+            response = requests.get(r).text
+            df = pd.DataFrame(json.loads(response)["outputs"]["hourly"])
+
             return df
         except urllib.error.HTTPError:  # Error when nuts center is somewhere where there is no PVGIS data
             nuts_not_working.append(nuts_id)
@@ -217,21 +216,12 @@ class PVGIS:
             solar_radiation_table.to_parquet(path=TEMP_DATA / table_name_radiation)
 
             # save temperature
-            outsideTemperature = pd.to_numeric(df_south["T2m"].reset_index(drop=True).rename("temperature"))
-            temperature_dict = {"temperature": outsideTemperature.to_numpy()}
-            # write table for outside temperature:
-            temperature_table = pd.DataFrame(temperature_dict)
-            temperature_table.to_parquet(TEMP_DATA / table_name_temperature)
+            outsideTemperature = pd.DataFrame(pd.to_numeric(df_south["T2m"].reset_index(drop=True).rename("temperature")))
+            outsideTemperature.to_parquet(TEMP_DATA / table_name_temperature)
 
             # PV profiles:
-            unit = np.full((len(self.id_hour),), "W")
-
-            PVProfile = self.get_PV_generation(lat, lon, start_year, end_year, nuts)
-
-            pv_type = np.full((len(PVProfile),), 1)
-            columns_pv = {"power": PVProfile}
-            pv_table = pd.DataFrame(columns_pv)
-            pv_table.to_parquet(TEMP_DATA / table_name_PV)
+            PVProfile = pd.DataFrame(pd.to_numeric(self.get_PV_generation(lat, lon, start_year, end_year, nuts)["P"].reset_index(drop=True)))
+            PVProfile.to_parquet(TEMP_DATA / table_name_PV)
 
             print(f"{nuts} saved to TEMP DATA")
 
@@ -243,7 +233,7 @@ class PVGIS:
             nuts_level: int [0, 1, 2, 3]
         """
         # weighted average over ground floor area from hotmaps
-        absolut_path = Path(os.path.abspath(__file__)).parent.resolve() / Path(f"residential_floor_area.json")
+        absolut_path = Path(__file__).parent.parent / "PVGIS_data" / "residential_floor_area.json"
         floor_area_total = pd.read_json(absolut_path, orient="table")
         # select the floor area on the respective nuts level
         if nuts_level == 0:
@@ -266,9 +256,9 @@ class PVGIS:
         floor_area_sum = floor_area.loc[:, "sum"].sum()
 
         # create numpy arrays that will be filled inside the loop:
-        temperature_weighted_sum = np.zeros((8760, 1))
+        temperature_weighted_sum = np.zeros((8760, ))
         radiation_weighted_sum = np.zeros((8760, 4))
-        PV_weighted_sum = np.zeros((8760, 1))
+        PV_weighted_sum = np.zeros((8760, ))
 
         # dictionary for different PV types
         for index, row in floor_area.iterrows():
@@ -279,7 +269,7 @@ class PVGIS:
             temperature_weighted_sum += temperature_profile * floor_area_of_specific_region / floor_area_sum
             
             # Solar radiation
-            radiation_profile = pd.read_parquet(TEMP_DATA / f"Radiation_NUTS{nuts_id}_{country}.parquet.gzip")
+            radiation_profile = pd.read_parquet(TEMP_DATA / f"Radiation_NUTS{nuts_id}_{country}.parquet.gzip").to_numpy()
             radiation_weighted_sum += radiation_profile * floor_area_of_specific_region / floor_area_sum
 
             # PV
@@ -289,58 +279,26 @@ class PVGIS:
 
         # create table for saving to DB: Temperature and Radiation will be saved in the region table
         # Temperature + Radiation
-        temperature_radiation_columns = {"ID_Region": np.full((8760,), country),
+        temperature_radiation_generation_columns = {
+                                        "ID_Region": np.full((8760,), country),
+                                        "year": np.full((8760,), year),
                                          "id_hour": self.id_hour,
                                          "south": radiation_weighted_sum[:, 0],
                                          "east": radiation_weighted_sum[:, 1],
                                          "west": radiation_weighted_sum[:, 2],
                                          "north": radiation_weighted_sum[:, 3],
-                                         "temperature": temperature_weighted_sum.flatten(),
+                                         "temperature": temperature_weighted_sum,
                                          "pv_generation_optimal": PV_weighted_sum,
                                          }
 
-        temperature_radiation_table = pd.DataFrame(temperature_radiation_columns)
+        temperature_radiation_table = pd.DataFrame(temperature_radiation_generation_columns)
         temperature_radiation_table.to_csv(Path(__file__).parent / f"Weather_data_{country}_{year}.csv")
-        # TODO save
-        assert sorted(list(temperature_radiation_table.columns)) == sorted(list(input_data_structure.RegionData().__dict__.keys()))
-        # save weighted temperature average profile to database:
-        DB().write_dataframe(table_name=Table().region,
-                             data_frame=temperature_radiation_table,
-                             data_types=input_data_structure.RegionData().__dict__,
-                             if_exists="replace"
-                             )
+        temperature_radiation_table.to_csv(TEMP_DATA.parent / f"weather_data_{country}_{year}.csv", sep=";", index=False)
 
-        # PV
-        pv_columns = input_data_structure.PVData().__dict__.keys()
-        # create single row on which tables are stacked up
-        pv_table_numpy = np.zeros((1, len(pv_columns)))
-        for (id, peak_power), values in PV_weighted_sum.items():
-            # create the table for each pv type
-            single_pv_table = np.column_stack([np.full((8760,), country),  # nuts_id
-                                               np.full((8760,), id),  # ID_PV
-                                               self.id_hour,  # id_hour
-                                               values,  # power
-                                               np.full((8760,), "W"),  # unit
-                                               np.full((8760,), peak_power),  # peak power
-                                               np.full((8760,), "kWp")]  # peak power unit
-                                              )
-            # stack the tables from dictionary to one large table
-            pv_table_numpy = np.vstack([pv_table_numpy, single_pv_table])
-
-        # remove the first row (zeros) from the pv_table
-        pv_table_numpy = pv_table_numpy[1:]
-        pv_table = pd.DataFrame(pv_table_numpy, columns=pv_columns)
-        # save to sql database:
-        DB().write_dataframe(table_name=Table().pv_generation,
-                             data_frame=pv_table,
-                             data_types=input_data_structure.PVData().__dict__,
-                             if_exists="replace"
-                             )
-
-        print(f"mean tables for country {country} have been saved")
+        print(f"mean tables for country {country} {year} have been saved")
 
     def get_nuts_id_list(self, nuts_level: int, country: str) -> list:
-        absolut_path = Path(os.path.abspath(__file__)).parent.resolve() / Path(f"NUTS{nuts_level}.json")
+        absolut_path = Path(__file__).parent.parent / "PVGIS_data" / f"NUTS{nuts_level}.json"
         all_nuts_ids = pd.read_json(absolut_path, orient="table")
         all_nuts_ids = all_nuts_ids[all_nuts_ids["country"] == country]["nuts_id"]
         return list(all_nuts_ids)
@@ -352,11 +310,12 @@ class PVGIS:
             end_year: int,
         ):
 
-        self.get_PVGIS_data(nuts_id_list=self.get_nuts_id_list(nuts_level, country_code),
-                            country=country_code,
-                            start_year=start_year,
-                            end_year=end_year,
-                        )
+        # self.get_PVGIS_data(
+                        # nuts_id_list=self.get_nuts_id_list(nuts_level, country_code),
+                        #     country=country_code,
+                        #     start_year=start_year,
+                        #     end_year=end_year,
+                        # )
         # creating a single profile as mean profile for a country weighted by the floor area of each nuts region:
         self.calculate_single_profile_for_country(country=country_code, nuts_level=nuts_level, year=start_year)
 
