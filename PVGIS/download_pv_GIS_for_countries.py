@@ -86,14 +86,19 @@ class PVGIS:
             f"loss={pvLoss}&" \
             f"components=1"
 
-        try:
-            response = requests.get(r).text
-            df = pd.DataFrame(json.loads(response)["outputs"]["hourly"])
+        response = json.loads(requests.get(r).text)
+        if "status" in response.keys():
+            if response["status"] == 400:
+                print("{} does not have a valid location for PV-GIS".format(nuts_id))
+                return None
+            elif response["status"] == 500:
+                print(response["message"], f"for nuts {nuts_id}")
+                return None
+            else:
+                assert "some error, investigate!"
+        else:
+            df = pd.DataFrame(response["outputs"]["hourly"])
             return df
-        except urllib.error.HTTPError:  # Error when nuts center is somewhere where there is no PVGIS data
-            PV_Profile = None
-            print("PV Data is not available for this location {}".format(nuts_id))
-            return PV_Profile
 
     def get_temperature_and_solar_radiation(self, lat, lon, aspect, startyear, endyear, nuts_id) -> pd.DataFrame:
         # % JRC data
@@ -126,16 +131,21 @@ class PVGIS:
         # read the csv from api and set column names to list of 20 because depending on input parameters the number
         # of rows will vary. This way all parameters are included for sure, empty rows are dropped afterwards:
         nuts_not_working = []
-        try:
-            response = requests.get(r).text
-            df = pd.DataFrame(json.loads(response)["outputs"]["hourly"])
+        
+        response = json.loads(requests.get(r).text)
+        if "status" in response.keys():
+            if response["status"] == 400:
+                print("{} does not have a valid location for PV-GIS".format(nuts_id))
+                return None
+            elif response["status"] == 500:
+                print(response["message"], f"for nuts {nuts_id}")
+                return None
+            else:
+                assert "some error, investigate!"
+        else:
+            df = pd.DataFrame(response["outputs"]["hourly"])
 
-            return df
-        except urllib.error.HTTPError:  # Error when nuts center is somewhere where there is no PVGIS data
-            nuts_not_working.append(nuts_id)
-            print("{} does not have a valid location for PV-GIS".format(nuts_id))
-            print(nuts_not_working)
-            return None
+        return df
 
 
     def get_PVGIS_data(self,
@@ -143,7 +153,7 @@ class PVGIS:
                        nuts_id_list: list,
                        start_year: int,
                        end_year: int,
-                    ) -> None:
+                    ) -> list:
         """
         This function gets the solar radiation for every cilestial direction (North, East, West, South) on a vertical
         plane. This radiation will later be multiplied with the respective window areas to calculate the radiation
@@ -167,14 +177,8 @@ class PVGIS:
         # clear temp Data
         for file in TEMP_DATA.iterdir():
             file.unlink()
-        # determine if NUTS1,2 or 3:
-        if len(nuts_id_list[0]) == 3:  # NUTS1
-            nuts_level = "1"
-        elif len(nuts_id_list[0]) == 4:
-            nuts_level = "2"
-        elif len(nuts_id_list[0]) == 5:
-            nuts_level = "3"
 
+        valid_nuts_ids = []
         for nuts in nuts_id_list:
             table_name_temperature = f"Temperature_NUTS{nuts}_{country}.parquet.gzip"
             table_name_radiation = f"Radiation_NUTS{nuts}_{country}.parquet.gzip"
@@ -190,6 +194,7 @@ class PVGIS:
                     if df_south is None:
                         valid_nuts_id = False
                         break
+                    valid_nuts_ids.append(nuts)
                     south_radiation = pd.to_numeric(df_south["Gb(i)"]) + pd.to_numeric(df_south["Gd(i)"])
                 elif CelestialDirection == "east":
                     aspect = -90
@@ -204,6 +209,7 @@ class PVGIS:
                     df_north = self.get_temperature_and_solar_radiation(lat, lon, aspect, start_year, end_year, nuts)
                     north_radiation = pd.to_numeric(df_north["Gb(i)"]) + pd.to_numeric(df_north["Gd(i)"])
             if not valid_nuts_id:
+                print(f"{nuts} no data found")
                 continue
 
             # save solar radiation
@@ -224,8 +230,9 @@ class PVGIS:
             PVProfile.to_parquet(TEMP_DATA / table_name_PV)
 
             print(f"{nuts} saved to TEMP DATA")
+        return valid_nuts_ids
 
-    def calculate_single_profile_for_country(self, country: str, nuts_level: int, year: int) -> None:
+    def calculate_single_profile_for_country(self, country: str, nuts_level: int, year: int, valide_nuts_ids: list) -> None:
         """nuts level 1, 2 or 3
 
         Args:
@@ -263,6 +270,8 @@ class PVGIS:
         # dictionary for different PV types
         for index, row in floor_area.iterrows():
             nuts_id = row["nuts_id"]
+            if not nuts_id in valide_nuts_ids:
+                continue
             floor_area_of_specific_region = row["sum"]
             # Temperature
             temperature_profile = pd.read_parquet(TEMP_DATA / f"Temperature_NUTS{nuts_id}_{country}.parquet.gzip").iloc[:, 0].to_numpy()
@@ -310,15 +319,45 @@ class PVGIS:
             end_year: int,
         ):
 
-        # self.get_PVGIS_data(
-                        # nuts_id_list=self.get_nuts_id_list(nuts_level, country_code),
-                        #     country=country_code,
-                        #     start_year=start_year,
-                        #     end_year=end_year,
-                        # )
+        nuts_ids = self.get_PVGIS_data(
+                        nuts_id_list=self.get_nuts_id_list(nuts_level, country_code),
+                            country=country_code,
+                            start_year=start_year,
+                            end_year=end_year,
+                        )
         # creating a single profile as mean profile for a country weighted by the floor area of each nuts region:
-        self.calculate_single_profile_for_country(country=country_code, nuts_level=nuts_level, year=start_year)
+        self.calculate_single_profile_for_country(country=country_code, nuts_level=nuts_level, year=start_year, valide_nuts_ids=nuts_ids)
 
 
 if __name__ == "__main__":
-    PVGIS().run(nuts_level=3, country_code="AT", start_year=2023, end_year=2023)
+    countries = [
+        # "AT",
+        # "BE",
+        # "BG",
+        # "HR",
+        # "CY",
+        # "CZ",
+        # "DK",
+        # "EE",
+        # "FI",
+        "FR",
+        "DE",
+        "GR",
+        "HU",
+        "IE",
+        "IT",
+        "LV",
+        "LT",
+        "LU",
+        "MT",
+        "NL",
+        "PL",
+        "PT",
+        "RO",
+        "SK",
+        "SI",
+        "ES",
+        "SE",
+    ]
+    for country in countries:
+        PVGIS().run(nuts_level=3, country_code=country, start_year=2023, end_year=2023)
