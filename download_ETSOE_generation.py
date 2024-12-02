@@ -71,8 +71,6 @@ def get_entsoe_generation(country_code: str,
     client = EntsoePandasClient(api_key='d90ceefb-e4d3-4666-8fdf-e53bd46d996a')
     start = pd.Timestamp(f"{year}0101", tz='CET')
     end = pd.Timestamp(f"{year + 1}0101", tz='CET')
-    # Retrieve electricity production data for each country
-    electricity_production_1 = {}
     # Get day-ahead prices from ENTSO-E Transparency
     try:
         electricity_production = client.query_generation(country_code=country_code,
@@ -89,7 +87,7 @@ def get_entsoe_generation(country_code: str,
             df = electricity_production
         total_consumption = df.sum(axis=1)
         # to make sure the consumption is hourly
-        total_consumption = total_consumption.resample('1H').sum()
+        total_consumption = total_consumption.resample('1h').sum()
         # check the length:
         if len(total_consumption) != 8760:
             # if its a leap year:
@@ -114,7 +112,7 @@ def get_entsoe_generation(country_code: str,
     except Exception as e:
         print(f"{country_code} {year} no entsoe-data available.")
         print(f"{e}")
-        return None
+        return pd.DataFrame()
 
 
 def dowload_generation(country: str, year: int, path: Path):
@@ -131,13 +129,15 @@ def dowload_generation(country: str, year: int, path: Path):
             year=year
         )
         # add country name to consumption profile for later
-        intermediate_df.loc[:, country] = entsoe_generation.to_numpy()  # MWh
-        timestamp = entsoe_generation.index
+        if not entsoe_generation.empty:
+            if not len(entsoe_generation) != 8760:
+                intermediate_df.loc[:, country] = entsoe_generation.to_numpy()  # MWh
+                timestamp = entsoe_generation.index
 
-        filename = f"ENTSOE_generation_for_{country}_{year}_MWh_intermediate.csv"
-        intermediate_df.index = timestamp
-        # save prices to excel
-        intermediate_df.to_csv(path / Path(filename), sep=";", index=False)
+                filename = f"ENTSOE_generation_for_{country}_{year}_MWh_intermediate.csv"
+                intermediate_df.index = timestamp
+                # save prices to excel
+                intermediate_df.to_csv(path / Path(filename), sep=";", index=False)
 
 
 def download_load(country: str, year: int, path: Path):
@@ -180,11 +180,11 @@ def compress_to_single_files(year: int, path: Path):
         if str(year) in file.name and "generation" in file.name.lower():
             read = pd.read_csv(file, sep=";")
             df_generation = pd.concat([df_generation, read], axis=1)
-            # file.unlink()
+            file.unlink()
         elif str(year) in file.name and "load" in file.name.lower():
             read = pd.read_csv(file, sep=";")
             df_load = pd.concat([df_load, read], axis=1)
-            # file.unlink()
+            file.unlink()
 
     if not df_generation.empty:
         df_generation.to_csv(path / f"ENTSOE_generation_MWh_{year}.csv", sep=";", index=False)
@@ -195,7 +195,7 @@ def compress_to_single_files(year: int, path: Path):
 
 
 if __name__ == "__main__":
-    years = [2023] #[2018, 2019, 2020, 2021, 2022]
+    years = [2018, 2019, 2020, 2021, 2022, 2023]
     country_codes = [
         "AT",
         "DE",
