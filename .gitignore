@@ -21,3 +21,7 @@ idea/
 *.zip
 *.txt
 
+!PVGIS_data/NUTS1.json
+!PVGIS_data/NUTS2.json
+!PVGIS_data/NUTS3.json
+
