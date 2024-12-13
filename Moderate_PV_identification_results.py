@@ -217,7 +217,7 @@ def plot_pvs_on_map(gdf_3035, gdf_3035_all, region: str):
         Line2D([0], [0], color="white", marker="o", label="Buildings", markerfacecolor='blue'),
         Line2D([0], [0], marker="o", color="white", label="identified PV", markerfacecolor='red')
     ]
-    fig.legend(handles=legend_elements, loc='lower right', bbox_to_anchor=(0.9, 0.1),  prop={'size': 20})
+    fig.legend(handles=legend_elements, loc='lower right',  prop={'size': 20})
     for ax in axes:
         ax.set_ylabel("")
         ax.set_xlabel("")
@@ -268,6 +268,8 @@ def main():
 
 
     identified = [name.replace("building_", "") for name in CLASSIFIER_RESULTS.loc[CLASSIFIER_RESULTS["prediction"]==1, "OSM_ID"]]
+    identified = [i.split("_")[0] for i in identified]
+
     all_oms = [name.replace("building_", "") for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
     # all_hashs = ["".join(name.replace("building_", "").split("_")[1:]) for name in CLASSIFIER_RESULTS.loc[:, "OSM_ID"]]
 
