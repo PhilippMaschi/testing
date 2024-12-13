@@ -1,4 +1,4 @@
-import cartopy.crs
+# import cartopy.crs
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,7 +11,7 @@ from shapely.geometry import box
 import geopandas as gpd
 from geopy.geocoders import Nominatim
 import json
-import cartopy
+# import cartopy
 import shapely
 import seaborn as sns
 from matplotlib.patches import Patch, ConnectionPatch
@@ -21,32 +21,59 @@ import time
 from PIL import Image
 import shutil
 
+# labels = pd.read_csv(Path(r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\MODERATE\data\VITO") / "labels_P6269_elec.csv", sep=";")
+# data = pd.read_csv(Path(r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\MODERATE\data\VITO") / "P6269_1_50_DMK_Sample_Elek_Volume_Afname_kWh_resampled.csv", sep=",")
+
+# df_heatpumps = pd.DataFrame()
+# df_no = pd.DataFrame()
+
+# for i, row in labels.iterrows():
+#     if row["Heatpump"] == 0:
+#         df_no.loc[:, str(row["ID"])] = data.loc[:, str(row["ID"])].copy()
+#     else:
+#         df_heatpumps.loc[:, str(row["ID"])] = data.loc[:, str(row["ID"])].copy()
+      
+# df_no.to_csv(Path(r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\MODERATE\data\VITO") / "NO_heatpumps.csv", sep=";", index=False)
+# df_heatpumps.to_csv(Path(r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\MODERATE\data\VITO") / "Heatpumps.csv", sep=";", index=False)
+
 
 # BOZEN
-BOZEN_CLASSIFIER_RESULTS = pd.read_csv(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/Bozen/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/") / "Classifier_Results.csv", sep=";")
+# BOZEN_CLASSIFIER_RESULTS = pd.read_csv(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/Bozen/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/") / "Classifier_Results.csv", sep=";")
+BOZEN_CLASSIFIER_RESULTS = pd.read_csv(Path(r"X:\projects4\workspace_philippm\Bozen\building-stock-analysis\T3.4-PV-identification\results") / "Classifier_Results.csv", sep=";")
 
-with open(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/Bozen/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis") / "OSM_IDs_lat_lon.json", "r") as f:
+# with open(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/Bozen/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis") / "OSM_IDs_lat_lon.json", "r") as f:
+#     BOZEN_BUILDING_LOCS = json.load(f)
+    
+with open(Path(r"X:\projects4\workspace_philippm\Bozen\building-stock-analysis\T3.4-PV-identification\results") / "OSM_IDs_lat_lon.json", "r") as f:
     BOZEN_BUILDING_LOCS = json.load(f)
 
-BOZEN_MANUALLY_IDENTIFIED = pd.read_csv(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/Bozen/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/") / "OSM_IDs_labeled.csv", sep=";")
+# BOZEN_MANUALLY_IDENTIFIED = pd.read_csv(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/Bozen/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/") / "OSM_IDs_labeled.csv", sep=";")
+BOZEN_MANUALLY_IDENTIFIED = pd.read_csv(Path(r"X:\projects4\workspace_philippm\Bozen\building-stock-analysis\T3.4-PV-identification\results") / "OSM_IDs_labeled.csv", sep=";")
 
 
 # Valencia
-PATH_2_INPUT_TIFS = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/input_tifs/")
-CLASSIFIER_RESULTS = pd.read_csv(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/") / "Classifier_Results.csv", sep=";")
-with open(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis") / "OSM_IDs_lat_lon.json", "r") as f:
-    BUILDING_LOCS = json.load(f)
-
-VALENCIA_DATA = pd.read_csv(Path(__file__).parent / "datos-de-autoconsumo-de-energias-renovables.csv", sep=";", encoding="ISO-8859-1")
-VALENCIA_DATA.loc[VALENCIA_DATA["CODIGO POSTAL"].isna(), "CODIGO POSTAL"] = VALENCIA_DATA.loc[VALENCIA_DATA["CODIGO POSTAL"].isna(), "CODIGO MUNICIPIO"]
-VALENCIA_DATA.drop_duplicates(keep="first", inplace=True)
-VALENCIA_DATA = VALENCIA_DATA.loc[VALENCIA_DATA["COMBUSTIBLE"].isna(), :].copy()
-
+# PATH_2_INPUT_TIFS = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/input_tifs/")
 PATH_2_INPUT_TIFS = Path(r"X:\projects4\workspace_philippm\building-stock-analysis\T3.1-dynamic-analysis\Case-study-II-III-PV-analysis\solar-panel-classifier\new_data\input_tifs")
-BUILDING_LOCS = {"1000248182": "39.345798,-0.571910"}
 
-MANUALLY_IDENTIFIED = pd.read_csv(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/") / "OSM_IDs_labeled.csv", sep=";")
+# CLASSIFIER_RESULTS = pd.read_csv(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/solar-panel-classifier/new_data/") / "Classifier_Results.csv", sep=";")
+CLASSIFIER_RESULTS = pd.read_csv(Path(r"X:\projects4\workspace_philippm\building-stock-analysis\T3.1-dynamic-analysis\Case-study-II-III-PV-analysis\solar-panel-classifier\new_data") / "Classifier_Results.csv", sep=";")
 
+# with open(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis") / "OSM_IDs_lat_lon.json", "r") as f:
+#     BUILDING_LOCS = json.load(f)
+
+# VALENCIA_DATA = pd.read_csv(Path(__file__).parent / "datos-de-autoconsumo-de-energias-renovables.csv", sep=";", encoding="ISO-8859-1")
+# VALENCIA_DATA.loc[VALENCIA_DATA["CODIGO POSTAL"].isna(), "CODIGO POSTAL"] = VALENCIA_DATA.loc[VALENCIA_DATA["CODIGO POSTAL"].isna(), "CODIGO MUNICIPIO"]
+# VALENCIA_DATA.drop_duplicates(keep="first", inplace=True)
+# VALENCIA_DATA = VALENCIA_DATA.loc[VALENCIA_DATA["COMBUSTIBLE"].isna(), :].copy()
+
+
+# MANUALLY_IDENTIFIED = pd.read_csv(Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/building-stock-analysis/T3.1-dynamic-analysis/Case-study-II-III-PV-analysis/") / "OSM_IDs_labeled.csv", sep=";")
+
+
+df = pd.read_csv(Path(r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\MODERATE\data\PV_classifier_results") / "Valencia_OSM_ID_with_PV_classification.csv", sep=";")
+df["OSM_ID"] = df["OSM_ID"].apply(lambda x: f'{x.split("_")[0]}_{x.split("_")[1]}')
+
+df.to_csv(Path(r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\MODERATE\data\PV_classifier_results") / "Valencia_OSM_ID_with_PV_classification.csv", sep=";", index=False)
 
 
 # make sure that this function is identical with the one used in the project!

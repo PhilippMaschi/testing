@@ -10,7 +10,7 @@ def get_entsoe_generation(country_code: str,
                           year: int) -> Union[pd.Series, None]:
     # %% parameter definitions
     print(f'Generation in {country_code} {year}')
-    client = EntsoePandasClient(api_key='c06ee579-f827-486d-bc1f-8fa0d7ccd3da')
+    client = EntsoePandasClient(api_key='f09ebb03-5ae0-4b72-bb02-dd63a5817921')
     start = pd.Timestamp(f"{year}0101", tz='CET')
     end = pd.Timestamp(f"{year + 1}0101", tz='CET')
     # Retrieve electricity production data for each country
@@ -138,9 +138,10 @@ if __name__ == "__main__":
     # main(country="HR", year=2018, path=path)
 
     input_list = [(country, y, path_to_save_csv) for country in country_codes for y in years]
-    with multiprocessing.Pool(6) as pool:
-        pool.starmap(main, input_list)
+    main(country="AT", year=2019, path=path_to_save_csv)
+    # with multiprocessing.Pool(6) as pool:
+    #     pool.starmap(main, input_list)
 
-    for year in years:
-        compress_to_single_files(year, path)
+    # for year in years:
+    #     compress_to_single_files(year, path)
 
