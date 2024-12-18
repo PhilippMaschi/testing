@@ -308,7 +308,7 @@ def plot_national_peak_days(day_df: pd.DataFrame):
 
 
 def create_sankey_diagram(df):
-  # sankey diagramm um zu sehen wie sich die Peaks ändern:
+    # sankey diagramm um zu sehen wie sich die Peaks ändern:
     flows = df.groupby(["all HEMS", "no HEMS"]).size().reset_index(name="count")
     source_column = "no HEMS"
     target_column = "all HEMS"
@@ -322,16 +322,20 @@ def create_sankey_diagram(df):
         "Winter": "rgba(231, 138, 195, 0.8)"   # pink
     }
     node_colors = (
-        [season_colors["Spring"]] * 2 +  # Spring (Source and Target)
-        [season_colors["Summer"]] * 2 +  # Summer
-        [season_colors["Autumn"]] * 2 +  # Autumn
-        [season_colors["Winter"]] * 2    # Winter
+        [season_colors["Spring"]]  +
+        [season_colors["Summer"]]  +
+        [season_colors["Autumn"]]  +
+        [season_colors["Winter"]]  +
+        [season_colors["Spring"]]  +
+        [season_colors["Summer"]]  +
+        [season_colors["Autumn"]]  +
+        [season_colors["Winter"]]   
     )
     link_colors = flows[source_column].map(lambda x: season_colors[x]).tolist()
 
     # Map source and target to indices
-    source_labels = ["Spring", "Summer", "Autumn", "Winter"]
-    target_labels = ["Spring", "Summer", "Autumn", "Winter"]
+    source_labels = ["Spring (no HEMS)", "Summer (no HEMS)", "Autumn (no HEMS)", "Winter (no HEMS)"]
+    target_labels = ["Spring (all HEMS)", "Summer (all HEMS)", "Autumn (all HEMS)", "Winter (all HEMS)"]
 
     # Combine source and target labels into a single list
     labels = source_labels + target_labels
@@ -344,9 +348,9 @@ def create_sankey_diagram(df):
     value_column = "count"
 
     # Map "all HEMS" (source) to source_labels indices
-    sources = flows[source_column].map(lambda x: label_to_index[f"{x} (Source)"])
+    sources = flows[source_column].map(lambda x: label_to_index[f"{x} (no HEMS)"])
     # Map "no HEMS" (target) to target_labels indices
-    targets = flows[target_column].map(lambda x: label_to_index[f"{x} (Target)"])
+    targets = flows[target_column].map(lambda x: label_to_index[f"{x} (all HEMS)"])
     values = flows[value_column]
 
     # Create the Sankey diagram
@@ -369,8 +373,8 @@ def create_sankey_diagram(df):
     # Save the Sankey diagram
     saving_path = Path(__file__).parent / "figures"
     saving_path.mkdir(exist_ok=True, parents=True)
-    fig.write_html(saving_path / "sankey_seasonal_peaks_double_blocks.html")
-
+    fig.write_html(saving_path / "sankey_seasonal_peaks.html")
+    fig.write_image(saving_path / "sankey_seasonal_peaks.svg")
 
 def plot_frequency_of_peaks_in_seasons(peak_df: pd.DataFrame):
     plot_df = peak_df.drop(columns=["change in peak", "change in peak relative"]).reset_index().melt(id_vars=["country", "year"], value_name="season")
