@@ -224,6 +224,29 @@ def plot_national_peaks(peak_df: pd.DataFrame):
     plt.show()
 
 
+def get_season(day_of_year):
+    """
+    Determine the season based on the day of the year.
+    
+    Args:
+        day_of_year (int): The day of the year (1-365 or 1-366 for leap years).
+    
+    Returns:
+        str: The season ("Winter", "Spring", "Summer", "Autumn").
+    """
+    if day_of_year < 0 or day_of_year > 365:
+        raise ValueError("day_of_year must be between 1 and 366")
+    
+    if 0 <= day_of_year <= 78 or day_of_year >= 356:  # Approx. Dec 21 - Mar 20
+        return "Winter"
+    elif 81 <= day_of_year <= 172:  # Approx. Mar 21 - Jun 20
+        return "Spring"
+    elif 173 <= day_of_year <= 265:  # Approx. Jun 21 - Sep 22
+        return "Summer"
+    elif 266 <= day_of_year <= 355:  # Approx. Sep 23 - Dec 20
+        return "Autumn"
+
+
 def plot_national_peak_days(day_df: pd.DataFrame):
     year_rows = {"2020": 1, "2030": 2, "2040": 3, "2050": 4}
 
@@ -281,12 +304,105 @@ def plot_national_peak_days(day_df: pd.DataFrame):
     saving_path = Path(__file__).parent / "figures"
     saving_path.mkdir(exist_ok=True, parents=True)
     fig.write_html(saving_path / f"national_peak_day_loads.html")
+    print("saved plotly figure")
+
+
+def create_sankey_diagram(df):
+  # sankey diagramm um zu sehen wie sich die Peaks ändern:
+    flows = df.groupby(["all HEMS", "no HEMS"]).size().reset_index(name="count")
+    source_column = "no HEMS"
+    target_column = "all HEMS"
+    value_column = "count"
+    labels = list(pd.concat([flows[source_column], flows[target_column]]).unique())
+    
+    season_colors = {
+        "Spring": "rgba(102, 194, 165, 0.8)",  # light green
+        "Summer": "rgba(252, 141, 98, 0.8)",   # orange
+        "Autumn": "rgba(141, 160, 203, 0.8)",  # light blue
+        "Winter": "rgba(231, 138, 195, 0.8)"   # pink
+    }
+    node_colors = (
+        [season_colors["Spring"]] * 2 +  # Spring (Source and Target)
+        [season_colors["Summer"]] * 2 +  # Summer
+        [season_colors["Autumn"]] * 2 +  # Autumn
+        [season_colors["Winter"]] * 2    # Winter
+    )
+    link_colors = flows[source_column].map(lambda x: season_colors[x]).tolist()
+
+    # Map source and target to indices
+    source_labels = ["Spring", "Summer", "Autumn", "Winter"]
+    target_labels = ["Spring", "Summer", "Autumn", "Winter"]
+
+    # Combine source and target labels into a single list
+    labels = source_labels + target_labels
+    label_to_index = {label: i for i, label in enumerate(labels)}
+
+    # Map source and target to their respective indices
+    flows = df.groupby(["all HEMS", "no HEMS"]).size().reset_index(name="count")
+    source_column = "no HEMS"
+    target_column = "all HEMS"
+    value_column = "count"
+
+    # Map "all HEMS" (source) to source_labels indices
+    sources = flows[source_column].map(lambda x: label_to_index[f"{x} (Source)"])
+    # Map "no HEMS" (target) to target_labels indices
+    targets = flows[target_column].map(lambda x: label_to_index[f"{x} (Target)"])
+    values = flows[value_column]
+
+    # Create the Sankey diagram
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=labels,
+            color=node_colors
+        ),
+        link=dict(
+            source=sources,
+            target=targets,
+            value=values,
+            color=link_colors
+        )
+    )])
+
+    # Save the Sankey diagram
+    saving_path = Path(__file__).parent / "figures"
+    saving_path.mkdir(exist_ok=True, parents=True)
+    fig.write_html(saving_path / "sankey_seasonal_peaks_double_blocks.html")
+
+
+def plot_frequency_of_peaks_in_seasons(peak_df: pd.DataFrame):
+    plot_df = peak_df.drop(columns=["change in peak", "change in peak relative"]).reset_index().melt(id_vars=["country", "year"], value_name="season")
+    count_df = plot_df.groupby(["season", "variable", "year"]).size().reset_index(name="count").copy()
+
+    g = sns.FacetGrid(count_df, col="year", col_wrap=3, height=4, sharey=True)
+    g.map_dataframe(
+        sns.barplot,
+        x="season",
+        y="count",
+        hue="variable",
+        order=["Winter", "Spring", "Summer", "Autumn"],  # Ensure consistent order if needed
+    )
+    g.add_legend()
+    g.set_axis_labels("Season", "number of peaks occuring in each season")
+    g.tight_layout()
+    plt.show()
+
+  
 
 
 
-
-
-
+    
+    heatmap_df = count_df.pivot_table(index="season", columns=["year", "variable"], values="count", fill_value=0)
+    # Step 3: Plot heatmap
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(heatmap_df, annot=True, fmt="d", cmap="coolwarm")
+    plt.title("Season Occurrences Heatmap")
+    plt.ylabel("Season")
+    plt.xlabel("Year and Variable")
+    plt.tight_layout()
+    plt.show()
 
 
 
@@ -318,8 +434,13 @@ def show_day_with_peak_deamand(profiles: pd.DataFrame, scenario: str, national: 
 
                 peak_day_opt = int(peak_demand_hour_opt/24)
                 peak_day_ref = int(peak_demand_hour_ref/24)
+                peak_day_opt_season = get_season(peak_day_opt)
+                peak_day_ref_season = get_season(peak_day_ref)
                 if peak_day_opt != peak_day_ref:
                     print(f"peak demand day has been shifted in {country} {year}")
+                if peak_day_opt_season != peak_day_ref_season:
+                    print(f"!!!!!!!!!!!!! \n peak demand day has been shifted to another season {country} {year} \n !!!!!!!!!!!!!")
+
 
                 # cut the peak day profile for the plot:
                 ref_peak_day = national_demand_ref.iloc[peak_day_ref*24: peak_day_ref*24+24]
@@ -330,9 +451,14 @@ def show_day_with_peak_deamand(profiles: pd.DataFrame, scenario: str, national: 
 
                 peak_df.loc[(country, year), f"change in peak"] = peak_diff
                 peak_df.loc[(country, year), f"change in peak relative"] = peak_diff / peak_ref * 100
+                peak_df.loc[(country, year), f"all HEMS"] = peak_day_opt_season
+                peak_df.loc[(country, year), f"no HEMS"] = peak_day_ref_season
 
 
-    plot_national_peaks(peak_df=peak_df)
+
+    # plot_national_peaks(peak_df=peak_df)
+    create_sankey_diagram(df=peak_df)
+    plot_frequency_of_peaks_in_seasons(peak_df=peak_df)
     plot_national_peak_days(day_df=day_df)
 
 
