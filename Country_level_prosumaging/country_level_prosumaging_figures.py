@@ -12,6 +12,24 @@ import plotly.graph_objects as go
 from plotly.colors import qualitative
 from plotly.subplots import make_subplots
 from itertools import cycle
+import logging
+
+
+
+    # Ensure the log directory exists
+log_file_path = Path(__file__).parent / "logfile.log"
+log_level = logging.INFO
+# Configure the logger
+logging.basicConfig(
+    level=log_level,
+    format="%(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file_path),  # Write logs to the file
+        logging.StreamHandler()             # Optionally output logs to the console
+    ]
+)
+LOGGER = logging.getLogger(__name__)
+
 
 def plot_supply_and_demand_matching_over_price(loads: pd.DataFrame):
     bin_size = 20
@@ -119,13 +137,6 @@ def plot_flexible_storage_efficiency(loads: pd.DataFrame):
     plt.show()
     plt.close()
 
-    sp_opt = loads["DEU_2020_opt_load_MW"]
-    sp_ref = loads["DEU_2020_ref_load_MW"]
-    plt.plot(sp_opt, label="opt")
-    plt.plot(sp_ref, label="ref", alpha=0.5)
-    plt.legend()
-    plt.show()
-    print((sp_ref.sum()-sp_opt.sum())/sp_ref.sum())
 
 def plot_flexibility_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str):
     plot_df = pd.DataFrame()
@@ -304,7 +315,7 @@ def plot_national_peak_days(day_df: pd.DataFrame):
     saving_path = Path(__file__).parent / "figures"
     saving_path.mkdir(exist_ok=True, parents=True)
     fig.write_html(saving_path / f"national_peak_day_loads.html")
-    print("saved plotly figure")
+    LOGGER.info("saved plotly figure national_peak_day_loads.html")
 
 
 def create_sankey_diagram(df):
@@ -393,20 +404,6 @@ def plot_frequency_of_peaks_in_seasons(peak_df: pd.DataFrame):
     g.tight_layout()
     plt.show()
 
-  
-
-
-
-    
-    heatmap_df = count_df.pivot_table(index="season", columns=["year", "variable"], values="count", fill_value=0)
-    # Step 3: Plot heatmap
-    plt.figure(figsize=(12, 8))
-    sns.heatmap(heatmap_df, annot=True, fmt="d", cmap="coolwarm")
-    plt.title("Season Occurrences Heatmap")
-    plt.ylabel("Season")
-    plt.xlabel("Year and Variable")
-    plt.tight_layout()
-    plt.show()
 
 
 
@@ -441,9 +438,9 @@ def show_day_with_peak_deamand(profiles: pd.DataFrame, scenario: str, national: 
                 peak_day_opt_season = get_season(peak_day_opt)
                 peak_day_ref_season = get_season(peak_day_ref)
                 if peak_day_opt != peak_day_ref:
-                    print(f"peak demand day has been shifted in {country} {year}")
+                    LOGGER.info(f"peak demand day has been shifted in {country} {year}")
                 if peak_day_opt_season != peak_day_ref_season:
-                    print(f"!!!!!!!!!!!!! \n peak demand day has been shifted to another season {country} {year} \n !!!!!!!!!!!!!")
+                    LOGGER.warning(f"peak demand day has been shifted to another season {country} {year}")
 
 
                 # cut the peak day profile for the plot:
@@ -459,12 +456,10 @@ def show_day_with_peak_deamand(profiles: pd.DataFrame, scenario: str, national: 
                 peak_df.loc[(country, year), f"no HEMS"] = peak_day_ref_season
 
 
-
-    # plot_national_peaks(peak_df=peak_df)
+    plot_national_peaks(peak_df=peak_df)
     create_sankey_diagram(df=peak_df)
     plot_frequency_of_peaks_in_seasons(peak_df=peak_df)
     plot_national_peak_days(day_df=day_df)
-
 
 
 def main(percentage_dhw_tanks, percentage_buffer_tanks, scenario: str):
@@ -473,11 +468,9 @@ def main(percentage_dhw_tanks, percentage_buffer_tanks, scenario: str):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]==scenario) | (national_demand["scenario"]=="baseyear"), :]
     
-    # plot_flexible_storage_efficiency(loads=df)
-    # plot_flexibility_factor(loads=df, national=national_demand, scenario=scenario)
+    plot_flexible_storage_efficiency(loads=df)
+    plot_flexibility_factor(loads=df, national=national_demand, scenario=scenario)
 
-    # TODO show peak demand day profiles
-    # TODO show total peaks for all countries and color them for seasonality somehow
     # TODO rerun with positive prices! 20 cent grid fee
     show_day_with_peak_deamand(profiles=df, scenario=scenario, national=national_demand)
 
