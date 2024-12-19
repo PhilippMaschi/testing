@@ -96,7 +96,7 @@ BOILER = {
 def get_national_demand_profiles():
     gen_file = Path(__file__).parent.parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
     entsoe = pd.read_csv(gen_file, sep=";")
-    demand = entsoe.drop(columns=["Unnamed: 0"]).melt(var_name="country", value_name="generation")
+    demand = entsoe.melt(var_name="country", value_name="generation")
     demand["year"] = 2020
     demand["scenario"] = "baseyear"
     levethian = pd.read_csv(Path(__file__).parent / "gen_data_leviathan.csv", sep=",")
