@@ -229,13 +229,13 @@ def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.Da
             table_name=f"OperationResult_OptHour",
             scenario_ID=scen_id,
             folder=folder,
-            column_names=["Grid", "ID_Scenario", "Hour"]
+            column_names=["Grid", "ID_Scenario", "Hour", "PV2Grid", "PhotovoltaicProfile", "PV2Load"]
         )
         sim = read_parquet(
             table_name=f"OperationResult_RefHour",
             scenario_ID=scen_id,
             folder=folder,
-            column_names=["Grid", "ID_Scenario", "Hour"]
+            column_names=["Grid", "ID_Scenario", "Hour", "PV2Grid", "PhotovoltaicProfile", "PV2Load"]
         )
         return opt, sim
 
@@ -316,39 +316,40 @@ def get_price_profile(folder_name: Path):
 def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_file: Path):
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    if not parquet_file.exists():
-        folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
-        dfs = []
-        for folder_name in folder_names:
-            if folder_name in ["CYP_2020", "MLT_2020"]:
-                continue
-            folder = path_2_model_results / folder_name
-            country = folder.name.split("_")[-2]
-            year = folder.name.split("_")[-1]
-            print(f"analysing {country} {year}")
+    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    dfs = []
+    for folder_name in folder_names:
+        if folder_name in ["CYP_2020", "MLT_2020"]:
+            continue
+        folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[-2]
+        year = folder.name.split("_")[-1]
+        print(f"analysing {country} {year}")
 
-            country_loads = get_country_load_profiles(
-                folder_name=folder,
-                perc_cooling=percentage_cooling,
-            )
-            # add the country loads from different building types together:
-            demand_MW = country_loads.groupby(["ID_EnergyPrice", "Hour"]).sum()[["ref_grid_demand_stock_MW", "opt_grid_demand_stock_MW"]].reset_index()
+        country_loads = get_country_load_profiles(
+            folder_name=folder,
+            perc_cooling=percentage_cooling,
+        )
+        # add the country loads from different building types together:
+        demand_MW = country_loads.groupby(["ID_EnergyPrice", "Hour"]).sum()[["ref_grid_demand_stock_MW", "opt_grid_demand_stock_MW",  "PV2Grid", "PhotovoltaicProfile", "PV2Load"]].reset_index()
 
-            price = get_price_profile(folder).rename(columns={"electricity_1": 1, "electricity_2": 2}).melt(var_name="ID_EnergyPrice", value_name="price (cent/kWh)") 
-            price["price (cent/kWh)"] = price["price (cent/kWh)"] * 1000
+        price = get_price_profile(folder).rename(columns={"electricity_1": 1, "electricity_2": 2}).melt(var_name="ID_EnergyPrice", value_name="price (cent/kWh)") 
+        price["price (cent/kWh)"] = price["price (cent/kWh)"] * 1000
 
-            df = pd.concat([demand_MW, price.drop(columns="ID_EnergyPrice")], axis=1)
-            df["country"] = country
-            df["year"] = year
+        df = pd.concat([demand_MW, price.drop(columns="ID_EnergyPrice")], axis=1)
+        df["country"] = country
+        df["year"] = year
 
-            dfs.append(df)
-            
-        big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
-        big_df.to_parquet(parquet_file)
+        dfs.append(df)
+        
+    big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
+    big_df.columns = [str(col) for col in big_df.columns]
+    big_df.to_parquet(parquet_file)
 
 
 
 def main(percentage_cooling: float):
+    print(f"creating parquet file for {percentage_cooling} cooling percentage")
     parquet_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
 
     create_national_demand_profiles_parquet(percentage_cooling,  parquet_file)

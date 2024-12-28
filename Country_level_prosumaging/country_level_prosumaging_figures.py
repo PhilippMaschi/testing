@@ -112,9 +112,8 @@ def plot_flexible_storage_efficiency(loads: pd.DataFrame):
                 continue
             else:
                 
-                consumer_profile = pd.concat([loads.loc[:3500, f"{country}_{year}_ref_load_MW"], loads.loc[6500:, f"{country}_{year}_ref_load_MW"]])
-                prosumager_profile = pd.concat([loads.loc[:3500, f"{country}_{year}_opt_load_MW"], loads.loc[6500:, f"{country}_{year}_opt_load_MW"]])
-                charging_energy = prosumager_profile - consumer_profile
+                consumer_profile = pd.concat([loads.loc[:, f"{country}_{year}_ref_load_MW"], loads.loc[:, f"{country}_{year}_ref_load_MW"]])
+                prosumager_profile = pd.concat([loads.loc[:, f"{country}_{year}_opt_load_MW"], loads.loc[:, f"{country}_{year}_opt_load_MW"]])
                 charging_energy[charging_energy < 0] = 0
                 # eta from https://doi.org/10.1016/j.apenergy.2017.04.061
                 eta = 1 - np.sum(prosumager_profile - consumer_profile) / np.sum(charging_energy)
@@ -124,7 +123,14 @@ def plot_flexible_storage_efficiency(loads: pd.DataFrame):
                 plot_df.loc[i, f"storage efficiency"] = eta
 
                 i +=1
+
+    loads["charging_energy"] = loads["opt_grid_demand_stock_MW"] - loads["ref_grid_demand_stock_MW"]
+
+    grouped = loads.groupby(["country", "year", "ID_EnergyPrice"])
+    storage_efficiency = 1 - (grouped["opt_grid_demand_stock_MW"].sum() - grouped["ref_grid_demand_stock_MW"].sum()) / grouped["charging_energy"].sum()
+
     
+
     sns.barplot(
         data=plot_df,
         x="country",
@@ -462,14 +468,16 @@ def show_day_with_peak_deamand(profiles: pd.DataFrame, scenario: str, national: 
     plot_national_peak_days(day_df=day_df)
 
 
-def main(percentage_dhw_tanks, percentage_buffer_tanks, scenario: str):
-
-    df = pd.read_parquet(Path(__file__).parent / f"EU27_loads_dhw-{percentage_dhw_tanks}_buffer-{percentage_buffer_tanks}.parquet.gzip")
+def main(percentage_cooling: float):
+    path_2_demand_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
+    if not path_2_demand_file.exists():
+        Cp.main(percentage_cooling)
+    df = pd.read_parquet(Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip")
     national_demand = Cp.get_national_demand_profiles()
-    national_demand = national_demand.loc[(national_demand["scenario"]==scenario) | (national_demand["scenario"]=="baseyear"), :]
+    national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
     plot_flexible_storage_efficiency(loads=df)
-    plot_flexibility_factor(loads=df, national=national_demand, scenario=scenario)
+    plot_flexibility_factor(loads=df, national=national_demand, scenario="shiny happy")
 
     # TODO rerun with positive prices! 20 cent grid fee
     show_day_with_peak_deamand(profiles=df, scenario=scenario, national=national_demand)
@@ -478,7 +486,5 @@ def main(percentage_dhw_tanks, percentage_buffer_tanks, scenario: str):
 if __name__ == "__main__":
 
     main(
-        percentage_dhw_tanks=0.1,
-        percentage_buffer_tanks=0.1,
-        scenario="shiny happy"
+        percentage_cooling=0.1,
     )
