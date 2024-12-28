@@ -16,7 +16,7 @@ EUROPEAN_COUNTRIES = {
     'BEL': 'Belgium',  #
     'BGR': 'Bulgaria',  #
     'HRV': 'Croatia',  #
-    "CYP": "Cyprus",
+    # "CYP": "Cypru#",
     'CZE': 'Czech Republic',
     'DNK': 'Denmark',  #
     'EST': 'Estonia',  #
@@ -30,7 +30,7 @@ EUROPEAN_COUNTRIES = {
     'LVA': 'Latvia',  #
     'LTU': 'Lithuania',  #
     'LUX': 'Luxembourg',  #
-    'MLT': 'Malta',  #
+    # 'MLT': 'Malta',  #
     'NLD': 'Netherlands',  #
     'POL': 'Poland',  #
     'PRT': 'Portugal',  #
@@ -218,7 +218,7 @@ def read_parquet(table_name: str, scenario_ID: int, folder: Path, column_names: 
     """
     Returns: dataframe containing the results for the table name and specific scenario ID
     """
-    file_name = f"{table_name}_{scenario_ID}.parquet.gzip"
+    file_name = f"{table_name}_S{scenario_ID}.parquet.gzip"
     path_to_file = folder / file_name
     return pd.read_parquet(path=path_to_file, columns=column_names) if column_names else pd.read_parquet(path=path_to_file)
 
@@ -226,13 +226,13 @@ def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.Da
     def load_data(scen_id):
         """Helper function to load data for a single scenario."""
         opt = read_parquet(
-            table_name="OperationResult_OptimizationHour",
+            table_name=f"OperationResult_OptHour",
             scenario_ID=scen_id,
             folder=folder,
             column_names=["Grid", "ID_Scenario", "Hour"]
         )
         sim = read_parquet(
-            table_name="OperationResult_ReferenceHour",
+            table_name=f"OperationResult_RefHour",
             scenario_ID=scen_id,
             folder=folder,
             column_names=["Grid", "ID_Scenario", "Hour"]
@@ -251,82 +251,57 @@ def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.Da
     
     return df_opt, df_simus
 
-def calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings):
-    subcategory_probabilities = [
-        (dhw, buffer, prob_dhw * prob_buffer if dhw and buffer else
-        prob_dhw * (1 - prob_buffer) if dhw and not buffer else
-        (1 - prob_dhw) * prob_buffer if not dhw and buffer else
-        (1 - prob_dhw) * (1 - prob_buffer)) 
-        for dhw in [False, True]
-        for buffer in [False, True]
-    ]
-        # Scale the probabilities to match the number buildings
-    total_prob = sum(prob for _, _, prob in subcategory_probabilities)
-    scaled_counts = [int(round(prob / total_prob * num_buildings)) for _, _, prob in subcategory_probabilities]
 
-    # Adjust the counts to ensure the total is exactly 1000
-    difference = num_buildings - sum(scaled_counts)
-    if difference != 0:
-        for i in range(abs(difference)):
-            index = i % len(scaled_counts)
-            scaled_counts[index] += 1 if difference > 0 else -1
-    
-    return scaled_counts
-
-def define_tech_scenario(prob_dhw: float, prob_buffer: float, df_scenarios: pd.DataFrame, df_hp: pd.DataFrame) -> pd.DataFrame:
+def define_tech_scenario(prob_cooling: float, df_scenarios: pd.DataFrame, df_hp: pd.DataFrame) -> pd.DataFrame:
     """Based on the adaption values (0 to 1) the buildings having the technology are randomly selected"""
-    results = {  # the ids for the tanks in order in which they come out of calculate_the_counts_of_each_id function
-        0: {"ID_HotWaterTank": [1], "ID_SpaceHeatingTank": [1]},
-        1: {"ID_HotWaterTank": [1], "ID_SpaceHeatingTank": [2, 3]},
-        2: {"ID_HotWaterTank": [2, 3], "ID_SpaceHeatingTank": [1]},
-        3: {"ID_HotWaterTank": [2, 3], "ID_SpaceHeatingTank": [2, 3]},
-    }
-    scenarios_with_numbers = []
-    for building_id, group in df_scenarios.groupby("ID_Building"):
-        building = df_hp[df_hp["ID_Building"] == building_id].copy()
-        num_buildings = int(building["number_buildings_heat_pump_air"].values[0] + building["number_buildings_heat_pump_ground"].values[0])
 
-        counts = calculate_the_counts_of_each_id(prob_dhw, prob_buffer, num_buildings)
-        for index, id_dict in results.items():
-            group.loc[(group["ID_HotWaterTank"].isin(id_dict["ID_HotWaterTank"])) & (group["ID_SpaceHeatingTank"].isin(id_dict["ID_SpaceHeatingTank"])), "number_buildings"] = counts[index]
+    price_dfs = []
+    for price_id in [1, 2]:
+        scenarios_with_numbers = []
 
-        scenarios_with_numbers.append(group)
+        scenarios_price = df_scenarios.query(f"ID_EnergyPrice=={price_id}")
+
+        for building_id, group in scenarios_price.groupby("ID_Building"):
+            # change the number of buildings in the scenario table by multiplying with the cooling proabability
+            group.loc[group["ID_SpaceCoolingTechnology"]==1, "number_of_buildings"] = group.loc[group["ID_SpaceCoolingTechnology"]==1, "number_of_buildings"] * (1 - prob_cooling)
+            group.loc[group["ID_SpaceCoolingTechnology"]==2, "number_of_buildings"] = group.loc[group["ID_SpaceCoolingTechnology"]==2, "number_of_buildings"] * prob_cooling
+
+            scenarios_with_numbers.append(group)
     
-    scenario_numbers_df = pd.concat(scenarios_with_numbers).reset_index(drop=True)
-    return scenario_numbers_df
+        scenario_numbers_df = pd.concat(scenarios_with_numbers).reset_index(drop=True)
+        price_dfs.append(scenario_numbers_df)
+    
+    total_scenario_df = pd.concat(price_dfs).reset_index(drop=True)
+    return total_scenario_df
 
-def get_country_load_profiles(folder_name: Path, percentage_dhw_tanks: float, percentage_buffer_tanks: float):
-    db = DB(path=folder_name / f"{folder_name.name}.sqlite")
+def get_country_load_profiles(folder_name: Path, perc_cooling: float):
+    db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
     scenario_table = db.read_dataframe(table_name="OperationScenario")
 
     # filter out only buildings with air HP and ground HP
     building_table = db.read_dataframe(table_name="OperationScenario_Component_Building")
-    hp_df = building_table.loc[building_table["number_buildings_electricity"] == 0, :]
 
-    filtered_scenarios = scenario_table.loc[scenario_table["ID_Building"].isin(list(hp_df.ID_Building)), :]
-    # in some countries there are not sufficient heat pumps installed in 2020 (BGR 2020) according to INVERT: 
     # return 0 for those..
-    if filtered_scenarios.empty:
+    if building_table.empty:
         return pd.DataFrame.from_dict({"opt_grid_demand_stock_MW": np.zeros(8760), 
                                        "ref_grid_demand_stock_MW": np.zeros(8760),
                                        "Hour": np.arange(1, 8761)},  orient="index").T
     else:
 
         scenario_df = define_tech_scenario(
-            prob_dhw=percentage_dhw_tanks,
-            prob_buffer=percentage_buffer_tanks,
-            df_scenarios=filtered_scenarios,
-            df_hp=hp_df
+            prob_cooling=perc_cooling,
+            df_scenarios=scenario_table,
+            df_hp=building_table
         )
 
-        opt_loads, ref_loads = load_electricity_demand_profiles(scenario_ids=list(scenario_df["ID_Scenario"]), folder=folder_name)
+        opt_loads, ref_loads = load_electricity_demand_profiles(scenario_ids=list(scenario_df["ID_Scenario"]), folder=folder_name / "output")
 
         # merge the numbers of each building scenario with the opt and ref loads:
-        building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_buildings"]].copy().set_index("ID_Scenario").sort_index()
+        building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice"]].copy().set_index("ID_Scenario").sort_index()
         opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
-        opt_stock["opt_grid_demand_stock_MW"] = opt_stock["Grid"] * opt_stock["number_buildings"] / 1_000_000  # MW
+        opt_stock["opt_grid_demand_stock_MW"] = opt_stock["Grid"] * opt_stock["number_of_buildings"] / 1_000_000  # MW
         ref_stock = ref_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
-        ref_stock["ref_grid_demand_stock_MW"] = ref_stock["Grid"] * ref_stock["number_buildings"] / 1_000_000  # MW
+        ref_stock["ref_grid_demand_stock_MW"] = ref_stock["Grid"] * ref_stock["number_of_buildings"] / 1_000_000  # MW
 
         country_load_df = pd.concat([opt_stock, ref_stock["ref_grid_demand_stock_MW"]], axis=1)
 
@@ -334,19 +309,18 @@ def get_country_load_profiles(folder_name: Path, percentage_dhw_tanks: float, pe
 
 
 def get_price_profile(folder_name: Path):
-    db = DB(path=folder_name / f"{folder_name.name}.sqlite")
-    price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1"])
+    db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
+    price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1", "electricity_2"])
     return price_table
 
-def create_national_demand_profiles_parquet(percentage_dhw_tanks: float, percentage_buffer_tanks: float, parquet_file: Path):
-    path_2_model_results = Path(r"/home/users/pmascherbauer/projects/Philipp/PycharmProjects/data/output/")
+def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_file: Path):
+    path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
     if not parquet_file.exists():
-        folder_names = [f"D5.4_{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
-        big_df = pd.DataFrame()
-
+        folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+        dfs = []
         for folder_name in folder_names:
-            if folder_name in ["D5.4_CYP_2020", "D5.4_MLT_2020"]:
+            if folder_name in ["CYP_2020", "MLT_2020"]:
                 continue
             folder = path_2_model_results / folder_name
             country = folder.name.split("_")[-2]
@@ -355,58 +329,29 @@ def create_national_demand_profiles_parquet(percentage_dhw_tanks: float, percent
 
             country_loads = get_country_load_profiles(
                 folder_name=folder,
-                percentage_dhw_tanks=percentage_dhw_tanks,
-                percentage_buffer_tanks=percentage_buffer_tanks
+                perc_cooling=percentage_cooling,
             )
             # add the country loads from different building types together:
-            consumers_MW = np.array(country_loads.groupby(["Hour"]).sum()["ref_grid_demand_stock_MW"])
-            prosumer_MW = np.array(country_loads.groupby(["Hour"]).sum()["opt_grid_demand_stock_MW"])
+            demand_MW = country_loads.groupby(["ID_EnergyPrice", "Hour"]).sum()[["ref_grid_demand_stock_MW", "opt_grid_demand_stock_MW"]].reset_index()
 
-            price = np.array(get_price_profile(folder).iloc[:, 0])
+            price = get_price_profile(folder).rename(columns={"electricity_1": 1, "electricity_2": 2}).melt(var_name="ID_EnergyPrice", value_name="price (cent/kWh)") 
+            price["price (cent/kWh)"] = price["price (cent/kWh)"] * 1000
 
-            big_df.loc[:, f"{country}_{year}_ref_load_MW"] = consumers_MW
-            big_df.loc[:, f"{country}_{year}_opt_load_MW"] = prosumer_MW
-            big_df.loc[:, f"{country}_{year}_price"] = price
-        
+            df = pd.concat([demand_MW, price.drop(columns="ID_EnergyPrice")], axis=1)
+            df["country"] = country
+            df["year"] = year
+
+            dfs.append(df)
+            
+        big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
         big_df.to_parquet(parquet_file)
 
-    # same for low scenario:
-    levethian_parquet_file = parquet_file.parent / parquet_file.name.replace(".parquet.gzip", "_low.parquet.gzip")
-    if not levethian_parquet_file.exists():
-        folder_names_low_scenario = [f"D5.4_low_{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]] 
-        low_big_df = pd.DataFrame()
-
-        for folder_name in folder_names_low_scenario:
-            if folder_name in ["D5.4_low_CYP_2020", "D5.4_low_MLT_2020"]:
-                continue
-            folder = path_2_model_results / folder_name
-            country = folder.name.split("_")[-2]
-            year = folder.name.split("_")[-1]
-            print(f"analysing {country} {year}")
-
-            country_loads = get_country_load_profiles(
-                folder_name=folder,
-                percentage_dhw_tanks=percentage_dhw_tanks,
-                percentage_buffer_tanks=percentage_buffer_tanks
-            )
-            # add the country loads from different building types together:
-            consumers_MW = np.array(country_loads.groupby(["Hour"]).sum()["ref_grid_demand_stock_MW"])
-            prosumer_MW = np.array(country_loads.groupby(["Hour"]).sum()["opt_grid_demand_stock_MW"])
-
-            price = np.array(get_price_profile(folder).iloc[:, 0])
-
-            low_big_df.loc[:, f"{country}_{year}_ref_load_MW"] = consumers_MW
-            low_big_df.loc[:, f"{country}_{year}_opt_load_MW"] = prosumer_MW
-            low_big_df.loc[:, f"{country}_{year}_price"] = price
-        
-
-        low_big_df.to_parquet(levethian_parquet_file)
 
 
-def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
-    parquet_file = Path(__file__).parent / f"EU27_loads_dhw-{percentage_dhw_tanks}_buffer-{percentage_buffer_tanks}.parquet.gzip"
+def main(percentage_cooling: float):
+    parquet_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
 
-    create_national_demand_profiles_parquet(percentage_dhw_tanks, percentage_buffer_tanks, parquet_file)
+    create_national_demand_profiles_parquet(percentage_cooling,  parquet_file)
 
 
 
@@ -414,8 +359,7 @@ def main(percentage_dhw_tanks: float, percentage_buffer_tanks: float):
 
 if __name__ == "__main__":
     main(
-        percentage_dhw_tanks=0.1,
-        percentage_buffer_tanks=0.1
+        percentage_cooling=0.1,
     )
 
     # 10 cent/kWh levelized cost for offshore wind, onshore and PV are below that [https://www.ise.fraunhofer.de/en/publications/studies/cost-of-electricity.html]
