@@ -535,8 +535,24 @@ def show_flexibility_factor(loads: pd.DataFrame):
     plot_df = pd.merge(right=factor_ref, left=factor_opt, on=["year", "country", "ID_EnergyPrice"])
     plot_df["flexibility factor change"] = plot_df["flexibility factor HEMS"] - plot_df["flexibility factor reference"]
     x_order = plot_df.groupby("country")["flexibility factor change"].mean().sort_values().index
-    
-    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice", col_wrap=2, height=5, aspect=1.5, sharey=True)
+    x_order_ref = plot_df.groupby("country")["flexibility factor reference"].mean().sort_values().index
+
+    # Map the barplot to each facet
+    sns.barplot(
+        data=plot_df,
+        x="country",
+        y="flexibility factor reference",
+        hue="year",
+        order=x_order_ref
+
+    )
+
+    # Show the plot
+    plt.xticks(rotation=90)
+    plt.tight_layout()
+    plt.show()
+
+    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True)
 
     # Map the barplot to each facet
     g.map_dataframe(
@@ -544,7 +560,8 @@ def show_flexibility_factor(loads: pd.DataFrame):
         x="country",
         y="flexibility factor change",
         hue="year",
-        order=x_order
+        order=x_order,
+        palette=sns.color_palette()
 
     )
 
