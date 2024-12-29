@@ -101,42 +101,80 @@ def plot_supply_and_demand_matching_over_price(loads: pd.DataFrame):
     plt.close()
 
 
+def plot_PV_self_consumption(loads: pd.DataFrame):
+
+    grouped = loads.groupby(["country", "year", "ID_EnergyPrice"])
+    self_consumption_ref = grouped["ref_PV2Load_MW"].sum() / grouped["ref_PhotovoltaicProfile_MW"].sum() 
+    self_consumption_opt = grouped["opt_PV2Load_MW"].sum() / grouped["opt_PhotovoltaicProfile_MW"].sum() 
+
+    self_consumption_ref = self_consumption_ref.reset_index()
+    self_consumption_opt = self_consumption_opt.reset_index()
+    self_consumption_ref["type"] = "reference"
+    self_consumption_opt["type"] = "HEMS"
+
+    self_consumption_ref.rename(columns={0: "PV self consumption"}, inplace=True)
+    # drop the ID_EnergyPrice = 2 of ref because its the same
+
+    self_consumption_opt.rename(columns={0: "PV self consumption"}, inplace=True)
+    # merge the type and energy price columns:
+    
+    plot_df = pd.concat([self_consumption_ref, self_consumption_opt] , axis=0).reset_index(drop=True)
+    x_order = plot_df.groupby("country")["PV self consumption"].mean().sort_values().index
+
+    g = sns.FacetGrid(plot_df, col="year", col_wrap=2, height=5, aspect=1.5)
+
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.barplot,
+        x="country",
+        y="PV self consumption",
+        hue="type",
+        dodge=True,  # Ensures bars are grouped within x-axis categories
+        hue_order=None, 
+        order=x_order
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("Country", "PV self consumption")
+    g.add_legend()
+    g.set_titles("Year {col_name}")
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+
+    # average PV self consumption over Europe:
+    eu_df = plot_df.groupby(["year", "type"])["PV self consumption"].mean().reset_index()
+    sns.barplot(
+        data=eu_df,
+        x="PV self consumption",
+        y="year",
+        hue="type"
+    )
+    plt.suptitle("average PV self consumption over all countries")
+    plt.tight_layout()
+    plt.show()
+
 
 
 def plot_flexible_storage_efficiency(loads: pd.DataFrame):
-    plot_df = pd.DataFrame()
-    i = 0
-    for country in Cp.EUROPEAN_COUNTRIES.keys():
-        for year in [2020, 2030, 2040, 2050]:
-            if year == 2020 and (country == "CYP" or country=="MLT" or country=="NLD"):
-                continue
-            else:
-                
-                consumer_profile = pd.concat([loads.loc[:, f"{country}_{year}_ref_load_MW"], loads.loc[:, f"{country}_{year}_ref_load_MW"]])
-                prosumager_profile = pd.concat([loads.loc[:, f"{country}_{year}_opt_load_MW"], loads.loc[:, f"{country}_{year}_opt_load_MW"]])
-                charging_energy[charging_energy < 0] = 0
-                # eta from https://doi.org/10.1016/j.apenergy.2017.04.061
-                eta = 1 - np.sum(prosumager_profile - consumer_profile) / np.sum(charging_energy)
-
-                plot_df.loc[i, "country"] = country
-                plot_df.loc[i, "year"] = year
-                plot_df.loc[i, f"storage efficiency"] = eta
-
-                i +=1
 
     loads["charging_energy"] = loads["opt_grid_demand_stock_MW"] - loads["ref_grid_demand_stock_MW"]
+    loads.loc[loads["charging_energy"] < 0, "charging_energy"] = 0
 
     grouped = loads.groupby(["country", "year", "ID_EnergyPrice"])
     storage_efficiency = 1 - (grouped["opt_grid_demand_stock_MW"].sum() - grouped["ref_grid_demand_stock_MW"].sum()) / grouped["charging_energy"].sum()
-
-    
+    storage_efficiency = storage_efficiency.reset_index()
+    storage_efficiency.rename(columns={0: "storage efficiency"}, inplace=True)
 
     sns.barplot(
-        data=plot_df,
+        data=storage_efficiency,
         x="country",
         y="storage efficiency",
         hue="year",
-        palette=sns.color_palette()
+        palette=sns.color_palette(),
+        
+
     )
     plt.suptitle("Storage efficiency")
     plt.xticks(rotation=90)
@@ -476,11 +514,12 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    plot_flexible_storage_efficiency(loads=df)
-    plot_flexibility_factor(loads=df, national=national_demand, scenario="shiny happy")
+    plot_PV_self_consumption(loads=df)
+    # plot_flexible_storage_efficiency(loads=df)
+    # plot_flexibility_factor(loads=df, national=national_demand, scenario="shiny happy")
 
     # TODO rerun with positive prices! 20 cent grid fee
-    show_day_with_peak_deamand(profiles=df, scenario=scenario, national=national_demand)
+    # show_day_with_peak_deamand(profiles=df, scenario=scenario, national=national_demand)
 
 
 if __name__ == "__main__":
