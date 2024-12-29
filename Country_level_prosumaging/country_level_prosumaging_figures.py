@@ -244,8 +244,15 @@ def show_average_day_profile(loads: pd.DataFrame):
     plt.tight_layout()
     plt.show()
 
-def plot_flexibility_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str):
+def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str):
     plot_df = pd.DataFrame()
+    # national.drop(columns=["scenario"], inplace=True)
+    loads["year"] = loads["year"].astype(int)
+    loads["country"] = loads["country"].astype(str)
+    loads["ID_EnergyPrice"] = loads["ID_EnergyPrice"].astype(int)
+    # df = pd.merge(left=loads, right=national, on=["Hour", "country", "year"]).drop_duplicates().reset_index(drop=True)
+
+    
     i = 0
     for country in Cp.EUROPEAN_COUNTRIES.keys():
         for year in [2020, 2030, 2040, 2050]:
@@ -259,22 +266,24 @@ def plot_flexibility_factor(loads: pd.DataFrame, national: pd.DataFrame, scenari
                 demand = national.loc[(national["country"]==country) & (national["year"]==year) & (national["scenario"]==scen), "generation"].reset_index(drop=True)
                 peak_demand_hour = demand.idxmax()
                 min_demand_hour = demand.idxmin()
-                ref_col = f"{country}_{year}_ref_load_MW"
-                opt_col = f"{country}_{year}_opt_load_MW"
-                # peak demand
-                plot_df.loc[i, "country"] = country
-                plot_df.loc[i, "year"] = year
-                plot_df.loc[i, f"peak_demand_load_factor"] = (loads.loc[peak_demand_hour, ref_col] - loads.loc[peak_demand_hour, opt_col]) / demand[peak_demand_hour] * 100
-                plot_df.loc[i, "min_demand_load_factor"] = (loads.loc[min_demand_hour, ref_col] - loads.loc[min_demand_hour, opt_col]) / demand[min_demand_hour] * 100
+                for price in [1, 2]:
+                    df = loads.loc[(loads["year"]==year) & (loads["country"]==country) & (loads["ID_EnergyPrice"]==price), :].copy().reset_index(drop=True)
 
-                # peak price
-                peak_price_hour = loads[f"{country}_{year}_price"].idxmax()
-                min_price_hour = loads[f"{country}_{year}_price"].idxmin()
+                    # peak demand
+                    plot_df.loc[i, "country"] = country
+                    plot_df.loc[i, "year"] = year
+                    plot_df.loc[i, "ID_EnergyPrice"] = price
+                    plot_df.loc[i, f"peak_demand_load_factor"] = (df.loc[peak_demand_hour, "opt_grid_demand_stock_MW"]- df.loc[peak_demand_hour, "ref_grid_demand_stock_MW"]) / demand[peak_demand_hour] * 100
+                    plot_df.loc[i, "min_demand_load_factor"] = (df.loc[min_demand_hour, "opt_grid_demand_stock_MW"] - df.loc[min_demand_hour, "ref_grid_demand_stock_MW"]) / demand[min_demand_hour] * 100
 
-                plot_df.loc[i, f"peak_price_load_factor"] = (loads.loc[peak_price_hour, ref_col] - loads.loc[peak_price_hour, opt_col]) / demand[peak_price_hour] * 100
-                plot_df.loc[i, f"min_price_load_factor"] = (loads.loc[min_price_hour, ref_col] - loads.loc[min_price_hour, opt_col]) / demand[min_price_hour] * 100
+                    # peak price
+                    peak_price_hour = df[f"price (cent/kWh)"].idxmax()
+                    min_price_hour = df[f"price (cent/kWh)"].idxmin()
 
-                i += 1
+                    plot_df.loc[i, f"peak_price_load_factor"] = (df.loc[peak_price_hour, "opt_grid_demand_stock_MW"] - df.loc[peak_price_hour, "ref_grid_demand_stock_MW"]) / demand[peak_price_hour] * 100
+                    plot_df.loc[i, f"min_price_load_factor"] = (df.loc[min_price_hour, "opt_grid_demand_stock_MW"] - df.loc[min_price_hour, "ref_grid_demand_stock_MW"]) / demand[min_price_hour] * 100
+
+                    i += 1
 
 
     sns.barplot(
@@ -283,7 +292,7 @@ def plot_flexibility_factor(loads: pd.DataFrame, national: pd.DataFrame, scenari
         y="peak_demand_load_factor",
         hue="year"
     )
-    plt.suptitle("peak demand load factor")
+    plt.suptitle("load factor in peak hour")
     plt.xticks(rotation=90)
     plt.show()
 
@@ -293,7 +302,7 @@ def plot_flexibility_factor(loads: pd.DataFrame, national: pd.DataFrame, scenari
         y="min_demand_load_factor",
         hue="year"
     )
-    plt.suptitle("min demand load factor")
+    plt.suptitle("load factor in minimum demand hour")
     plt.xticks(rotation=90)
     plt.show()
 
@@ -303,7 +312,7 @@ def plot_flexibility_factor(loads: pd.DataFrame, national: pd.DataFrame, scenari
         y="peak_price_load_factor",
         hue="year"
     )
-    plt.suptitle("peak price load factor")
+    plt.suptitle("load factor at peak price hour")
     plt.xticks(rotation=90)
     plt.show()
 
@@ -314,7 +323,7 @@ def plot_flexibility_factor(loads: pd.DataFrame, national: pd.DataFrame, scenari
         hue="year"
     )
     plt.xticks(rotation=90)
-    plt.suptitle("min price load factor")
+    plt.suptitle("load factor at min price hour")
     plt.show()
 
 def plot_national_peaks(peak_df: pd.DataFrame):
@@ -339,6 +348,8 @@ def plot_national_peaks(peak_df: pd.DataFrame):
     plt.xticks(rotation=90)
     plt.ylabel("relative change in peak demand (%)")
     plt.show()
+
+    print("the demand data from AURESII is smaller than the electricity demand of the buildings in the same scenarios, therefore the load factor is so insanely high.")
 
 
 def get_season(day_of_year):
@@ -578,8 +589,8 @@ def main(percentage_cooling: float):
     
     # plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)
-    show_average_day_profile(loads=df)
-    # plot_flexibility_factor(loads=df, national=national_demand, scenario="shiny happy")
+    # show_average_day_profile(loads=df)
+    plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
     # TODO rerun with positive prices! 20 cent grid fee
     # show_day_with_peak_deamand(profiles=df, scenario=scenario, national=national_demand)
