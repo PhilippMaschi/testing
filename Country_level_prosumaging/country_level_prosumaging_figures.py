@@ -181,6 +181,68 @@ def plot_flexible_storage_efficiency(loads: pd.DataFrame):
     plt.show()
     plt.close()
 
+    # calculate the storage efficiency without PV:
+    loads["ref_Load_MW"] = loads["ref_grid_demand_stock_MW"] + loads["ref_PV2Load_MW"]
+    loads["opt_Load_MW"] = loads["opt_grid_demand_stock_MW"] + loads["opt_PV2Load_MW"]
+    loads["charging_energy_pv_cleaned"] = loads["opt_Load_MW"] - loads["ref_Load_MW"]
+    loads.loc[loads["charging_energy_pv_cleaned"] < 0, "charging_energy_pv_cleaned"] = 0
+
+    grouped = loads.groupby(["country", "year", "ID_EnergyPrice"])
+    storage_efficiency = 1 - (grouped["opt_Load_MW"].sum() - grouped["ref_Load_MW"].sum()) / grouped["charging_energy_pv_cleaned"].sum()
+    storage_efficiency = storage_efficiency.reset_index()
+    storage_efficiency.rename(columns={0: "storage efficiency"}, inplace=True)
+
+    sns.barplot(
+        data=storage_efficiency,
+        x="country",
+        y="storage efficiency",
+        hue="year",
+        palette=sns.color_palette(),
+        
+
+    )
+    plt.suptitle("Storage efficiency including PV")
+    plt.xticks(rotation=90)
+    plt.show()
+    plt.close()
+
+def show_average_day_profile(loads: pd.DataFrame):
+    # plot once the load and once the grid
+
+    loads["ref_Load_MW"] = loads["ref_grid_demand_stock_MW"] + loads["ref_PV2Load_MW"]
+    loads["opt_Load_MW"] = loads["opt_grid_demand_stock_MW"] + loads["opt_PV2Load_MW"]
+    loads["day_hour"] = (loads["Hour"]-1) % 24
+
+    df = loads.groupby(["year", "ID_EnergyPrice", "day_hour"])[["ref_grid_demand_stock_MW", "opt_grid_demand_stock_MW", "ref_Load_MW", "opt_Load_MW"]].mean().reset_index()
+    plot_df = df.rename(columns={
+        "ref_grid_demand_stock_MW": "grid demand reference",
+        "opt_grid_demand_stock_MW": "grid demand HEMS",
+        "ref_Load_MW": "Load reference",
+        "opt_Load_MW": "Load HEMS"
+    }).melt(id_vars=["year", "ID_EnergyPrice", "day_hour"], value_name="electricity demand")
+
+    # normalize the data:
+    plot_df["electricity demand"] = plot_df.groupby("year")["electricity demand"].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
+    g = sns.FacetGrid(plot_df.loc[plot_df["variable"].isin(["grid demand reference", "grid demand HEMS"])], col="year", col_wrap=2, height=5, aspect=1.5, sharey=False)
+
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.lineplot,
+        x="day_hour",
+        y="electricity demand",
+        hue="variable",
+        style="ID_EnergyPrice"
+
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("hour", "average grid demand normalized")
+    g.add_legend(title="")
+    g.set_titles("Year {col_name}")
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
 
 def plot_flexibility_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str):
     plot_df = pd.DataFrame()
@@ -514,8 +576,9 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    plot_PV_self_consumption(loads=df)
+    # plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)
+    show_average_day_profile(loads=df)
     # plot_flexibility_factor(loads=df, national=national_demand, scenario="shiny happy")
 
     # TODO rerun with positive prices! 20 cent grid fee
