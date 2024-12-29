@@ -521,8 +521,80 @@ def plot_frequency_of_peaks_in_seasons(peak_df: pd.DataFrame):
     g.tight_layout()
     plt.show()
 
+def show_flexibility_factor(loads: pd.DataFrame):
+    # from https://www.sciencedirect.com/science/article/pii/S0360544216306934?via%3Dihub#bib57
+    groups = loads.groupby(["year", "country", "ID_EnergyPrice"])
+    factor_ref = groups[["ref_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
+        lambda g: (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "ref_grid_demand_stock_MW"].sum() - g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "ref_grid_demand_stock_MW"].sum()) / (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "ref_grid_demand_stock_MW"].sum() + g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "ref_grid_demand_stock_MW"].sum())
+    ).reset_index(name="flexibility factor reference")
 
+    factor_opt = groups[["opt_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
+        lambda g: (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum() - g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "opt_grid_demand_stock_MW"].sum()) / (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum() + g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "opt_grid_demand_stock_MW"].sum())
+    ).reset_index(name="flexibility factor HEMS")
+    
+    plot_df = pd.merge(right=factor_ref, left=factor_opt, on=["year", "country", "ID_EnergyPrice"])
+    plot_df["flexibility factor change"] = plot_df["flexibility factor HEMS"] - plot_df["flexibility factor reference"]
+    x_order = plot_df.groupby("country")["flexibility factor change"].mean().sort_values().index
+    
+    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice", col_wrap=2, height=5, aspect=1.5, sharey=True)
 
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.barplot,
+        x="country",
+        y="flexibility factor change",
+        hue="year",
+        order=x_order
+
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("country", "change in flexibility factor")
+    g.add_legend(title="", loc="upper right")
+    g.set_titles("Price {col_name}")
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+    print("A higher flexibility factor means that more energy is consumed at low prices. if the factor = 1 it means that no electricity is consumed from the grid at high prices")
+
+def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
+    # from https://www.sciencedirect.com/science/article/pii/S0306261915013434
+
+    # GSC absolute is the sum of consumption times price in every hour divided by the sum of consumption times thes average price
+    loads["demand_price_ref"] = loads["ref_grid_demand_stock_MW"] * loads["price (cent/kWh)"]
+    loads["demand_price_opt"] = loads["opt_grid_demand_stock_MW"] * loads["price (cent/kWh)"]
+    groups = loads.groupby(["ID_EnergyPrice", "country", "year"])
+
+    series_ref = groups["demand_price_ref"].sum() / groups["price (cent/kWh)"].mean() / groups["ref_grid_demand_stock_MW"].sum()
+    series_opt = groups["demand_price_opt"].sum() / groups["price (cent/kWh)"].mean() / groups["opt_grid_demand_stock_MW"].sum()
+
+    GSC_abs_ref = series_ref.reset_index()
+    GSC_abs_opt = series_opt.reset_index()
+
+    GSC_abs_ref["type"] = "reference"
+    GSC_abs_opt["type"] = "HEMS"
+    plot_df = pd.concat([GSC_abs_opt, GSC_abs_ref], axis=0).rename(columns={0: "GSC_abs"})
+
+    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice", col_wrap=2, height=5, aspect=1.5, sharey=True)
+
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.boxplot,
+        x="year",
+        y="GSC_abs",
+        hue="type",
+
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("year", "GSC absolute")
+    g.add_legend(title="", loc="upper right")
+    g.set_titles("Price {col_name}")
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
 
 def show_day_with_peak_deamand(profiles: pd.DataFrame, scenario: str, national: pd.DataFrame):
     day_df = pd.DataFrame()
@@ -590,7 +662,10 @@ def main(percentage_cooling: float):
     # plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)
     # show_average_day_profile(loads=df)
-    plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
+    show_flexibility_factor(loads=df)
+    # show_GSCrel_and_GSC_abs(loads=df)
+
+    # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
     # TODO rerun with positive prices! 20 cent grid fee
     # show_day_with_peak_deamand(profiles=df, scenario=scenario, national=national_demand)

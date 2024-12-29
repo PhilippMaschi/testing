@@ -116,10 +116,12 @@ def get_national_demand_profiles():
                 'country': [country] * 8760,
                 'year': [year] * 8760,
                 'scenario': [scenario] * 8760,
-                'generation': extended_values
+                'generation': extended_values,
+                "Hour": np.arange(1, 8761)
             })
             extended_data.append(extended_group)
         else:
+            group["Hour"] = np.arange(1, 8761)
             extended_data.append(group)
     extended_df = pd.concat(extended_data, ignore_index=True)
     
@@ -300,10 +302,18 @@ def get_country_load_profiles(folder_name: Path, perc_cooling: float):
         building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice"]].copy().set_index("ID_Scenario").sort_index()
         opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
         opt_stock["opt_grid_demand_stock_MW"] = opt_stock["Grid"] * opt_stock["number_of_buildings"] / 1_000_000  # MW
+        opt_stock["opt_PV2Grid_MW"] = opt_stock["PV2Grid"] * opt_stock["number_of_buildings"] / 1_000_000 # MW
+        opt_stock["opt_PhotovoltaicProfile_MW"] = opt_stock["PhotovoltaicProfile"] * opt_stock["number_of_buildings"] / 1_000_000 # MW
+        opt_stock["opt_PV2Load_MW"] = opt_stock["PV2Load"] * opt_stock["number_of_buildings"] / 1_000_000 # MW
+
+
         ref_stock = ref_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
         ref_stock["ref_grid_demand_stock_MW"] = ref_stock["Grid"] * ref_stock["number_of_buildings"] / 1_000_000  # MW
-
-        country_load_df = pd.concat([opt_stock, ref_stock["ref_grid_demand_stock_MW"]], axis=1)
+        ref_stock["ref_PV2Grid_MW"] = ref_stock["PV2Grid"] * ref_stock["number_of_buildings"] / 1_000_000 # MW
+        ref_stock["ref_PhotovoltaicProfile_MW"] = ref_stock["PhotovoltaicProfile"] * ref_stock["number_of_buildings"] / 1_000_000 # MW
+        ref_stock["ref_PV2Load_MW"] = ref_stock["PV2Load"] * ref_stock["number_of_buildings"] / 1_000_000 # MW
+        
+        country_load_df = pd.concat([opt_stock, ref_stock[["ref_grid_demand_stock_MW", "ref_PV2Grid_MW", "ref_PhotovoltaicProfile_MW", "ref_PV2Load_MW"]]], axis=1)
 
         return country_load_df
 
@@ -331,7 +341,15 @@ def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_f
             perc_cooling=percentage_cooling,
         )
         # add the country loads from different building types together:
-        demand_MW = country_loads.groupby(["ID_EnergyPrice", "Hour"]).sum()[["ref_grid_demand_stock_MW", "opt_grid_demand_stock_MW",  "PV2Grid", "PhotovoltaicProfile", "PV2Load"]].reset_index()
+        demand_MW = country_loads.groupby(["ID_EnergyPrice", "Hour"]).sum()[["ref_grid_demand_stock_MW", 
+                                                                             "opt_grid_demand_stock_MW",  
+                                                                             "opt_PV2Grid_MW", 
+                                                                             "ref_PV2Grid_MW", 
+                                                                             "opt_PhotovoltaicProfile_MW", 
+                                                                             "ref_PhotovoltaicProfile_MW", 
+                                                                             "opt_PV2Load_MW",
+                                                                             "ref_PV2Load_MW",
+                                                                             ]].reset_index()
 
         price = get_price_profile(folder).rename(columns={"electricity_1": 1, "electricity_2": 2}).melt(var_name="ID_EnergyPrice", value_name="price (cent/kWh)") 
         price["price (cent/kWh)"] = price["price (cent/kWh)"] * 1000
