@@ -673,6 +673,46 @@ def show_day_with_peak_deamand(profiles: pd.DataFrame, scenario: str, national: 
     plot_frequency_of_peaks_in_seasons(peak_df=peak_df)
     plot_national_peak_days(day_df=day_df)
 
+def plot_grid_demand_increase(loads: pd.DataFrame):
+    demand = loads.groupby(["country", "year", "ID_EnergyPrice"])[["opt_grid_demand_stock_MW", "ref_grid_demand_stock_MW"]].sum().reset_index()
+    demand["change (%)"] = (demand["opt_grid_demand_stock_MW"] - demand["ref_grid_demand_stock_MW"]) / demand["ref_grid_demand_stock_MW"]  #%
+
+    x_order = demand.groupby("country")["change (%)"].mean().sort_values().index
+
+    g = sns.FacetGrid(demand, col="year", col_wrap=2, height=5, aspect=1.5)
+
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.barplot,
+        x="country",
+        y="change (%)",
+        hue="ID_EnergyPrice",
+        dodge=True,  # Ensures bars are grouped within x-axis categories
+        hue_order=None, 
+        order=x_order,
+        palette=sns.color_palette()
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("Country", "Change in electricity grid demand (%)")
+    g.add_legend()
+    g.set_titles("Year {col_name}")
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+
+    # average increae on EU level:
+    eu_demand = demand.groupby(["year", "ID_EnergyPrice"])["change (%)"].mean().reset_index()
+    sns.barplot(
+        data=eu_demand,
+        x="change (%)",
+        y="year",
+        hue="ID_EnergyPrice"
+    )
+    plt.xlabel("change in electricity grid demand (%)")
+    plt.tight_layout()
+    plt.show()
 
 def main(percentage_cooling: float):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
@@ -682,11 +722,12 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    plot_PV_self_consumption(loads=df)
+    # plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)
     # show_average_day_profile(loads=df)
     # show_flexibility_factor(loads=df)
     # show_GSCrel_and_GSC_abs(loads=df)
+    plot_grid_demand_increase(loads=df)
 
     # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
