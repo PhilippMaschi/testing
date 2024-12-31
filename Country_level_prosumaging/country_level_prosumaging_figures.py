@@ -144,12 +144,14 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
     plt.show()
 
     # average PV self consumption over Europe:
-    eu_df = plot_df.groupby(["year", "type"])["PV self consumption"].mean().reset_index()
+    eu_df = plot_df.groupby(["year", "type", "ID_EnergyPrice"])["PV self consumption"].mean().reset_index()
+    eu_df = eu_df[~((eu_df["type"] == "reference") & (eu_df["ID_EnergyPrice"] ==2))]
+    eu_df.loc[:, "type - price"] = eu_df["type"].astype(str) + " - " + eu_df["ID_EnergyPrice"].astype(str)
     sns.barplot(
         data=eu_df,
         x="PV self consumption",
         y="year",
-        hue="type"
+        hue="type - price"
     )
     plt.suptitle("average PV self consumption over all countries")
     plt.tight_layout()
@@ -293,6 +295,7 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
         hue="year"
     )
     plt.suptitle("load factor in peak hour")
+    plt.ylabel("load factor in peak hour (%)")
     plt.xticks(rotation=90)
     plt.show()
 
@@ -303,6 +306,7 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
         hue="year"
     )
     plt.suptitle("load factor in minimum demand hour")
+    plt.ylabel("load factor in minimum demand hour (%)")
     plt.xticks(rotation=90)
     plt.show()
 
@@ -313,6 +317,7 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
         hue="year"
     )
     plt.suptitle("load factor at peak price hour")
+    plt.ylabel("load factor at peak price hour (%)")
     plt.xticks(rotation=90)
     plt.show()
 
@@ -324,6 +329,7 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
     )
     plt.xticks(rotation=90)
     plt.suptitle("load factor at min price hour")
+    plt.ylabel("load factor at min price hour (%)")
     plt.show()
 
 def plot_national_peaks(peak_df: pd.DataFrame):
@@ -676,16 +682,15 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    # plot_PV_self_consumption(loads=df)
+    plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)
     # show_average_day_profile(loads=df)
-    show_flexibility_factor(loads=df)
+    # show_flexibility_factor(loads=df)
     # show_GSCrel_and_GSC_abs(loads=df)
 
     # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
-    # TODO rerun with positive prices! 20 cent grid fee
-    # show_day_with_peak_deamand(profiles=df, scenario=scenario, national=national_demand)
+    # show_day_with_peak_deamand(profiles=df, scenario="shiny happy", national=national_demand)
 
 
 if __name__ == "__main__":
