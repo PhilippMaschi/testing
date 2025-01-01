@@ -334,28 +334,27 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
 
 def plot_national_peaks(peak_df: pd.DataFrame):
     plot_df = peak_df.reset_index()
-    sns.barplot(
-        data=plot_df,
-        x="country",
-        y="change in peak",
-        hue="year",
-    )
-    plt.xticks(rotation=90)
-    plt.ylabel("change in peak demand (MW)")
-    plt.show()
+    # order = plot_df.groupby("country")["price"].mean().sort_values().index
+    g = sns.FacetGrid(plot_df, col="price", col_wrap=2, height=5, aspect=1.5, sharey=True)
 
-
-    sns.barplot(
-        data=plot_df,
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.barplot,
         x="country",
         y="change in peak relative",
         hue="year",
-    )
-    plt.xticks(rotation=90)
-    plt.ylabel("relative change in peak demand (%)")
-    plt.show()
+        # order=order,
 
-    print("the demand data from AURESII is smaller than the electricity demand of the buildings in the same scenarios, therefore the load factor is so insanely high.")
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("country", "relative change in peak demand (%)")
+    g.add_legend(title="")
+    g.set_titles("Electricity price {col_name}")
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
 
 
 def get_season(day_of_year):
@@ -443,72 +442,69 @@ def plot_national_peak_days(day_df: pd.DataFrame):
 
 def create_sankey_diagram(df):
     # sankey diagramm um zu sehen wie sich die Peaks ändern:
-    flows = df.groupby(["all HEMS", "no HEMS"]).size().reset_index(name="count")
     source_column = "no HEMS"
     target_column = "all HEMS"
     value_column = "count"
-    labels = list(pd.concat([flows[source_column], flows[target_column]]).unique())
-    
-    season_colors = {
-        "Spring": "rgba(102, 194, 165, 0.8)",  # light green
-        "Summer": "rgba(252, 141, 98, 0.8)",   # orange
-        "Autumn": "rgba(141, 160, 203, 0.8)",  # light blue
-        "Winter": "rgba(231, 138, 195, 0.8)"   # pink
-    }
-    node_colors = (
-        [season_colors["Spring"]]  +
-        [season_colors["Summer"]]  +
-        [season_colors["Autumn"]]  +
-        [season_colors["Winter"]]  +
-        [season_colors["Spring"]]  +
-        [season_colors["Summer"]]  +
-        [season_colors["Autumn"]]  +
-        [season_colors["Winter"]]   
-    )
-    link_colors = flows[source_column].map(lambda x: season_colors[x]).tolist()
-
-    # Map source and target to indices
-    source_labels = ["Spring (no HEMS)", "Summer (no HEMS)", "Autumn (no HEMS)", "Winter (no HEMS)"]
-    target_labels = ["Spring (all HEMS)", "Summer (all HEMS)", "Autumn (all HEMS)", "Winter (all HEMS)"]
-
-    # Combine source and target labels into a single list
-    labels = source_labels + target_labels
-    label_to_index = {label: i for i, label in enumerate(labels)}
-
-    # Map source and target to their respective indices
-    flows = df.groupby(["all HEMS", "no HEMS"]).size().reset_index(name="count")
-    source_column = "no HEMS"
-    target_column = "all HEMS"
-    value_column = "count"
-
-    # Map "all HEMS" (source) to source_labels indices
-    sources = flows[source_column].map(lambda x: label_to_index[f"{x} (no HEMS)"])
-    # Map "no HEMS" (target) to target_labels indices
-    targets = flows[target_column].map(lambda x: label_to_index[f"{x} (all HEMS)"])
-    values = flows[value_column]
-
-    # Create the Sankey diagram
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15,
-            thickness=20,
-            line=dict(color="black", width=0.5),
-            label=labels,
-            color=node_colors
-        ),
-        link=dict(
-            source=sources,
-            target=targets,
-            value=values,
-            color=link_colors
+    for price in [1, 2]:
+        plot_df = df.reset_index()
+        plot_df = plot_df.loc[plot_df["price"]==price, :]
+        flows = plot_df.groupby(["all HEMS", "no HEMS"]).size().reset_index(name="count")
+        
+        season_colors = {
+            "Spring": "rgba(102, 194, 165, 0.8)",  # light green
+            "Summer": "rgba(252, 141, 98, 0.8)",   # orange
+            "Autumn": "rgba(141, 160, 203, 0.8)",  # light blue
+            "Winter": "rgba(231, 138, 195, 0.8)"   # pink
+        }
+        node_colors = (
+            [season_colors["Spring"]]  +
+            [season_colors["Summer"]]  +
+            [season_colors["Autumn"]]  +
+            [season_colors["Winter"]]  +
+            [season_colors["Spring"]]  +
+            [season_colors["Summer"]]  +
+            [season_colors["Autumn"]]  +
+            [season_colors["Winter"]]   
         )
-    )])
+        link_colors = flows[source_column].map(lambda x: season_colors[x]).tolist()
 
-    # Save the Sankey diagram
-    saving_path = Path(__file__).parent / "figures"
-    saving_path.mkdir(exist_ok=True, parents=True)
-    fig.write_html(saving_path / "sankey_seasonal_peaks.html")
-    fig.write_image(saving_path / "sankey_seasonal_peaks.svg")
+        # Map source and target to indices
+        source_labels = ["Spring (no HEMS)", "Summer (no HEMS)", "Autumn (no HEMS)", "Winter (no HEMS)"]
+        target_labels = ["Spring (all HEMS)", "Summer (all HEMS)", "Autumn (all HEMS)", "Winter (all HEMS)"]
+
+        # Combine source and target labels into a single list
+        labels = source_labels + target_labels
+        label_to_index = {label: i for i, label in enumerate(labels)}
+
+
+        # Map "all HEMS" (source) to source_labels indices
+        sources = flows[source_column].map(lambda x: label_to_index[f"{x} (no HEMS)"])
+        # Map "no HEMS" (target) to target_labels indices
+        targets = flows[target_column].map(lambda x: label_to_index[f"{x} (all HEMS)"])
+        values = flows[value_column]
+
+        # Create the Sankey diagram
+        fig = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=15,
+                thickness=20,
+                line=dict(color="black", width=0.5),
+                label=labels,
+                color=node_colors
+            ),
+            link=dict(
+                source=sources,
+                target=targets,
+                value=values,
+                color=link_colors
+            )
+        )])
+
+        # Save the Sankey diagram
+        saving_path = Path(__file__).parent / "figures"
+        saving_path.mkdir(exist_ok=True, parents=True)
+        fig.write_html(saving_path / f"sankey_seasonal_peaks_price{price}.html")
+        fig.write_image(saving_path / f"sankey_seasonal_peaks_price{price}.svg")
 
 def plot_frequency_of_peaks_in_seasons(peak_df: pd.DataFrame):
     plot_df = peak_df.drop(columns=["change in peak", "change in peak relative"]).reset_index().melt(id_vars=["country", "year"], value_name="season")
@@ -619,9 +615,9 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     plt.tight_layout()
     plt.show()
 
-def show_day_with_peak_deamand(profiles: pd.DataFrame, scenario: str, national: pd.DataFrame):
+def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.DataFrame):
     day_df = pd.DataFrame()
-    peak_df = pd.DataFrame(index=pd.MultiIndex.from_tuples([], names=["country", "year"]))
+    peak_df = pd.DataFrame(index=pd.MultiIndex.from_tuples([], names=["country", "year", "price"]))
     for country in Cp.EUROPEAN_COUNTRIES.keys():
         for year in [2020, 2030, 2040, 2050]:
             if year == 2020 and (country == "CYP" or country=="MLT" or country=="NLD"):
@@ -631,47 +627,50 @@ def show_day_with_peak_deamand(profiles: pd.DataFrame, scenario: str, national: 
                     scen = "baseyear"
                 else:
                     scen = scenario
-                ref_col = f"{country}_{year}_ref_load_MW"
-                opt_col = f"{country}_{year}_opt_load_MW"
+                ref_col = f"ref_grid_demand_stock_MW"
+                opt_col = f"opt_grid_demand_stock_MW"
                 national_demand_ref = national.loc[(national["country"]==country) & (national["year"]==year) & (national["scenario"]==scen), "generation"].copy().reset_index(drop=True)
-                national_demand_opt = national_demand_ref - profiles.loc[:, ref_col] + profiles.loc[:, opt_col]
-
-
-                ref_minus_opt = national_demand_ref - national_demand_opt
-                peak_demand_hour_opt = national_demand_opt.idxmax()
                 peak_demand_hour_ref = national_demand_ref.idxmax()
-
-                peak_opt = national_demand_opt.loc[peak_demand_hour_opt]
-                peak_ref = national_demand_ref.loc[peak_demand_hour_ref]
-                peak_diff = peak_opt - peak_ref
-
-                peak_day_opt = int(peak_demand_hour_opt/24)
                 peak_day_ref = int(peak_demand_hour_ref/24)
-                peak_day_opt_season = get_season(peak_day_opt)
                 peak_day_ref_season = get_season(peak_day_ref)
-                if peak_day_opt != peak_day_ref:
-                    LOGGER.info(f"peak demand day has been shifted in {country} {year}")
-                if peak_day_opt_season != peak_day_ref_season:
-                    LOGGER.warning(f"peak demand day has been shifted to another season {country} {year}")
 
-
-                # cut the peak day profile for the plot:
                 ref_peak_day = national_demand_ref.iloc[peak_day_ref*24: peak_day_ref*24+24]
-                opt_peak_day = national_demand_opt.iloc[peak_day_ref*24: peak_day_ref*24+24]
-
+                peak_ref = national_demand_ref.loc[peak_demand_hour_ref]
                 day_df.loc[:, f"ref_{country}_{year}"] = ref_peak_day.reset_index(drop=True)
-                day_df.loc[:, f"opt_{country}_{year}"] = opt_peak_day.reset_index(drop=True)
-
-                peak_df.loc[(country, year), f"change in peak"] = peak_diff
-                peak_df.loc[(country, year), f"change in peak relative"] = peak_diff / peak_ref * 100
-                peak_df.loc[(country, year), f"all HEMS"] = peak_day_opt_season
-                peak_df.loc[(country, year), f"no HEMS"] = peak_day_ref_season
+            
+                for price in [1, 2]:
+                    price_load = loads.loc[(loads["year"]==year) & (loads["country"]==country) & (loads["ID_EnergyPrice"]==price), :].copy().reset_index(drop=True)
+                    national_demand_opt = national_demand_ref - price_load.loc[:, ref_col] + price_load.loc[:, opt_col]
 
 
-    plot_national_peaks(peak_df=peak_df)
+                    ref_minus_opt = national_demand_ref - national_demand_opt
+                    peak_demand_hour_opt = national_demand_opt.idxmax()
+                    peak_opt = national_demand_opt.loc[peak_demand_hour_opt]
+                    peak_diff = (peak_opt - peak_ref)
+
+                    peak_day_opt = int(peak_demand_hour_opt/24)
+                    peak_day_opt_season = get_season(peak_day_opt)
+                    if peak_day_opt != peak_day_ref:
+                        LOGGER.info(f"peak demand day has been shifted in {country} {year}")
+                    if peak_day_opt_season != peak_day_ref_season:
+                        LOGGER.warning(f"peak demand day has been shifted to another season {country} {year}")
+
+
+                    # cut the peak day profile for the plot:
+                    opt_peak_day = national_demand_opt.iloc[peak_day_ref*24: peak_day_ref*24+24]
+
+                    day_df.loc[:, f"opt_{country}_{year}_{price}"] = opt_peak_day.reset_index(drop=True)
+
+                    peak_df.loc[(country, year, price), f"change in peak"] = peak_diff
+                    peak_df.loc[(country, year, price), f"change in peak relative"] = peak_diff / peak_ref * 100
+                    peak_df.loc[(country, year, price), f"all HEMS"] = peak_day_opt_season
+                    peak_df.loc[(country, year, price), f"no HEMS"] = peak_day_ref_season
+
+
+    # plot_national_peaks(peak_df=peak_df)
     create_sankey_diagram(df=peak_df)
-    plot_frequency_of_peaks_in_seasons(peak_df=peak_df)
-    plot_national_peak_days(day_df=day_df)
+    # plot_frequency_of_peaks_in_seasons(peak_df=peak_df)
+    # plot_national_peak_days(day_df=day_df)
 
 def plot_grid_demand_increase(loads: pd.DataFrame):
     demand = loads.groupby(["country", "year", "ID_EnergyPrice"])[["opt_grid_demand_stock_MW", "ref_grid_demand_stock_MW"]].sum().reset_index()
@@ -719,6 +718,9 @@ def main(percentage_cooling: float):
     if not path_2_demand_file.exists():
         Cp.main(percentage_cooling)
     df = pd.read_parquet(Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip")
+    df["year"] = df["year"].astype(int)
+    df["country"] = df["country"].astype(str)
+    df["ID_EnergyPrice"] = df["ID_EnergyPrice"].astype(int)
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
@@ -727,11 +729,11 @@ def main(percentage_cooling: float):
     # show_average_day_profile(loads=df)
     # show_flexibility_factor(loads=df)
     # show_GSCrel_and_GSC_abs(loads=df)
-    plot_grid_demand_increase(loads=df)
+    # plot_grid_demand_increase(loads=df)
 
     # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
-    # show_day_with_peak_deamand(profiles=df, scenario="shiny happy", national=national_demand)
+    show_day_with_peak_deamand(loads=df, scenario="shiny happy", national=national_demand)
 
 
 if __name__ == "__main__":
