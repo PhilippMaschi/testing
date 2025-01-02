@@ -15,7 +15,7 @@ from itertools import cycle
 import logging
 
 
-
+SAVING_PATH = Path(__file__).parent / "figures"
     # Ensure the log directory exists
 log_file_path = Path(__file__).parent / "logfile.log"
 log_level = logging.INFO
@@ -141,7 +141,9 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
 
     # Show the plot
     plt.tight_layout()
-    plt.show()
+    plt.savefig(SAVING_PATH / "PV_self_consumption.svg")
+    # plt.show()
+    plt.close()
 
     # average PV self consumption over Europe:
     eu_df = plot_df.groupby(["year", "type", "ID_EnergyPrice"])["PV self consumption"].mean().reset_index()
@@ -155,8 +157,9 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
     )
     plt.suptitle("average PV self consumption over all countries")
     plt.tight_layout()
-    plt.show()
-
+    plt.savefig(SAVING_PATH / "PV_self_consumption_EU.svg")
+    # plt.show()
+    plt.close()
 
 
 def plot_flexible_storage_efficiency(loads: pd.DataFrame):
@@ -180,7 +183,8 @@ def plot_flexible_storage_efficiency(loads: pd.DataFrame):
     )
     plt.suptitle("Storage efficiency")
     plt.xticks(rotation=90)
-    plt.show()
+    plt.savefig(SAVING_PATH / "Storage_efficiency.svg")
+    # plt.show()
     plt.close()
 
     # calculate the storage efficiency without PV:
@@ -205,7 +209,8 @@ def plot_flexible_storage_efficiency(loads: pd.DataFrame):
     )
     plt.suptitle("Storage efficiency including PV")
     plt.xticks(rotation=90)
-    plt.show()
+    plt.savefig(SAVING_PATH / f"Storage_efficiency_with_PV.svg")
+    # plt.show()
     plt.close()
 
 def show_average_day_profile(loads: pd.DataFrame):
@@ -244,7 +249,9 @@ def show_average_day_profile(loads: pd.DataFrame):
 
     # Show the plot
     plt.tight_layout()
-    plt.show()
+    plt.savefig(SAVING_PATH / "Average_day_grid_demand.svg")
+    # plt.show()
+    plt.close()
 
 def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str):
     plot_df = pd.DataFrame()
@@ -297,7 +304,10 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
     plt.suptitle("load factor in peak hour")
     plt.ylabel("load factor in peak hour (%)")
     plt.xticks(rotation=90)
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Peak_demand_load_factor.svg")
+    # plt.show()
+    plt.close()
 
     sns.barplot(
         data=plot_df,
@@ -308,7 +318,10 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
     plt.suptitle("load factor in minimum demand hour")
     plt.ylabel("load factor in minimum demand hour (%)")
     plt.xticks(rotation=90)
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Min_demand_load_factor.svg")
+    # plt.show()
+    plt.close()
 
     sns.barplot(
         data=plot_df,
@@ -319,7 +332,10 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
     plt.suptitle("load factor at peak price hour")
     plt.ylabel("load factor at peak price hour (%)")
     plt.xticks(rotation=90)
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Peak_price_load_factor.svg")
+    # plt.show()
+    plt.close()
 
     sns.barplot(
         data=plot_df,
@@ -330,7 +346,10 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
     plt.xticks(rotation=90)
     plt.suptitle("load factor at min price hour")
     plt.ylabel("load factor at min price hour (%)")
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Min_price_load_factor.svg")
+    # plt.show()
+    plt.close()
 
 def plot_national_peaks(peak_df: pd.DataFrame):
     plot_df = peak_df.reset_index()
@@ -344,16 +363,18 @@ def plot_national_peaks(peak_df: pd.DataFrame):
         y="change in peak relative",
         hue="year",
         # order=order,
-
+        palette=sns.color_palette()
     )
 
     # Adjust plot aesthetics
     g.set_axis_labels("country", "relative change in peak demand (%)")
-    g.add_legend(title="")
+    g.add_legend(title="", loc="upper center")
     g.set_titles("Electricity price {col_name}")
-
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
     # Show the plot
     plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Relative_Change_in_Peak_demand.svg")
     plt.show()
 
 
@@ -398,23 +419,28 @@ def plot_national_peak_days(day_df: pd.DataFrame):
     color_map = {country: color for country, color in zip(countries, extended_palette)}
 
     for column in day_df.columns:
-        year = column.split("_")[-1]
-        country = column.split("_")[1]
+        year = column.split("_")[1]
+        country = column.split("_")[2]
         typ = column.split("_")[0]
+        price = column.split("_")[-1]
+
         if year == 2020 and (country == "CYP" or country=="MLT" or country=="NLD"):
             continue
 
         if typ == "ref":
             dash = "dot"
         else:
-            dash = "solid"
+            if price == 1:
+                dash = "solid"
+            else:
+                dash = "dash"
 
         fig.add_trace(
             go.Scatter(
                 x=day_df.index,
                 y=day_df[column],
                 mode="lines",
-                name=f"{typ} {country} {year}",
+                name=f"{typ} {country} {year} {price}",
                 line=dict(dash=dash, color=color_map[country]),
                 # legendgroup=country,  # Grouping traces by year
                 xaxis=f"x{year_rows[year] + 1}",
@@ -545,14 +571,17 @@ def show_flexibility_factor(loads: pd.DataFrame):
         x="country",
         y="flexibility factor reference",
         hue="year",
-        order=x_order_ref
+        order=x_order_ref,
+        palette=sns.color_palette()
 
     )
 
     # Show the plot
     plt.xticks(rotation=90)
     plt.tight_layout()
-    plt.show()
+    plt.savefig(SAVING_PATH / "Flexibility_factor_reference.svg")
+    # plt.show()
+    plt.close()
 
     g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True)
 
@@ -571,11 +600,67 @@ def show_flexibility_factor(loads: pd.DataFrame):
     g.set_axis_labels("country", "change in flexibility factor")
     g.add_legend(title="", loc="upper right")
     g.set_titles("Price {col_name}")
-
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
     # Show the plot
     plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Flexibility_factor_HEMS.svg")
     plt.show()
     print("A higher flexibility factor means that more energy is consumed at low prices. if the factor = 1 it means that no electricity is consumed from the grid at high prices")
+    plt.close()
+
+    low_demand_ref = groups[["ref_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
+        lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "ref_grid_demand_stock_MW"].sum()
+    ).reset_index(name="reference low price demand")
+    low_demand_opt = groups[["opt_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
+        lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum()
+    ).reset_index(name="HEMS low price demand")
+    plot_df = pd.merge(right=low_demand_ref, left=low_demand_opt, on=["year", "country", "ID_EnergyPrice"])
+    plot_df["1st quantile demand increase (%)"] = (plot_df["HEMS low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
+    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
+
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.barplot,
+        x="country",
+        y="1st quantile demand increase (%)",
+        hue="year",
+        order=x_order,
+        palette=sns.color_palette()
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("country", "increase in electricity grid demand in 1st price quantile")
+    g.add_legend(title="", loc="upper right")
+    g.set_titles("Price {col_name}")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+    # Show the plot
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Increase_in_demand_in_1st_price_quantile.svg")
+    # plt.show()
+    plt.close()
+
+    # Increase of demand in 1st price quantile on EU level:
+    eu_groups = plot_df.groupby(["year", "ID_EnergyPrice"])[["HEMS low price demand", "reference low price demand"]].sum().reset_index()
+    eu_groups["1st quantile demand increase (%)"] = (eu_groups["HEMS low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
+
+    sns.barplot(
+        data=eu_groups,
+        x="1st quantile demand increase (%)",
+        y="year",
+        hue="ID_EnergyPrice",
+        palette=sns.color_palette(),
+        orient="y"
+    )
+    plt.xlabel("increase in electricity grid demand in 1st price quantile on EU level (%)")
+    plt.ylabel("year")
+    plt.legend(title="Electricity price scenario")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Increase_in_demand_in_1st_price_quantile_EU.svg")
+    # plt.show()
+    plt.close()
+
 
 def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     # from https://www.sciencedirect.com/science/article/pii/S0306261915013434
@@ -603,7 +688,7 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
         x="year",
         y="GSC_abs",
         hue="type",
-
+        palette=sns.color_palette(),
     )
 
     # Adjust plot aesthetics
@@ -613,7 +698,9 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
 
     # Show the plot
     plt.tight_layout()
-    plt.show()
+    plt.savefig(SAVING_PATH / "GSC_absolute.svg")
+    # plt.show()
+    plt.close()
 
 def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.DataFrame):
     day_df = pd.DataFrame()
@@ -636,7 +723,7 @@ def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.
 
                 ref_peak_day = national_demand_ref.iloc[peak_day_ref*24: peak_day_ref*24+24]
                 peak_ref = national_demand_ref.loc[peak_demand_hour_ref]
-                day_df.loc[:, f"ref_{country}_{year}"] = ref_peak_day.reset_index(drop=True)
+                day_df.loc[:, f"ref_{country}_{year}_price1"] = ref_peak_day.reset_index(drop=True)
             
                 for price in [1, 2]:
                     price_load = loads.loc[(loads["year"]==year) & (loads["country"]==country) & (loads["ID_EnergyPrice"]==price), :].copy().reset_index(drop=True)
@@ -667,8 +754,8 @@ def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.
                     peak_df.loc[(country, year, price), f"no HEMS"] = peak_day_ref_season
 
 
-    # plot_national_peaks(peak_df=peak_df)
-    create_sankey_diagram(df=peak_df)
+    plot_national_peaks(peak_df=peak_df)
+    # create_sankey_diagram(df=peak_df)
     # plot_frequency_of_peaks_in_seasons(peak_df=peak_df)
     # plot_national_peak_days(day_df=day_df)
 
@@ -699,7 +786,8 @@ def plot_grid_demand_increase(loads: pd.DataFrame):
 
     # Show the plot
     plt.tight_layout()
-    plt.show()
+    plt.savefig(SAVING_PATH / "Change_in_grid_demand.svg")
+    plt.close()
 
     # average increae on EU level:
     eu_demand = demand.groupby(["year", "ID_EnergyPrice"])["change (%)"].mean().reset_index()
@@ -711,7 +799,9 @@ def plot_grid_demand_increase(loads: pd.DataFrame):
     )
     plt.xlabel("change in electricity grid demand (%)")
     plt.tight_layout()
-    plt.show()
+    plt.savefig(SAVING_PATH / "Change_in_grid_demand_EU.svg")
+    # plt.show()
+    plt.close()
 
 def main(percentage_cooling: float):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
@@ -724,16 +814,16 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    # plot_PV_self_consumption(loads=df)
-    # plot_flexible_storage_efficiency(loads=df)
-    # show_average_day_profile(loads=df)
-    # show_flexibility_factor(loads=df)
-    # show_GSCrel_and_GSC_abs(loads=df)
-    # plot_grid_demand_increase(loads=df)
+    plot_PV_self_consumption(loads=df)
+    plot_flexible_storage_efficiency(loads=df)
+    show_average_day_profile(loads=df)
+    show_flexibility_factor(loads=df)
+    show_GSCrel_and_GSC_abs(loads=df)
+    plot_grid_demand_increase(loads=df)
 
-    # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
+    plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
-    show_day_with_peak_deamand(loads=df, scenario="shiny happy", national=national_demand)
+    # show_day_with_peak_deamand(loads=df, scenario="shiny happy", national=national_demand)
 
 
 if __name__ == "__main__":
