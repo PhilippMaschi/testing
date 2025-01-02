@@ -131,13 +131,16 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
         hue="type",
         dodge=True,  # Ensures bars are grouped within x-axis categories
         hue_order=None, 
-        order=x_order
+        order=x_order,
+        palette=sns.color_palette()
     )
 
     # Adjust plot aesthetics
     g.set_axis_labels("Country", "PV self consumption")
     g.add_legend()
     g.set_titles("Year {col_name}")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
 
     # Show the plot
     plt.tight_layout()
@@ -153,7 +156,8 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
         data=eu_df,
         x="PV self consumption",
         y="year",
-        hue="type - price"
+        hue="type - price",
+        orient="y"
     )
     plt.suptitle("average PV self consumption over all countries")
     plt.tight_layout()
@@ -299,7 +303,8 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
         data=plot_df,
         x="country",
         y="peak_demand_load_factor",
-        hue="year"
+        hue="year",
+        palette=sns.color_palette()
     )
     plt.suptitle("load factor in peak hour")
     plt.ylabel("load factor in peak hour (%)")
@@ -313,7 +318,8 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
         data=plot_df,
         x="country",
         y="min_demand_load_factor",
-        hue="year"
+        hue="year",
+        palette=sns.color_palette()
     )
     plt.suptitle("load factor in minimum demand hour")
     plt.ylabel("load factor in minimum demand hour (%)")
@@ -327,7 +333,8 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
         data=plot_df,
         x="country",
         y="peak_price_load_factor",
-        hue="year"
+        hue="year",
+        palette=sns.color_palette()
     )
     plt.suptitle("load factor at peak price hour")
     plt.ylabel("load factor at peak price hour (%)")
@@ -341,7 +348,8 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
         data=plot_df,
         x="country",
         y="min_price_load_factor",
-        hue="year"
+        hue="year",
+        palette=sns.color_palette()
     )
     plt.xticks(rotation=90)
     plt.suptitle("load factor at min price hour")
@@ -755,13 +763,13 @@ def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.
 
 
     plot_national_peaks(peak_df=peak_df)
-    # create_sankey_diagram(df=peak_df)
+    create_sankey_diagram(df=peak_df)
     # plot_frequency_of_peaks_in_seasons(peak_df=peak_df)
     # plot_national_peak_days(day_df=day_df)
 
 def plot_grid_demand_increase(loads: pd.DataFrame):
     demand = loads.groupby(["country", "year", "ID_EnergyPrice"])[["opt_grid_demand_stock_MW", "ref_grid_demand_stock_MW"]].sum().reset_index()
-    demand["change (%)"] = (demand["opt_grid_demand_stock_MW"] - demand["ref_grid_demand_stock_MW"]) / demand["ref_grid_demand_stock_MW"]  #%
+    demand["change (%)"] = (demand["opt_grid_demand_stock_MW"] - demand["ref_grid_demand_stock_MW"]) / demand["ref_grid_demand_stock_MW"] * 100  #%
 
     x_order = demand.groupby("country")["change (%)"].mean().sort_values().index
 
@@ -783,6 +791,8 @@ def plot_grid_demand_increase(loads: pd.DataFrame):
     g.set_axis_labels("Country", "Change in electricity grid demand (%)")
     g.add_legend()
     g.set_titles("Year {col_name}")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
 
     # Show the plot
     plt.tight_layout()
@@ -790,14 +800,19 @@ def plot_grid_demand_increase(loads: pd.DataFrame):
     plt.close()
 
     # average increae on EU level:
-    eu_demand = demand.groupby(["year", "ID_EnergyPrice"])["change (%)"].mean().reset_index()
+    demand["change_MW"] = demand["opt_grid_demand_stock_MW"] - demand["ref_grid_demand_stock_MW"]
+    eu_demand = demand.groupby(["year", "ID_EnergyPrice"])[["change_MW", "ref_grid_demand_stock_MW"]].sum().reset_index()
+    eu_demand["change (%)"] = eu_demand["change_MW"] / eu_demand["ref_grid_demand_stock_MW"] * 100
     sns.barplot(
         data=eu_demand,
         x="change (%)",
         y="year",
-        hue="ID_EnergyPrice"
+        hue="ID_EnergyPrice",
+        palette=sns.color_palette(),
+        orient="y"
     )
     plt.xlabel("change in electricity grid demand (%)")
+    plt.xticks(rotation=90)
     plt.tight_layout()
     plt.savefig(SAVING_PATH / "Change_in_grid_demand_EU.svg")
     # plt.show()
