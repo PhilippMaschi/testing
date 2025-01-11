@@ -13,7 +13,7 @@ from plotly.colors import qualitative
 from plotly.subplots import make_subplots
 from itertools import cycle
 import logging
-
+import matplotlib.patches as mpatches
 
 SAVING_PATH = Path(__file__).parent / "figures"
     # Ensure the log directory exists
@@ -557,6 +557,123 @@ def plot_frequency_of_peaks_in_seasons(peak_df: pd.DataFrame):
     g.tight_layout()
     plt.show()
 
+def show_demand_increase_in_high_and_low_price_quantile(loads: pd.DataFrame):
+    groups = loads.groupby(["year", "country", "ID_EnergyPrice"])
+
+    # increase in demand at low prices:
+    low_demand_ref = groups[["ref_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
+        lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "ref_grid_demand_stock_MW"].sum()
+    ).reset_index(name="reference low price demand")
+    low_demand_opt = groups[["opt_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
+        lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum()
+    ).reset_index(name="HEMS low price demand")
+    plot_df = pd.merge(right=low_demand_ref, left=low_demand_opt, on=["year", "country", "ID_EnergyPrice"])
+    plot_df["1st quantile demand increase (%)"] = (plot_df["HEMS low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
+    x_order = plot_df.groupby("country")["1st quantile demand increase (%)"].mean().sort_values().index
+    
+    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
+
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.barplot,
+        x="country",
+        y="1st quantile demand increase (%)",
+        hue="year",
+        order=x_order,
+        palette=sns.color_palette()
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("country", "increase in electricity grid demand in 1st price quantile")
+    g.add_legend(title="", loc="upper right")
+    g.set_titles("Price {col_name}")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+    # Show the plot
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Increase_in_demand_in_1st_price_quantile.svg")
+    # plt.show()
+    plt.close()
+
+    # Increase of demand in 1st price quantile on EU level:
+    eu_groups = plot_df.groupby(["year", "ID_EnergyPrice"])[["HEMS low price demand", "reference low price demand"]].sum().reset_index()
+    eu_groups["1st quantile demand increase (%)"] = (eu_groups["HEMS low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
+
+    # increase in demand at high prices:
+    high_demand_ref = groups[["ref_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
+        lambda g: g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "ref_grid_demand_stock_MW"].sum()
+    ).reset_index(name="reference high price demand")
+    high_demand_opt = groups[["opt_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
+        lambda g: g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "opt_grid_demand_stock_MW"].sum()
+    ).reset_index(name="HEMS high price demand")
+    plot_df = pd.merge(right=high_demand_ref, left=high_demand_opt, on=["year", "country", "ID_EnergyPrice"])
+    plot_df["3rd quantile demand increase (%)"] = (plot_df["HEMS high price demand"] - plot_df["reference high price demand"]) / plot_df["reference high price demand"] * 100
+    
+    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
+
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.barplot,
+        x="country",
+        y="3rd quantile demand increase (%)",
+        hue="year",
+        order=x_order,
+        palette=sns.color_palette()
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("country", "increase in electricity grid demand in 3rd price quantile")
+    g.add_legend(title="", loc="upper right")
+    g.set_titles("Price {col_name}")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+    # Show the plot
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Increase_in_demand_in_3rd_price_quantile.svg")
+    # plt.show()
+    plt.close()
+
+    # Increase of demand in 1st price quantile on EU level:
+    eu_groups2 = plot_df.groupby(["year", "ID_EnergyPrice"])[["HEMS high price demand", "reference high price demand"]].sum().reset_index()
+    eu_groups2["3rd quantile demand increase (%)"] = (eu_groups2["HEMS high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
+    eu_df = pd.merge(left=eu_groups, right=eu_groups2[["year", "ID_EnergyPrice", "3rd quantile demand increase (%)"]], on=["year", "ID_EnergyPrice"])
+    
+    sns.barplot(
+        data=eu_df,
+        x="1st quantile demand increase (%)",
+        y="year",
+        hue="ID_EnergyPrice",
+        palette=sns.color_palette(),
+        orient="y",
+    )
+    sns.barplot(
+        data=eu_df,
+        x="3rd quantile demand increase (%)",
+        y="year",
+        hue="ID_EnergyPrice",
+        palette=sns.color_palette("pastel"),
+        orient="y",
+    )
+    plt.axvline(0, color='black', linewidth=0.8, linestyle='--')
+    plt.xlabel("change in electricity grid demand in 1st and 3rd price quantile on EU level (%)")
+    plt.ylabel("year")
+    legend_handles = [
+        mpatches.Patch(color=sns.color_palette()[0], label="Price 1, 1st price quantile"),
+        mpatches.Patch(color=sns.color_palette()[1], label="Price 2, 1st price quantile"),
+        mpatches.Patch(color=sns.color_palette("pastel")[1], label="Price 1, 3rd price quantile"),
+        mpatches.Patch(color=sns.color_palette("pastel")[1], label="Price 2, 3rd price quantile"),
+    ]
+    plt.legend(handles=legend_handles, title="Electricity price scenario", loc="lower right")
+    plt.xlim(
+        min(eu_df["3rd quantile demand increase (%)"]),
+        max(eu_df["1st quantile demand increase (%)"])
+    )
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Change_in_demand_in_price_quantiles_EU.svg")
+    # plt.show()
+    plt.close()
+
+
 def show_flexibility_factor(loads: pd.DataFrame):
     # from https://www.sciencedirect.com/science/article/pii/S0360544216306934?via%3Dihub#bib57
     groups = loads.groupby(["year", "country", "ID_EnergyPrice"])
@@ -615,58 +732,6 @@ def show_flexibility_factor(loads: pd.DataFrame):
     plt.savefig(SAVING_PATH / "Flexibility_factor_HEMS.svg")
     plt.show()
     print("A higher flexibility factor means that more energy is consumed at low prices. if the factor = 1 it means that no electricity is consumed from the grid at high prices")
-    plt.close()
-
-    low_demand_ref = groups[["ref_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
-        lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "ref_grid_demand_stock_MW"].sum()
-    ).reset_index(name="reference low price demand")
-    low_demand_opt = groups[["opt_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
-        lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum()
-    ).reset_index(name="HEMS low price demand")
-    plot_df = pd.merge(right=low_demand_ref, left=low_demand_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df["1st quantile demand increase (%)"] = (plot_df["HEMS low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
-    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
-
-    # Map the barplot to each facet
-    g.map_dataframe(
-        sns.barplot,
-        x="country",
-        y="1st quantile demand increase (%)",
-        hue="year",
-        order=x_order,
-        palette=sns.color_palette()
-    )
-
-    # Adjust plot aesthetics
-    g.set_axis_labels("country", "increase in electricity grid demand in 1st price quantile")
-    g.add_legend(title="", loc="upper right")
-    g.set_titles("Price {col_name}")
-    for ax in g.axes.flat:
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
-    # Show the plot
-    plt.tight_layout()
-    plt.savefig(SAVING_PATH / "Increase_in_demand_in_1st_price_quantile.svg")
-    # plt.show()
-    plt.close()
-
-    # Increase of demand in 1st price quantile on EU level:
-    eu_groups = plot_df.groupby(["year", "ID_EnergyPrice"])[["HEMS low price demand", "reference low price demand"]].sum().reset_index()
-    eu_groups["1st quantile demand increase (%)"] = (eu_groups["HEMS low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
-
-    sns.barplot(
-        data=eu_groups,
-        x="1st quantile demand increase (%)",
-        y="year",
-        hue="ID_EnergyPrice",
-        palette=sns.color_palette(),
-        orient="y"
-    )
-    plt.xlabel("increase in electricity grid demand in 1st price quantile on EU level (%)")
-    plt.ylabel("year")
-    plt.legend(title="Electricity price scenario")
-    plt.tight_layout()
-    plt.savefig(SAVING_PATH / "Increase_in_demand_in_1st_price_quantile_EU.svg")
-    # plt.show()
     plt.close()
 
 
@@ -867,13 +932,14 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    plot_shifted_electricity(loads=df)
-    plot_PV_self_consumption(loads=df)
-    plot_flexible_storage_efficiency(loads=df)
-    show_average_day_profile(loads=df)
-    show_flexibility_factor(loads=df)
-    show_GSCrel_and_GSC_abs(loads=df)
-    plot_grid_demand_increase(loads=df)
+    show_demand_increase_in_high_and_low_price_quantile(loads=df)
+    # plot_shifted_electricity(loads=df)
+    # plot_PV_self_consumption(loads=df)
+    # plot_flexible_storage_efficiency(loads=df)
+    # show_average_day_profile(loads=df)
+    # show_flexibility_factor(loads=df)
+    # show_GSCrel_and_GSC_abs(loads=df)
+    # plot_grid_demand_increase(loads=df)
 
     plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
