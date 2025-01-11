@@ -818,6 +818,44 @@ def plot_grid_demand_increase(loads: pd.DataFrame):
     # plt.show()
     plt.close()
 
+def plot_shifted_electricity(loads: pd.DataFrame):
+    # calculate shifted electricity which is the difference between (ref-opt) if ref > opt and sum it up
+    loads["shifted MW"] = loads["ref_grid_demand_stock_MW"] - loads["opt_grid_demand_stock_MW"]
+    loads.loc[loads["shifted MW"] < 0, "shifted MW"] = 0
+
+    shifted_df = loads.groupby(["year", "country", "ID_EnergyPrice"])[["shifted MW", "ref_grid_demand_stock_MW"]].sum().reset_index()
+    shifted_df["shifted (%)"] = shifted_df["shifted MW"] / shifted_df["ref_grid_demand_stock_MW"] * 100
+    
+    x_order = shifted_df.groupby("country")["shifted (%)"].mean().sort_values().index
+
+    g = sns.FacetGrid(shifted_df, col="ID_EnergyPrice", col_wrap=2, height=5, aspect=1.5, sharex=True, sharey=True)
+
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.barplot,
+        x="country",
+        y="shifted (%)",
+        hue="year",
+        dodge=True,  # Ensures bars are grouped within x-axis categories
+        hue_order=None, 
+        order=x_order,
+        palette=sns.color_palette()
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("Country", "Relative shifted electricity grid demand (%)")
+    g.add_legend()
+    g.set_titles("Energy price {col_name}")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+
+    # Show the plot
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / "Shifted_grid_demand.svg")
+    plt.close()
+
+
+
 def main(percentage_cooling: float):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
     if not path_2_demand_file.exists():
@@ -829,6 +867,7 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
+    plot_shifted_electricity(loads=df)
     plot_PV_self_consumption(loads=df)
     plot_flexible_storage_efficiency(loads=df)
     show_average_day_profile(loads=df)
