@@ -63,6 +63,7 @@ COUNTRY_CODES = {
     "MT": 'MLT' ,
     "NL": 'NLD' ,
     "PL": 'POL',
+    "PO": "POL",
     "PT": 'PRT',
     "RO": 'ROU',
     "SK": 'SVK',
@@ -118,7 +119,7 @@ def get_national_demand_profiles():
                 'country': [country] * 8760,
                 'year': [year] * 8760,
                 'scenario': [scenario] * 8760,
-                'generation': extended_values,
+                'demand': extended_values,
                 "Hour": np.arange(1, 8761)
             })
             extended_data.append(extended_group)
