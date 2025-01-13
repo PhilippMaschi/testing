@@ -276,7 +276,7 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
                     scen = "baseyear"
                 else:
                     scen = scenario
-                demand = national.loc[(national["country"]==country) & (national["year"]==year) & (national["scenario"]==scen), "generation"].reset_index(drop=True)
+                demand = national.loc[(national["country"]==country) & (national["year"]==year) & (national["scenario"]==scen), "demand"].reset_index(drop=True)
                 peak_demand_hour = demand.idxmax()
                 min_demand_hour = demand.idxmin()
                 for price in [1, 2]:
@@ -789,7 +789,7 @@ def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.
                     scen = scenario
                 ref_col = f"ref_grid_demand_stock_MW"
                 opt_col = f"opt_grid_demand_stock_MW"
-                national_demand_ref = national.loc[(national["country"]==country) & (national["year"]==year) & (national["scenario"]==scen), "generation"].copy().reset_index(drop=True)
+                national_demand_ref = national.loc[(national["country"]==country) & (national["year"]==year) & (national["scenario"]==scen), "demand"].copy().reset_index(drop=True)
                 peak_demand_hour_ref = national_demand_ref.idxmax()
                 peak_day_ref = int(peak_demand_hour_ref/24)
                 peak_day_ref_season = get_season(peak_day_ref)
@@ -932,7 +932,7 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    show_demand_increase_in_high_and_low_price_quantile(loads=df)
+    # show_demand_increase_in_high_and_low_price_quantile(loads=df)
     # plot_shifted_electricity(loads=df)
     # plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)

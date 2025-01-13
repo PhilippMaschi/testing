@@ -94,24 +94,26 @@ BOILER = {
 
 
 def get_national_demand_profiles():
+    
     gen_file = Path(__file__).parent.parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
     entsoe = pd.read_csv(gen_file, sep=";")
-    demand = entsoe.melt(var_name="country", value_name="generation")
+    demand = entsoe.melt(var_name="country", value_name="demand").reset_index(drop=True)
     demand["year"] = 2020
     demand["scenario"] = "baseyear"
-    levethian = pd.read_csv(Path(__file__).parent / "gen_data_leviathan.csv", sep=",")
+    levethian = pd.read_csv(Path(__file__).parent / "AURES_leviathan_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
     levethian["scenario"] = "levethian"
-    shiny_happy = pd.read_csv(Path(__file__).parent / "gen_data_shiny.csv", sep=",")
+    shiny_happy = pd.read_csv(Path(__file__).parent / "AURES_shiny_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
     shiny_happy["scenario"] = "shiny happy"
 
-    df = pd.concat([demand, shiny_happy, levethian], axis=0)
+    df = pd.concat([demand, shiny_happy, levethian], axis=0, ignore_index=True)
     df["country"] = df["country"].map(COUNTRY_CODES)
+
 
     # AURES data only contains 8735 values: duplicate the last ones
     extended_data = []
     for (country, year, scenario), group in df.groupby(["country", "year", "scenario"]):
         if len(group) != 8760:
-            extended_values = group['generation'].tolist() + group["generation"].iloc[-24:].to_list()
+            extended_values = group['demand'].tolist() + group["demand"].iloc[-24:].to_list()
             extended_group = pd.DataFrame({
                 'country': [country] * 8760,
                 'year': [year] * 8760,
