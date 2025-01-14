@@ -263,7 +263,6 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
     # national.drop(columns=["scenario"], inplace=True)
     loads["year"] = loads["year"].astype(int)
     loads["country"] = loads["country"].astype(str)
-    loads["ID_EnergyPrice"] = loads["ID_EnergyPrice"].astype(int)
     # df = pd.merge(left=loads, right=national, on=["Hour", "country", "year"]).drop_duplicates().reset_index(drop=True)
 
     
@@ -280,7 +279,7 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
                 demand = national.loc[(national["country"]==country) & (national["year"].astype(int)==year) & (national["scenario"]==scen), "demand"].reset_index(drop=True)
                 peak_demand_hour = demand.idxmax()
                 min_demand_hour = demand.idxmin()
-                for price in [1, 2]:
+                for price in ["Price 1", "Price 2"]:
                     df = loads.loc[(loads["year"]==year) & (loads["country"]==country) & (loads["ID_EnergyPrice"]==price), :].copy().reset_index(drop=True)
 
                     # peak demand
@@ -299,7 +298,6 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
 
                     i += 1
 
-    plot_df["ID_EnergyPrice"] = plot_df["ID_EnergyPrice"].astype(int)
     plot_df["year"] = plot_df["year"].astype(int)
 
     def plot_load_factor(column_name: str):    
@@ -615,7 +613,7 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
         mpatches.Patch(facecolor="white", edgecolor="black", label="1st price quantile"),
         mpatches.Patch(facecolor="white", edgecolor="black", hatch="///", label="3rd price quantile"),
     ]
-    plt.legend(handles=legend_handles, title="Electricity price scenario", loc="lower right")
+    plt.legend(handles=legend_handles, title="Electricity price scenario")
     plt.xlim(
         min(eu_df["3rd quantile demand increase (%)"]),
         max(eu_df["1st quantile demand increase (%)"])
@@ -665,8 +663,8 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
     # Show the plot
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"Increase_in_total_demand_in_1st_and_3rd_price_quantile_cooling{COOLING_PERCENTAGE}.svg")
-    plt.show()
-    # plt.close()
+    # plt.show()
+    plt.close()
 
 
 def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.DataFrame):
@@ -750,7 +748,19 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
     eu_groups2["3rd quantile demand increase (%)"] = (eu_groups2["HEMS high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
     eu_df = pd.merge(left=eu_groups, right=eu_groups2[["year", "ID_EnergyPrice", "3rd quantile demand increase (%)"]], on=["year", "ID_EnergyPrice"])
     
-    sns.barplot(
+
+    ax2 = sns.barplot(
+        data=eu_df,
+        x="3rd quantile demand increase (%)",
+        y="year",
+        hue="ID_EnergyPrice",
+        palette=sns.color_palette(),
+        orient="y",
+    )
+    for p in ax2.patches:
+        p.set_hatch("//")
+
+    ax1 = sns.barplot(
         data=eu_df,
         x="1st quantile demand increase (%)",
         y="year",
@@ -758,24 +768,16 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
         palette=sns.color_palette(),
         orient="y",
     )
-    sns.barplot(
-        data=eu_df,
-        x="3rd quantile demand increase (%)",
-        y="year",
-        hue="ID_EnergyPrice",
-        palette=sns.color_palette("pastel"),
-        orient="y",
-    )
     plt.axvline(0, color='black', linewidth=0.8, linestyle='--')
     plt.xlabel("change in residential electricity grid demand in 1st and 3rd price quantile on EU level (%)")
     plt.ylabel("year")
     legend_handles = [
-        mpatches.Patch(color=sns.color_palette()[0], label="Price 1, 1st price quantile"),
-        mpatches.Patch(color=sns.color_palette()[1], label="Price 2, 1st price quantile"),
-        mpatches.Patch(color=sns.color_palette("pastel")[0], label="Price 1, 3rd price quantile"),
-        mpatches.Patch(color=sns.color_palette("pastel")[1], label="Price 2, 3rd price quantile"),
+        mpatches.Patch(color=sns.color_palette()[0], label="Price 1"),
+        mpatches.Patch(color=sns.color_palette()[1], label="Price 2"),
+        mpatches.Patch(facecolor="white", edgecolor="black", label="1st price quantile"),
+        mpatches.Patch(facecolor="white", edgecolor="black", hatch="///", label="3rd price quantile"),
     ]
-    plt.legend(handles=legend_handles, title="Electricity price scenario", loc="lower right")
+    plt.legend(handles=legend_handles, title="Electricity price scenario",)
     plt.xlim(
         min(eu_df["3rd quantile demand increase (%)"]),
         max(eu_df["1st quantile demand increase (%)"])
@@ -841,10 +843,31 @@ def show_flexibility_factor(loads: pd.DataFrame):
         ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
     # Show the plot
     plt.tight_layout()
-    plt.savefig(SAVING_PATH / f"Flexibility_factor_HEMS_cooling{COOLING_PERCENTAGE}.svg")
+    plt.savefig(SAVING_PATH / f"Flexibility_factor_change_cooling{COOLING_PERCENTAGE}.svg")
     plt.show()
     print("A higher flexibility factor means that more energy is consumed at low prices. if the factor = 1 it means that no electricity is consumed from the grid at high prices")
     plt.close()
+
+
+    # flex factor on EU level:
+    copy_df = plot_df.loc[plot_df["ID_EnergyPrice"]=="Price 1", :].copy().rename(columns={"flexibility factor reference": "flexibility factor"})
+    copy_df["ID_EnergyPrice"] = "reference"
+    new_df = pd.concat([plot_df.rename(columns={"flexibility factor HEMS": "flexibility factor"}), copy_df], axis=0)
+    sns.boxplot(
+        data=new_df,
+        x="flexibility factor",
+        y="year",
+        hue="ID_EnergyPrice",
+        orient="y",
+        palette=sns.color_palette()
+    )
+    plt.xlabel("Flexibility factor across the EU27")
+    plt.legend(title="Electricity price scenario")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Flexibility_factor_EU_cooling{COOLING_PERCENTAGE}.svg")
+    plt.close()
+
+
 
 
 def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
@@ -910,7 +933,7 @@ def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.
                 peak_ref = national_demand_ref.loc[peak_demand_hour_ref]
                 day_df.loc[:, f"ref_{country}_{year}_price1"] = ref_peak_day.reset_index(drop=True)
             
-                for price in [1, 2]:
+                for price in ["Price 1", "Price 2"]:
                     price_load = loads.loc[(loads["year"]==year) & (loads["country"]==country) & (loads["ID_EnergyPrice"]==price), :].copy().reset_index(drop=True)
                     national_demand_opt = national_demand_ref - price_load.loc[:, ref_col] + price_load.loc[:, opt_col]
 
@@ -988,8 +1011,9 @@ def plot_grid_demand_increase(loads: pd.DataFrame):
         palette=sns.color_palette(),
         orient="y"
     )
-    plt.xlabel("change in electricity grid demand (%)")
-    plt.xticks(rotation=90)
+    plt.legend(title="Electricity price scenario")
+    plt.xlabel("change in total electricity grid demand (%)")
+    plt.xticks(rotation=0)
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"Change_in_grid_demand_EU_cooling{COOLING_PERCENTAGE}.svg")
     # plt.show()
@@ -1031,6 +1055,56 @@ def plot_shifted_electricity(loads: pd.DataFrame):
     plt.savefig(SAVING_PATH / f"Shifted_grid_demand_cooling{COOLING_PERCENTAGE}.svg")
     plt.close()
 
+def analyse_peak_demand(loads: pd.DataFrame, national: pd.DataFrame):
+    merged = pd.merge(left=loads, right=national[["country", "demand", "year", "Hour"]], on=["year", "Hour", "country"])
+    merged["demand_opt"] = merged["demand"] - merged["ref_grid_demand_stock_MW"] + merged["opt_grid_demand_stock_MW"]
+    demand_peaks = merged.groupby(["year", "country", "ID_EnergyPrice"])[["demand", "demand_opt"]].max().reset_index()
+    demand_peaks["peak increase"] = (demand_peaks["demand_opt"] - demand_peaks["demand"]) / demand_peaks["demand"] * 100  # %
+
+    sns.boxplot(
+        data=demand_peaks,
+        x="peak increase",
+        y="year",
+        hue="ID_EnergyPrice",
+        orient="y",
+        palette=sns.color_palette()
+    )
+    plt.legend(title="Electricity price scenario")
+    plt.xlabel("national peak demand increase through HEMS in EU (%)")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Peak_demand_increase_EU_cooling{COOLING_PERCENTAGE}.svg")
+    plt.close()
+
+    x_order = demand_peaks.groupby("country")["peak increase"].mean().sort_values().index
+    g = sns.FacetGrid(demand_peaks, col="ID_EnergyPrice", col_wrap=2, height=5, aspect=1.5, sharex=True, sharey=True)
+
+    # Map the barplot to each facet
+    g.map_dataframe(
+        sns.barplot,
+        x="country",
+        y="peak increase",
+        hue="year",
+        dodge=True,  # Ensures bars are grouped within x-axis categories
+        hue_order=None, 
+        order=x_order,
+        palette=sns.color_palette()
+    )
+
+    # Adjust plot aesthetics
+    g.set_axis_labels("Country", "Peak demand increase through HEMS (%)")
+    g.add_legend(loc="upper center")
+    g.set_titles("Energy price {col_name}")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+
+    # Show the plot
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Peak_demand_increase_cooling{COOLING_PERCENTAGE}.svg")
+    plt.close()
+
+
+
+
 
 
 def main(percentage_cooling: float):
@@ -1041,11 +1115,13 @@ def main(percentage_cooling: float):
     df["year"] = df["year"].astype(int)
     df["country"] = df["country"].astype(str)
     df["ID_EnergyPrice"] = df["ID_EnergyPrice"].astype(int)
+    df["ID_EnergyPrice"] = df["ID_EnergyPrice"].map({1: "Price 1", 2: "Price 2"})
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
+    analyse_peak_demand(loads=df, national=national_demand)
     show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
-    show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
+    # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
     # plot_shifted_electricity(loads=df)
     # plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)
@@ -1060,7 +1136,7 @@ def main(percentage_cooling: float):
 
 
 if __name__ == "__main__":
-    COOLING_PERCENTAGE = 0.9
+    COOLING_PERCENTAGE = 0.1
     main(
         percentage_cooling=COOLING_PERCENTAGE,
     )
