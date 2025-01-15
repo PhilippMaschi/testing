@@ -1197,6 +1197,10 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     plt.close()
 
 
+    # correlation with outside temperature,  number HPs, heat demand kWh/m2
+    heat_demand = Cp.create_national_heat_demand_df(percentage_cooling=COOLING_PERCENTAGE)
+
+
 def main(percentage_cooling: float):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
     if not path_2_demand_file.exists():
