@@ -279,6 +279,19 @@ def define_tech_scenario(prob_cooling: float, df_scenarios: pd.DataFrame, df_hp:
     total_scenario_df = pd.concat(price_dfs).reset_index(drop=True)
     return total_scenario_df
 
+def get_total_number_of_buildings_with_HP(folder_name: Path, perc_cooling: float):
+    db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
+    scenario_table = db.read_dataframe(table_name="OperationScenario")
+    building_table = db.read_dataframe(table_name="OperationScenario_Component_Building")
+    scenario_df = define_tech_scenario(
+        prob_cooling=perc_cooling,
+        df_scenarios=scenario_table,
+        df_hp=building_table
+    )
+    building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice"]].copy()
+    df = building_numbers.groupby("ID_EnergyPrice")["number_of_buildings"].sum().reset_index()
+    return df
+
 def get_heating_demand(db: DB):
     opt = db.read_dataframe(table_name="OperationResult_OptYear", )
     ref = db.read_dataframe(table_name="OperationResult_RefYear")
@@ -307,11 +320,10 @@ def get_country_specific_heating_demand(folder_name: Path, perc_cooling: float):
     stock["Q_RoomHeating_ref_kWh/m2"] = stock["Q_RoomHeating"] / stock["Af"] / 1_000
     stock.drop(columns="Q_RoomHeating", inplace=True)
 
-    avg_heating_ref = stock.groupby(["ID_EnergyPrice"])[["Q_RoomHeating_ref_kWh/m2", "number_of_buildings"]].apply(lambda x: (x['Q_RoomHeating_ref_kWh/m2'] * x['number_of_buildings']).sum() / x['number_of_buildings'].sum()).reset_index(name="Heating demand (kWh/m2)")
-    avg_heating_ref["ID_EnergyPrice"] = avg_heating_ref["ID_EnergyPrice"].map({1: "reference"})
-    avg_heating_opt = stock.groupby(["ID_EnergyPrice"])[["Q_RoomHeating_opt_kWh/m2", "number_of_buildings"]].apply(lambda x: (x['Q_RoomHeating_opt_kWh/m2'] * x['number_of_buildings']).sum() / x['number_of_buildings'].sum()).reset_index(name="Heating demand (kWh/m2)")
+    avg_heating_ref = stock.groupby(["ID_EnergyPrice"])[["Q_RoomHeating_ref_kWh/m2", "number_of_buildings"]].apply(lambda x: (x['Q_RoomHeating_ref_kWh/m2'] * x['number_of_buildings']).sum() / x['number_of_buildings'].sum()).reset_index(name="Heating ref demand (kWh/m2)")
+    avg_heating_opt = stock.groupby(["ID_EnergyPrice"])[["Q_RoomHeating_opt_kWh/m2", "number_of_buildings"]].apply(lambda x: (x['Q_RoomHeating_opt_kWh/m2'] * x['number_of_buildings']).sum() / x['number_of_buildings'].sum()).reset_index(name="Heating opt demand (kWh/m2)")
 
-    df = pd.concat([avg_heating_ref.loc[avg_heating_ref["ID_EnergyPrice"]=="reference", :], avg_heating_opt], axis=0)
+    df = pd.concat([avg_heating_ref, avg_heating_opt[["Heating opt demand (kWh/m2)"]]], axis=1)
     return df
 
 def get_country_load_profiles(folder_name: Path, perc_cooling: float):
@@ -360,6 +372,29 @@ def get_price_profile(folder_name: Path):
     db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
     price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1", "electricity_2"])
     return price_table
+
+def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
+    path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
+    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    dfs = []
+    for folder_name in folder_names:
+        if folder_name in ["CYP_2020", "MLT_2020"]:
+            continue
+        folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[-2]
+        year = folder.name.split("_")[-1]
+        df = get_total_number_of_buildings_with_HP(
+            folder_name=folder,
+            perc_cooling=percentage_cooling
+        )
+        df["country"] = country
+        df["year"] = year
+        dfs.append(df)
+        
+    big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
+    big_df.columns = [str(col) for col in big_df.columns]
+    return big_df
+
 
 def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")

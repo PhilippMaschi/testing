@@ -110,7 +110,7 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
     self_consumption_ref = self_consumption_ref.reset_index()
     self_consumption_opt = self_consumption_opt.reset_index()
     self_consumption_ref["type"] = "reference"
-    self_consumption_opt["type"] = "HEMS"
+    self_consumption_opt["type"] = "prosumager"
 
     self_consumption_ref.rename(columns={0: "PV self consumption"}, inplace=True)
     # drop the ID_EnergyPrice = 2 of ref because its the same
@@ -228,14 +228,14 @@ def show_average_day_profile(loads: pd.DataFrame):
     df = loads.groupby(["year", "ID_EnergyPrice", "day_hour"])[["ref_grid_demand_stock_MW", "opt_grid_demand_stock_MW", "ref_Load_MW", "opt_Load_MW"]].mean().reset_index()
     plot_df = df.rename(columns={
         "ref_grid_demand_stock_MW": "grid demand reference",
-        "opt_grid_demand_stock_MW": "grid demand HEMS",
+        "opt_grid_demand_stock_MW": "grid demand prosumager",
         "ref_Load_MW": "Load reference",
-        "opt_Load_MW": "Load HEMS"
+        "opt_Load_MW": "Load prosumager"
     }).melt(id_vars=["year", "ID_EnergyPrice", "day_hour"], value_name="electricity demand")
 
     # normalize the data:
     plot_df["electricity demand"] = plot_df.groupby("year")["electricity demand"].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
-    g = sns.FacetGrid(plot_df.loc[plot_df["variable"].isin(["grid demand reference", "grid demand HEMS"])], col="year", col_wrap=2, height=5, aspect=1.5, sharey=False)
+    g = sns.FacetGrid(plot_df.loc[plot_df["variable"].isin(["grid demand reference", "grid demand prosumager"])], col="year", col_wrap=2, height=5, aspect=1.5, sharey=False)
 
     # Map the barplot to each facet
     g.map_dataframe(
@@ -469,13 +469,13 @@ def plot_national_peak_days(day_df: pd.DataFrame):
 
 def create_sankey_diagram(df):
     # sankey diagramm um zu sehen wie sich die Peaks ändern:
-    source_column = "no HEMS"
-    target_column = "all HEMS"
+    source_column = "no prosumager"
+    target_column = "all prosumager"
     value_column = "count"
     for price in [1, 2]:
         plot_df = df.reset_index()
         plot_df = plot_df.loc[plot_df["price"]==price, :]
-        flows = plot_df.groupby(["all HEMS", "no HEMS"]).size().reset_index(name="count")
+        flows = plot_df.groupby(["all prosumager", "no prosumager"]).size().reset_index(name="count")
         
         season_colors = {
             "Spring": "rgba(102, 194, 165, 0.8)",  # light green
@@ -496,18 +496,18 @@ def create_sankey_diagram(df):
         link_colors = flows[source_column].map(lambda x: season_colors[x]).tolist()
 
         # Map source and target to indices
-        source_labels = ["Spring (no HEMS)", "Summer (no HEMS)", "Autumn (no HEMS)", "Winter (no HEMS)"]
-        target_labels = ["Spring (all HEMS)", "Summer (all HEMS)", "Autumn (all HEMS)", "Winter (all HEMS)"]
+        source_labels = ["Spring (no prosumager)", "Summer (no prosumager)", "Autumn (no prosumager)", "Winter (no prosumager)"]
+        target_labels = ["Spring (all prosumager)", "Summer (all prosumager)", "Autumn (all prosumager)", "Winter (all prosumager)"]
 
         # Combine source and target labels into a single list
         labels = source_labels + target_labels
         label_to_index = {label: i for i, label in enumerate(labels)}
 
 
-        # Map "all HEMS" (source) to source_labels indices
-        sources = flows[source_column].map(lambda x: label_to_index[f"{x} (no HEMS)"])
-        # Map "no HEMS" (target) to target_labels indices
-        targets = flows[target_column].map(lambda x: label_to_index[f"{x} (all HEMS)"])
+        # Map "all prosumager" (source) to source_labels indices
+        sources = flows[source_column].map(lambda x: label_to_index[f"{x} (no prosumager)"])
+        # Map "no prosumager" (target) to target_labels indices
+        targets = flows[target_column].map(lambda x: label_to_index[f"{x} (all prosumager)"])
         values = flows[value_column]
 
         # Create the Sankey diagram
@@ -561,13 +561,13 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
     ).reset_index(name="reference low price demand")
     low_demand_opt = groups[["demand_opt", "price (cent/kWh)"]].apply(
         lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "demand_opt"].sum()
-    ).reset_index(name="HEMS low price demand")
+    ).reset_index(name="prosumager low price demand")
     plot_df = pd.merge(right=low_demand_ref, left=low_demand_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df["1st quantile demand increase (%)"] = (plot_df["HEMS low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
+    plot_df["1st quantile demand increase (%)"] = (plot_df["prosumager low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
     
     
-    eu_groups = plot_df.groupby(["year", "ID_EnergyPrice"])[["HEMS low price demand", "reference low price demand"]].sum().reset_index()
-    eu_groups["1st quantile demand increase (%)"] = (eu_groups["HEMS low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
+    eu_groups = plot_df.groupby(["year", "ID_EnergyPrice"])[["prosumager low price demand", "reference low price demand"]].sum().reset_index()
+    eu_groups["1st quantile demand increase (%)"] = (eu_groups["prosumager low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
     
     
     high_demand_ref = groups[["demand", "price (cent/kWh)"]].apply(
@@ -575,12 +575,12 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
     ).reset_index(name="reference high price demand")
     high_demand_opt = groups[["demand_opt", "price (cent/kWh)"]].apply(
         lambda g: g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "demand_opt"].sum()
-    ).reset_index(name="HEMS high price demand")
+    ).reset_index(name="prosumager high price demand")
     plot_df2 = pd.merge(right=high_demand_ref, left=high_demand_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df2["3rd quantile demand increase (%)"] = (plot_df2["HEMS high price demand"] - plot_df2["reference high price demand"]) / plot_df2["reference high price demand"] * 100
+    plot_df2["3rd quantile demand increase (%)"] = (plot_df2["prosumager high price demand"] - plot_df2["reference high price demand"]) / plot_df2["reference high price demand"] * 100
     
-    eu_groups2 = plot_df2.groupby(["year", "ID_EnergyPrice"])[["HEMS high price demand", "reference high price demand"]].sum().reset_index()
-    eu_groups2["3rd quantile demand increase (%)"] = (eu_groups2["HEMS high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
+    eu_groups2 = plot_df2.groupby(["year", "ID_EnergyPrice"])[["prosumager high price demand", "reference high price demand"]].sum().reset_index()
+    eu_groups2["3rd quantile demand increase (%)"] = (eu_groups2["prosumager high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
     eu_df = pd.merge(left=eu_groups, right=eu_groups2[["year", "ID_EnergyPrice", "3rd quantile demand increase (%)"]], on=["year", "ID_EnergyPrice"])
 
     plot_df_large = pd.merge(left=plot_df, right=plot_df2[["year", "ID_EnergyPrice", "3rd quantile demand increase (%)", "country"]], on=["year", "ID_EnergyPrice", "country"])
@@ -676,9 +676,9 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
     ).reset_index(name="reference low price demand")
     low_demand_opt = groups[["opt_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
         lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum()
-    ).reset_index(name="HEMS low price demand")
+    ).reset_index(name="prosumager low price demand")
     plot_df = pd.merge(right=low_demand_ref, left=low_demand_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df["1st quantile demand increase (%)"] = (plot_df["HEMS low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
+    plot_df["1st quantile demand increase (%)"] = (plot_df["prosumager low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
     x_order = plot_df.groupby("country")["1st quantile demand increase (%)"].mean().sort_values().index
     
     g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
@@ -706,8 +706,8 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
     plt.close()
 
     # Increase of demand in 1st price quantile on EU level:
-    eu_groups = plot_df.groupby(["year", "ID_EnergyPrice"])[["HEMS low price demand", "reference low price demand"]].sum().reset_index()
-    eu_groups["1st quantile demand increase (%)"] = (eu_groups["HEMS low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
+    eu_groups = plot_df.groupby(["year", "ID_EnergyPrice"])[["prosumager low price demand", "reference low price demand"]].sum().reset_index()
+    eu_groups["1st quantile demand increase (%)"] = (eu_groups["prosumager low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
 
     # increase in demand at high prices:
     high_demand_ref = groups[["ref_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
@@ -715,9 +715,9 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
     ).reset_index(name="reference high price demand")
     high_demand_opt = groups[["opt_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
         lambda g: g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "opt_grid_demand_stock_MW"].sum()
-    ).reset_index(name="HEMS high price demand")
+    ).reset_index(name="prosumager high price demand")
     plot_df = pd.merge(right=high_demand_ref, left=high_demand_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df["3rd quantile demand increase (%)"] = (plot_df["HEMS high price demand"] - plot_df["reference high price demand"]) / plot_df["reference high price demand"] * 100
+    plot_df["3rd quantile demand increase (%)"] = (plot_df["prosumager high price demand"] - plot_df["reference high price demand"]) / plot_df["reference high price demand"] * 100
     
     g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
 
@@ -744,8 +744,8 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
     plt.close()
 
     # Increase of demand in 1st price quantile on EU level:
-    eu_groups2 = plot_df.groupby(["year", "ID_EnergyPrice"])[["HEMS high price demand", "reference high price demand"]].sum().reset_index()
-    eu_groups2["3rd quantile demand increase (%)"] = (eu_groups2["HEMS high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
+    eu_groups2 = plot_df.groupby(["year", "ID_EnergyPrice"])[["prosumager high price demand", "reference high price demand"]].sum().reset_index()
+    eu_groups2["3rd quantile demand increase (%)"] = (eu_groups2["prosumager high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
     eu_df = pd.merge(left=eu_groups, right=eu_groups2[["year", "ID_EnergyPrice", "3rd quantile demand increase (%)"]], on=["year", "ID_EnergyPrice"])
     
 
@@ -797,10 +797,10 @@ def show_flexibility_factor(loads: pd.DataFrame):
 
     factor_opt = groups[["opt_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
         lambda g: (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum() - g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "opt_grid_demand_stock_MW"].sum()) / (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum() + g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "opt_grid_demand_stock_MW"].sum())
-    ).reset_index(name="flexibility factor HEMS")
+    ).reset_index(name="flexibility factor prosumager")
     
     plot_df = pd.merge(right=factor_ref, left=factor_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df["flexibility factor change"] = plot_df["flexibility factor HEMS"] - plot_df["flexibility factor reference"]
+    plot_df["flexibility factor change"] = plot_df["flexibility factor prosumager"] - plot_df["flexibility factor reference"]
     x_order = plot_df.groupby("country")["flexibility factor change"].mean().sort_values().index
     x_order_ref = plot_df.groupby("country")["flexibility factor reference"].mean().sort_values().index
 
@@ -852,7 +852,7 @@ def show_flexibility_factor(loads: pd.DataFrame):
     # flex factor on EU level:
     copy_df = plot_df.loc[plot_df["ID_EnergyPrice"]=="Price 1", :].copy().rename(columns={"flexibility factor reference": "flexibility factor"})
     copy_df["ID_EnergyPrice"] = "reference"
-    new_df = pd.concat([plot_df.rename(columns={"flexibility factor HEMS": "flexibility factor"}), copy_df], axis=0)
+    new_df = pd.concat([plot_df.rename(columns={"flexibility factor prosumager": "flexibility factor"}), copy_df], axis=0)
     sns.boxplot(
         data=new_df,
         x="flexibility factor",
@@ -885,7 +885,7 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     GSC_abs_opt = series_opt.reset_index()
 
     GSC_abs_ref["type"] = "reference"
-    GSC_abs_opt["type"] = "HEMS"
+    GSC_abs_opt["type"] = "prosumager"
     plot_df = pd.concat([GSC_abs_opt, GSC_abs_ref], axis=0).rename(columns={0: "GSC_abs"})
 
     g = sns.FacetGrid(plot_df, col="ID_EnergyPrice", col_wrap=2, height=5, aspect=1.5, sharey=True)
@@ -958,8 +958,8 @@ def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.
 
                     peak_df.loc[(country, year, price), f"change in peak"] = peak_diff
                     peak_df.loc[(country, year, price), f"change in peak relative"] = peak_diff / peak_ref * 100
-                    peak_df.loc[(country, year, price), f"all HEMS"] = peak_day_opt_season
-                    peak_df.loc[(country, year, price), f"no HEMS"] = peak_day_ref_season
+                    peak_df.loc[(country, year, price), f"all prosumager"] = peak_day_opt_season
+                    peak_df.loc[(country, year, price), f"no prosumager"] = peak_day_ref_season
 
 
     plot_national_peaks(peak_df=peak_df)
@@ -1070,7 +1070,7 @@ def analyse_peak_demand(loads: pd.DataFrame, national: pd.DataFrame):
         palette=sns.color_palette()
     )
     plt.legend(title="Electricity price scenario")
-    plt.xlabel("national peak demand increase through HEMS in EU (%)")
+    plt.xlabel("national peak demand increase through prosumager in EU (%)")
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"Peak_demand_increase_EU_cooling{COOLING_PERCENTAGE}.svg")
     plt.close()
@@ -1091,7 +1091,7 @@ def analyse_peak_demand(loads: pd.DataFrame, national: pd.DataFrame):
     )
 
     # Adjust plot aesthetics
-    g.set_axis_labels("Country", "Peak demand increase through HEMS (%)")
+    g.set_axis_labels("Country", "Peak demand increase through prosumager (%)")
     g.add_legend(loc="upper center")
     g.set_titles("Energy price {col_name}")
     for ax in g.axes.flat:
@@ -1150,10 +1150,10 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     ).reset_index(name="flexibility factor reference")
     factor_opt = groups[["opt_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
         lambda g: (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum() - g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "opt_grid_demand_stock_MW"].sum()) / (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum() + g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "opt_grid_demand_stock_MW"].sum())
-    ).reset_index(name="flexibility factor HEMS")
+    ).reset_index(name="flexibility factor prosumager")
     load_factor = pd.merge(right=factor_ref, left=factor_opt, on=["year", "country", "ID_EnergyPrice"])
-    load_factor["flexibility factor change"] = load_factor["flexibility factor HEMS"] - load_factor["flexibility factor reference"]
-    load_factor = load_factor[["country", "year", "ID_EnergyPrice", "flexibility factor reference", "flexibility factor HEMS", "flexibility factor change"]].copy()
+    load_factor["flexibility factor change"] = load_factor["flexibility factor prosumager"] - load_factor["flexibility factor reference"]
+    load_factor = load_factor[["country", "year", "ID_EnergyPrice", "flexibility factor reference", "flexibility factor prosumager", "flexibility factor change"]].copy()
 
     demand = loads.groupby(["country", "year", "ID_EnergyPrice"])[["opt_grid_demand_stock_MW", "ref_grid_demand_stock_MW"]].sum().reset_index()
     demand["change (%)"] = (demand["opt_grid_demand_stock_MW"] - demand["ref_grid_demand_stock_MW"]) / demand["ref_grid_demand_stock_MW"] * 100  #%
@@ -1175,11 +1175,11 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     merge_2 = pd.merge(left=merge_1, right=load_factor, on=["country", "year", "ID_EnergyPrice"])
     df = pd.merge(left=merge_2, right=demand, on=["country", "year", "ID_EnergyPrice"])
     # normalize
-    # numeric_columns = ['mean', 'std', 'max', 'min', 'peak increase', "change (%)", "flexibility factor reference", "flexibility factor HEMS", "flexibility factor change"]
+    # numeric_columns = ['mean', 'std', 'max', 'min', 'peak increase', "change (%)", "flexibility factor reference", "flexibility factor prosumager", "flexibility factor change"]
     # df[numeric_columns] = df[numeric_columns].apply(lambda x: (x - x.min()) / (x.max() - x.min()))
 
     correlation_results = pd.DataFrame()
-    target_columns = ['peak increase', "change (%)", "flexibility factor reference", "flexibility factor HEMS", "flexibility factor change", ]
+    target_columns = ['peak increase', "change (%)", "flexibility factor reference", "flexibility factor prosumager", "flexibility factor change", ]
     # Loop over columns and calculate correlation with target columns
     for column in target_columns:
         # Calculate correlation between each column and all target columns
@@ -1199,7 +1199,37 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
 
     # correlation with outside temperature,  number HPs, heat demand kWh/m2
     heat_demand = Cp.create_national_heat_demand_df(percentage_cooling=COOLING_PERCENTAGE)
+    hp_numbers = Cp.create_number_of_HPs_df(COOLING_PERCENTAGE)
 
+    numbers_order = hp_numbers.groupby("country")["number_of_buildings"].mean().sort_values().index
+    sns.barplot(
+        data=hp_numbers,
+        x="country",
+        y="number_of_buildings",
+        hue="year",
+        palette=sns.color_palette(),
+        order=numbers_order
+    )   
+    plt.ylabel("number of heat pump heated buildings")
+    plt.xticks(rotation=90)
+    plt.savefig(SAVING_PATH / f"number_of_HPs.svg")
+    plt.close()
+
+    heat_order = heat_demand.groupby("country")["Heating ref demand (kWh/m2)"].mean().sort_values().index
+    sns.barplot(
+        data=heat_demand,
+        x="country",
+        y="Heating ref demand (kWh/m2)",
+        hue="year",
+        palette=sns.color_palette(),
+        order=heat_order
+    )   
+    plt.ylabel("average specific heating demand (kWh/m2)")
+    plt.xticks(rotation=90)
+    plt.savefig(SAVING_PATH / f"heat_demand_avg.svg")
+    plt.close()
+    
+    target_columns = ["Heating ref demand (kWh/m2)", "Heating opt demand (kWh/m2)"]
 
 def main(percentage_cooling: float):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
