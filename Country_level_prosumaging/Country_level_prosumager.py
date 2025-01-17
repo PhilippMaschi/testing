@@ -477,7 +477,7 @@ def main(percentage_cooling: float):
 
 if __name__ == "__main__":
     main(
-        percentage_cooling=0.1,
+        percentage_cooling=0.9,
     )
 
     # 10 cent/kWh levelized cost for offshore wind, onshore and PV are below that [https://www.ise.fraunhofer.de/en/publications/studies/cost-of-electricity.html]

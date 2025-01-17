@@ -876,39 +876,89 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     # GSC absolute is the sum of consumption times price in every hour divided by the sum of consumption times thes average price
     loads["demand_price_ref"] = loads["ref_grid_demand_stock_MW"] * loads["price (cent/kWh)"]
     loads["demand_price_opt"] = loads["opt_grid_demand_stock_MW"] * loads["price (cent/kWh)"]
-    groups = loads.groupby(["ID_EnergyPrice", "country", "year"])
+    loads["day"] = (loads["Hour"]-1) // 24 +1
+    # we calculate the GSC relative also on daily basis and take the mean over the year
+    day_groups = loads.groupby(["day", "ID_EnergyPrice", "country", "year"])
+    P_max = loads["opt_grid_demand_stock_MW"].max()
+    dfs= []
+    for (day, price_id, country, year), group in day_groups:
+        demand_ref_sum = group["ref_grid_demand_stock_MW"].sum()
+        demand_opt_sum = group["opt_grid_demand_stock_MW"].sum()
 
-    series_ref = groups["demand_price_ref"].sum() / groups["price (cent/kWh)"].mean() / groups["ref_grid_demand_stock_MW"].sum()
-    series_opt = groups["demand_price_opt"].sum() / groups["price (cent/kWh)"].mean() / groups["opt_grid_demand_stock_MW"].sum()
+        full_load_h_ref = np.ceil(demand_ref_sum / P_max)
+        full_load_h_opt = np.ceil(demand_opt_sum / P_max)
+        full_load_h = int(min([full_load_h_ref, full_load_h_opt]))
+        demand_in_full_load_h_ref = demand_ref_sum / full_load_h
+        demand_in_full_load_h_opt= demand_ref_sum / full_load_h
 
-    GSC_abs_ref = series_ref.reset_index()
-    GSC_abs_opt = series_opt.reset_index()
+        worst_hours_indices = group["price (cent/kWh)"].sort_values().iloc[:full_load_h].index
+        best_hours_indices = group["price (cent/kWh)"].sort_values().iloc[-full_load_h:].index
+        mean_price =  group["price (cent/kWh)"].mean()
 
-    GSC_abs_ref["type"] = "reference"
-    GSC_abs_opt["type"] = "prosumager"
-    plot_df = pd.concat([GSC_abs_opt, GSC_abs_ref], axis=0).rename(columns={0: "GSC_abs"})
+        # calculate GSC abs for worst and best case:
+        GSC_ref_worst = (demand_in_full_load_h_ref * group["price (cent/kWh)"].loc[worst_hours_indices]).sum() / (mean_price * demand_ref_sum)
+        GSC_ref_best = (demand_in_full_load_h_ref * group["price (cent/kWh)"].loc[best_hours_indices]).sum() / (mean_price * demand_ref_sum)
+        GSC_ref_achieved = (group["ref_grid_demand_stock_MW"] * group["price (cent/kWh)"]).sum() / (mean_price * demand_ref_sum)
 
-    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice", col_wrap=2, height=5, aspect=1.5, sharey=True)
+        GSC_opt_worst = (demand_in_full_load_h_opt * group["price (cent/kWh)"].loc[worst_hours_indices]).sum() / (mean_price * demand_opt_sum)
+        GSC_opt_best = (demand_in_full_load_h_opt * group["price (cent/kWh)"].loc[best_hours_indices]).sum() / (mean_price * demand_opt_sum)
+        GSC_opt_achieved = (group["opt_grid_demand_stock_MW"] * group["price (cent/kWh)"]).sum() / (mean_price * demand_opt_sum)
 
+        if GSC_ref_worst - GSC_ref_best == 0:
+            GSC_rel_ref = 0
+            GSC_rel_opt = 0
+        else:
+            GSC_rel_ref = 200 * (GSC_ref_worst - GSC_ref_achieved) / (GSC_ref_worst - GSC_ref_best) - 100
+            GSC_rel_opt = 200 * (GSC_opt_worst - GSC_opt_achieved) / (GSC_opt_worst - GSC_opt_best) - 100
+        
+        GSC_rel_ref = max(min(100, GSC_rel_ref), -100)
+        GSC_rel_opt = max(min(100, GSC_rel_opt), -100)
+
+        dfs.append(pd.DataFrame(data=[[day, country, year, price_id, GSC_ref_achieved, GSC_opt_achieved, GSC_rel_ref, GSC_rel_opt]], 
+                     columns=["day", "country", "year", "ID_EnergyPrice", "GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt"]))
+    
+    GSC_df = pd.concat(dfs, axis=0).reset_index(drop=True)
+
+    GSC_mean = GSC_df.groupby(["ID_EnergyPrice", "country", "year"])[["GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt"]].mean().reset_index()
+
+    copy = GSC_mean.loc[GSC_mean["ID_EnergyPrice"]=="Price 1", :].copy()
+    copy["ID_EnergyPrice"] = "reference"
+    eu_df = pd.concat([GSC_mean[["ID_EnergyPrice", "country", "year", "GSC_rel_opt"]].rename(columns={"GSC_rel_opt": "GSC_rel"}), copy[["ID_EnergyPrice", "country", "year", "GSC_rel_ref"]].rename(columns={"GSC_rel_ref": "GSC_rel"})], axis=0)
+
+    sns.boxplot(
+        data=eu_df,
+        x="GSC_rel",
+        y="year",
+        hue="ID_EnergyPrice",
+        orient="y",
+        palette=sns.color_palette()
+    )
+    plt.xlabel("GSC relative")
+    plt.legend(title="Electricity Price scenario")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"GSC_relative_EU_cooling{COOLING_PERCENTAGE}.svg")
+    plt.close()
+
+    g = sns.FacetGrid(eu_df, col="ID_EnergyPrice", col_wrap=3, height=5, aspect=1.5, sharey=True, sharex=True)
     # Map the barplot to each facet
     g.map_dataframe(
-        sns.boxplot,
-        x="year",
-        y="GSC_abs",
-        hue="type",
+        sns.barplot,
+        x="country",
+        y="GSC_rel",
+        hue="year",
         palette=sns.color_palette(),
     )
 
-    # Adjust plot aesthetics
-    g.set_axis_labels("year", "GSC absolute")
-    g.add_legend(title="", loc="upper right")
+    g.set_axis_labels("year", "relative GSC prosumager")
+    g.add_legend(title="", loc="lower right")
     g.set_titles("Price {col_name}")
-
-    # Show the plot
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
     plt.tight_layout()
-    plt.savefig(SAVING_PATH / f"GSC_absolute_cooling{COOLING_PERCENTAGE}.svg")
+    plt.savefig(SAVING_PATH / f"GSC_relative_cooling{COOLING_PERCENTAGE}.svg")
     # plt.show()
     plt.close()
+
 
 def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.DataFrame):
     day_df = pd.DataFrame()
@@ -1243,20 +1293,20 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    calculate_price_correlations(loads=df, national=national_demand)
-    analyse_prices(loads=df, national=national_demand)
-    analyse_peak_demand(loads=df, national=national_demand)
-    show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
+    # calculate_price_correlations(loads=df, national=national_demand)
+    # analyse_prices(loads=df, national=national_demand)
+    # analyse_peak_demand(loads=df, national=national_demand)
+    # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
     # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
     # plot_shifted_electricity(loads=df)
     # plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)
     # show_average_day_profile(loads=df)
-    show_flexibility_factor(loads=df)
-    # show_GSCrel_and_GSC_abs(loads=df)
-    plot_grid_demand_increase(loads=df)
+    # show_flexibility_factor(loads=df)
+    show_GSCrel_and_GSC_abs(loads=df)
+    # plot_grid_demand_increase(loads=df)
 
-    plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
+    # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
     # show_day_with_peak_deamand(loads=df, scenario="shiny happy", national=national_demand)
 
