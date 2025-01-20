@@ -868,10 +868,8 @@ def show_flexibility_factor(loads: pd.DataFrame):
     plt.close()
 
 
-
-
-def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
-    # from https://www.sciencedirect.com/science/article/pii/S0306261915013434
+def calculate_GSC(loads: pd.DataFrame)-> pd.DataFrame:
+# from https://www.sciencedirect.com/science/article/pii/S0306261915013434
 
     # GSC absolute is the sum of consumption times price in every hour divided by the sum of consumption times thes average price
     loads["demand_price_ref"] = loads["ref_grid_demand_stock_MW"] * loads["price (cent/kWh)"]
@@ -924,7 +922,11 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     copy = GSC_mean.loc[GSC_mean["ID_EnergyPrice"]=="Price 1", :].copy()
     copy["ID_EnergyPrice"] = "reference"
     eu_df = pd.concat([GSC_mean[["ID_EnergyPrice", "country", "year", "GSC_rel_opt"]].rename(columns={"GSC_rel_opt": "GSC_rel"}), copy[["ID_EnergyPrice", "country", "year", "GSC_rel_ref"]].rename(columns={"GSC_rel_ref": "GSC_rel"})], axis=0)
+    return eu_df
 
+
+def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
+    eu_df = calculate_GSC(loads=loads)
     sns.boxplot(
         data=eu_df,
         x="GSC_rel",
@@ -1188,12 +1190,23 @@ def analyse_prices(loads: pd.DataFrame, national: pd.DataFrame):
     plot_price_prop("min")
 
 def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
+    input_variables = []
+    output_variables = []
+
     merged = pd.merge(left=loads, right=national[["country", "demand", "year", "Hour"]], on=["year", "Hour", "country"])
     merged["demand_opt"] = merged["demand"] - merged["ref_grid_demand_stock_MW"] + merged["opt_grid_demand_stock_MW"]
     demand_peaks = merged.groupby(["year", "country", "ID_EnergyPrice"])[["demand", "demand_opt"]].max().reset_index()
-    demand_peaks["peak increase"] = (demand_peaks["demand_opt"] - demand_peaks["demand"]) / demand_peaks["demand"] * 100  # %
-    demand_peaks = demand_peaks[["country", "year", "ID_EnergyPrice", "peak increase"]].copy()
+    demand_peaks["national demand peak increase (%)"] = (demand_peaks["demand_opt"] - demand_peaks["demand"]) / demand_peaks["demand"] * 100  # %
+    demand_peaks = demand_peaks[["country", "year", "ID_EnergyPrice", "national demand peak increase (%)"]].copy()
+    output_variables.append("national demand peak increase (%)")
 
+    # national demand
+    national_demand = merged.groupby(["year", "country", "ID_EnergyPrice"])["demand"].sum().reset_index()
+    national_demand.rename(columns={"demand": "national demand MWh"}, inplace=True)
+    merged2 = pd.merge(left=demand_peaks, right=national_demand, on=["country", "year", "ID_EnergyPrice"])
+    input_variables.append("national demand MWh")
+
+    # load factor
     groups = loads.groupby(["year", "country", "ID_EnergyPrice"])
     factor_ref = groups[["ref_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
         lambda g: (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "ref_grid_demand_stock_MW"].sum() - g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "ref_grid_demand_stock_MW"].sum()) / (g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "ref_grid_demand_stock_MW"].sum() + g.loc[g["price (cent/kWh)"] >=g["price (cent/kWh)"].quantile(0.75), "ref_grid_demand_stock_MW"].sum())
@@ -1204,52 +1217,96 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     load_factor = pd.merge(right=factor_ref, left=factor_opt, on=["year", "country", "ID_EnergyPrice"])
     load_factor["flexibility factor change"] = load_factor["flexibility factor prosumager"] - load_factor["flexibility factor reference"]
     load_factor = load_factor[["country", "year", "ID_EnergyPrice", "flexibility factor reference", "flexibility factor prosumager", "flexibility factor change"]].copy()
+    merged3 = pd.merge(left=merged2, right=load_factor, on=["country", "year", "ID_EnergyPrice"])
+    [output_variables.append(x) for x in ["flexibility factor reference", "flexibility factor prosumager", "flexibility factor change"]];
 
+    # change in total elec demand of prosumagers
     demand = loads.groupby(["country", "year", "ID_EnergyPrice"])[["opt_grid_demand_stock_MW", "ref_grid_demand_stock_MW"]].sum().reset_index()
-    demand["change (%)"] = (demand["opt_grid_demand_stock_MW"] - demand["ref_grid_demand_stock_MW"]) / demand["ref_grid_demand_stock_MW"] * 100  #%
-    demand = demand[["country", "year", "ID_EnergyPrice", "change (%)"]].copy()
+    demand["prosumager demand change (%)"] = (demand["opt_grid_demand_stock_MW"] - demand["ref_grid_demand_stock_MW"]) / demand["ref_grid_demand_stock_MW"] * 100  #%
+    demand = demand[["country", "year", "ID_EnergyPrice", "prosumager demand change (%)"]].copy()
+    merged4 = pd.merge(left=merged3, right=demand, on=["country", "year", "ID_EnergyPrice"])
+    output_variables.append("prosumager demand change (%)")
 
+    # price properties
     loads['avg price change magnitude'] = loads['price (cent/kWh)'].diff().abs()
     price_props = loads.groupby(["ID_EnergyPrice", "year", "country"])["price (cent/kWh)"].agg(['mean', 'std', 'max', 'min', 'var']).reset_index()
+    price_props.rename(columns={"mean": 'price mean', 'std': "price std" , 'max': "price max", 'min': "price min", 'var': "price var"}, inplace=True)
     p = loads.groupby(["ID_EnergyPrice", "year", "country"])["avg price change magnitude"].mean().reset_index()
     price = pd.merge(left=price_props, right=p, on=["country", "year", "ID_EnergyPrice"])
-
     copy_loads = loads.copy()
     copy_loads["day"] = (copy_loads["Hour"]-1) // 24 + 1
     copy_loads = copy_loads.groupby(["ID_EnergyPrice", "year", "country", "day"])["price (cent/kWh)"].agg(["max", "min"]).reset_index()
     copy_loads["avg daily peak to peak"] = copy_loads["max"] - copy_loads["min"]
     peak_to_peak = copy_loads.groupby(["ID_EnergyPrice", "year", "country"])["avg daily peak to peak"].mean().reset_index()
     price = pd.merge(left=price, right=peak_to_peak, on=["country", "year", "ID_EnergyPrice"])
+    merged5 = pd.merge(left=merged4, right=price, on=["country", "year", "ID_EnergyPrice"])
+    [input_variables.append(x) for x in ['price mean', 'price std', 'price max', 'price min', 'price var', 'avg daily peak to peak']];
+    
+    # correlation with outside temperature,  number HPs, heat demand kWh/m2, nr heat pump / total elec demand on country
+    heat_demand = Cp.create_national_heat_demand_df(percentage_cooling=COOLING_PERCENTAGE)
+    heat_demand["ID_EnergyPrice"] = heat_demand["ID_EnergyPrice"].map({1: "Price 1", 2: "Price 2"})
+    heat_demand["year"] = heat_demand["year"].astype(int)
+    merged6 = pd.merge(left=merged5, right=heat_demand, on=["country", "year", "ID_EnergyPrice"])
+    [output_variables.append(x) for x in ["Heating ref demand (kWh/m2)", "Heating opt demand (kWh/m2)"]];
 
-    merge_1 = pd.merge(left=price, right=demand_peaks, on=["country", "year", "ID_EnergyPrice"])
-    merge_2 = pd.merge(left=merge_1, right=load_factor, on=["country", "year", "ID_EnergyPrice"])
-    df = pd.merge(left=merge_2, right=demand, on=["country", "year", "ID_EnergyPrice"])
+    hp_numbers = Cp.create_number_of_HPs_df(COOLING_PERCENTAGE)
+    hp_numbers["ID_EnergyPrice"] = hp_numbers["ID_EnergyPrice"].map({1: "Price 1", 2: "Price 2"})
+    hp_numbers["year"] = hp_numbers["year"].astype(int)
+    hp_numbers.rename(columns={"number_of_buildings": "number of HPs in country"}, inplace=True)
+    merged7 = pd.merge(left=merged6, right=hp_numbers, on=["country", "year", "ID_EnergyPrice"])
+    input_variables.append("number of HPs in country")
+
+    # number of HPs per national demand
+    merged7["number HPs per national demand"] = merged7["number of HPs in country"] / merged7["national demand MWh"]
+    input_variables.append("number HPs per national demand")
+
+    # include the GSC relative
+    gsc = calculate_GSC(loads=loads)
+    gsc = gsc.loc[gsc["ID_EnergyPrice"]!="reference", :]
+    merged8 = pd.merge(left=merged7, right=gsc, on=["country", "year", "ID_EnergyPrice"])
+    output_variables.append("GSC_rel")
+
     # normalize
-    # numeric_columns = ['mean', 'std', 'max', 'min', 'peak increase', "change (%)", "flexibility factor reference", "flexibility factor prosumager", "flexibility factor change"]
+    # numeric_columns = ['mean', 'std', 'max', 'min', 'national demand peak increase (%)', "prosumager demand change (%)", "flexibility factor reference", "flexibility factor prosumager", "flexibility factor change"]
     # df[numeric_columns] = df[numeric_columns].apply(lambda x: (x - x.min()) / (x.max() - x.min()))
 
     correlation_results = pd.DataFrame()
-    target_columns = ['peak increase', "change (%)", "flexibility factor reference", "flexibility factor prosumager", "flexibility factor change", ]
     # Loop over columns and calculate correlation with target columns
-    for column in target_columns:
+    for column in output_variables:
         # Calculate correlation between each column and all target columns
-        correlation_results[column] = df[['mean', 'std', 'max', 'min', 'var', "avg price change magnitude", "avg daily peak to peak"]].apply(lambda x: x.corr(df[column]))
+        correlation_results[column] = merged8[input_variables].apply(lambda x: x.corr(merged8[column]))
 
+    m = pd.merge(left=merged, right = loads, on=["Hour", "ID_EnergyPrice", "country", "year"])
+    merged["demand_opt"].corr(merged["price (cent/kWh)"])
+    
     sns.heatmap(
         data=correlation_results,
         cmap=sns.color_palette("Spectral_r", as_cmap=True),
         vmin=-1,
-        vmax=1
+        vmax=1,
+        annot=False,
     )
 
     plt.tight_layout()
-    plt.savefig(SAVING_PATH / f"Heatmap_price_correlation_cooling{COOLING_PERCENTAGE}.svg")
+    plt.savefig(SAVING_PATH / f"Heatmap_correlation_cooling{COOLING_PERCENTAGE}.svg")
     plt.close()
 
 
-    # correlation with outside temperature,  number HPs, heat demand kWh/m2
-    heat_demand = Cp.create_national_heat_demand_df(percentage_cooling=COOLING_PERCENTAGE)
-    hp_numbers = Cp.create_number_of_HPs_df(COOLING_PERCENTAGE)
+    # number of HPs per national demand
+    n_order = merged7.groupby("country")["number HPs per national demand"].mean().sort_values().index
+    sns.barplot(
+        data=merged7,
+        x="country",
+        y="number HPs per national demand",
+        palette=sns.color_palette(),
+        hue="year",
+        order=n_order
+    )
+    plt.ylabel("number of heat pumps divided by national demand ([-]/MWh)")
+    plt.xticks(rotation=90)
+    plt.savefig(SAVING_PATH / f"Number_HPs_per_national_demand_cooling{COOLING_PERCENTAGE}.svg")
+    plt.close()
+
 
     numbers_order = hp_numbers.groupby("country")["number_of_buildings"].mean().sort_values().index
     sns.barplot(
@@ -1279,7 +1336,6 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     plt.savefig(SAVING_PATH / f"heat_demand_avg.svg")
     plt.close()
     
-    target_columns = ["Heating ref demand (kWh/m2)", "Heating opt demand (kWh/m2)"]
 
 def main(percentage_cooling: float):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
@@ -1293,7 +1349,7 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    # calculate_price_correlations(loads=df, national=national_demand)
+    calculate_price_correlations(loads=df, national=national_demand)
     # analyse_prices(loads=df, national=national_demand)
     # analyse_peak_demand(loads=df, national=national_demand)
     # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
@@ -1303,7 +1359,7 @@ def main(percentage_cooling: float):
     # plot_flexible_storage_efficiency(loads=df)
     # show_average_day_profile(loads=df)
     # show_flexibility_factor(loads=df)
-    show_GSCrel_and_GSC_abs(loads=df)
+    # show_GSCrel_and_GSC_abs(loads=df)
     # plot_grid_demand_increase(loads=df)
 
     # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
@@ -1312,7 +1368,7 @@ def main(percentage_cooling: float):
 
 
 if __name__ == "__main__":
-    COOLING_PERCENTAGE = 0.1
+    COOLING_PERCENTAGE = 0.9
     main(
         percentage_cooling=COOLING_PERCENTAGE,
     )
