@@ -177,17 +177,19 @@ def plot_flexible_storage_efficiency(loads: pd.DataFrame):
     storage_efficiency = storage_efficiency.reset_index()
     storage_efficiency.rename(columns={0: "storage efficiency"}, inplace=True)
 
-    sns.barplot(
-        data=storage_efficiency,
+    g = sns.FacetGrid(storage_efficiency, col="ID_EnergyPrice", col_wrap=1, height=5, aspect=1.5, sharex=True, sharey=False)
+    g.map_dataframe(
+        sns.barplot,
         x="country",
         y="storage efficiency",
         hue="year",
         palette=sns.color_palette(),
-        
-
     )
-    plt.suptitle("Storage efficiency")
-    plt.xticks(rotation=90)
+
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)  
+    g.set_axis_labels("Country", "storage efficiency ignoring PV")
+
     plt.savefig(SAVING_PATH / f"Storage_efficiency_cooling{COOLING_PERCENTAGE}.svg")
     # plt.show()
     plt.close()
@@ -200,20 +202,28 @@ def plot_flexible_storage_efficiency(loads: pd.DataFrame):
 
     grouped = loads.groupby(["country", "year", "ID_EnergyPrice"])
     storage_efficiency = 1 - (grouped["opt_Load_MW"].sum() - grouped["ref_Load_MW"].sum()) / grouped["charging_energy_pv_cleaned"].sum()
-    storage_efficiency = storage_efficiency.reset_index()
-    storage_efficiency.rename(columns={0: "storage efficiency"}, inplace=True)
+    storage_efficiency = storage_efficiency.reset_index(name="storage efficiency")
+    order = storage_efficiency.groupby("country")["storage efficiency"].mean().sort_values().index
 
-    sns.barplot(
-        data=storage_efficiency,
+    g = sns.FacetGrid(storage_efficiency, col="ID_EnergyPrice", col_wrap=1, height=6, aspect=1.5, sharex=True, sharey=False)
+    g.map_dataframe(
+        sns.barplot,
         x="country",
         y="storage efficiency",
         hue="year",
         palette=sns.color_palette(),
-        
-
+        order=order,
     )
-    plt.suptitle("Storage efficiency including PV")
-    plt.xticks(rotation=90)
+
+    g.set_titles("{col_name}")
+    for ax in g.axes.flat:
+        a0 = 1
+        ax.set_xticks(ax.get_xticklabels(), rotation=90)
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)  
+    # g.fig.subplots_adjust(bottom=0.2)
+    g.set_axis_labels("", "storage efficiency including PV")
+    g.add_legend()
+    plt.tight_layout()
     plt.savefig(SAVING_PATH / f"Storage_efficiency_with_PV_cooling{COOLING_PERCENTAGE}.svg")
     # plt.show()
     plt.close()
@@ -1349,14 +1359,14 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    calculate_price_correlations(loads=df, national=national_demand)
+    # calculate_price_correlations(loads=df, national=national_demand)
     # analyse_prices(loads=df, national=national_demand)
     # analyse_peak_demand(loads=df, national=national_demand)
     # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
     # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
     # plot_shifted_electricity(loads=df)
     # plot_PV_self_consumption(loads=df)
-    # plot_flexible_storage_efficiency(loads=df)
+    plot_flexible_storage_efficiency(loads=df)
     # show_average_day_profile(loads=df)
     # show_flexibility_factor(loads=df)
     # show_GSCrel_and_GSC_abs(loads=df)
@@ -1368,7 +1378,7 @@ def main(percentage_cooling: float):
 
 
 if __name__ == "__main__":
-    COOLING_PERCENTAGE = 0.9
+    COOLING_PERCENTAGE = 0.1
     main(
         percentage_cooling=COOLING_PERCENTAGE,
     )
