@@ -573,11 +573,11 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
         lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "demand_opt"].sum()
     ).reset_index(name="prosumager low price demand")
     plot_df = pd.merge(right=low_demand_ref, left=low_demand_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df["1st quantile demand increase (%)"] = (plot_df["prosumager low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
+    plot_df["1st quartile demand increase (%)"] = (plot_df["prosumager low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
     
     
     eu_groups = plot_df.groupby(["year", "ID_EnergyPrice"])[["prosumager low price demand", "reference low price demand"]].sum().reset_index()
-    eu_groups["1st quantile demand increase (%)"] = (eu_groups["prosumager low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
+    eu_groups["1st quartile demand increase (%)"] = (eu_groups["prosumager low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
     
     
     high_demand_ref = groups[["demand", "price (cent/kWh)"]].apply(
@@ -587,18 +587,18 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
         lambda g: g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "demand_opt"].sum()
     ).reset_index(name="prosumager high price demand")
     plot_df2 = pd.merge(right=high_demand_ref, left=high_demand_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df2["3rd quantile demand increase (%)"] = (plot_df2["prosumager high price demand"] - plot_df2["reference high price demand"]) / plot_df2["reference high price demand"] * 100
+    plot_df2["4th quartile demand increase (%)"] = (plot_df2["prosumager high price demand"] - plot_df2["reference high price demand"]) / plot_df2["reference high price demand"] * 100
     
     eu_groups2 = plot_df2.groupby(["year", "ID_EnergyPrice"])[["prosumager high price demand", "reference high price demand"]].sum().reset_index()
-    eu_groups2["3rd quantile demand increase (%)"] = (eu_groups2["prosumager high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
-    eu_df = pd.merge(left=eu_groups, right=eu_groups2[["year", "ID_EnergyPrice", "3rd quantile demand increase (%)"]], on=["year", "ID_EnergyPrice"])
+    eu_groups2["4th quartile demand increase (%)"] = (eu_groups2["prosumager high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
+    eu_df = pd.merge(left=eu_groups, right=eu_groups2[["year", "ID_EnergyPrice", "4th quartile demand increase (%)"]], on=["year", "ID_EnergyPrice"])
 
-    plot_df_large = pd.merge(left=plot_df, right=plot_df2[["year", "ID_EnergyPrice", "3rd quantile demand increase (%)", "country"]], on=["year", "ID_EnergyPrice", "country"])
+    plot_df_large = pd.merge(left=plot_df, right=plot_df2[["year", "ID_EnergyPrice", "4th quartile demand increase (%)", "country"]], on=["year", "ID_EnergyPrice", "country"])
     
 
     ax2 = sns.barplot(
         data=eu_df,
-        x="3rd quantile demand increase (%)",
+        x="4th quartile demand increase (%)",
         y="year",
         hue="ID_EnergyPrice",
         palette=sns.color_palette(),
@@ -608,7 +608,7 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
         p.set_hatch('//') 
     ax1 = sns.barplot(
         data=eu_df,
-        x="1st quantile demand increase (%)",
+        x="1st quartile demand increase (%)",
         y="year",
         hue="ID_EnergyPrice",
         palette=sns.color_palette(),
@@ -625,22 +625,22 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
     ]
     plt.legend(handles=legend_handles, title="Electricity price scenario")
     plt.xlim(
-        min(eu_df["3rd quantile demand increase (%)"]),
-        max(eu_df["1st quantile demand increase (%)"])
+        min(eu_df["4th quartile demand increase (%)"]),
+        max(eu_df["1st quartile demand increase (%)"])
     )
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"Change_in_total_demand_in_price_quantiles_EU_cooling{COOLING_PERCENTAGE}.svg")
     # plt.show()
     plt.close()
 
-    order = plot_df_large.groupby("country")["3rd quantile demand increase (%)"].mean().sort_values().index
+    order = plot_df_large.groupby("country")["4th quartile demand increase (%)"].mean().sort_values().index
     g = sns.FacetGrid(plot_df_large, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
 
     # Map the barplot to each facet
     ax1 = g.map_dataframe(
         sns.barplot,
         x="country",
-        y="3rd quantile demand increase (%)",
+        y="4th quartile demand increase (%)",
         hue="year",
         order=order,
         palette=sns.color_palette()
@@ -651,7 +651,7 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
     g.map_dataframe(
         sns.barplot,
         x="country",
-        y="1st quantile demand increase (%)",
+        y="1st quartile demand increase (%)",
         hue="year",
         order=order,
         palette=sns.color_palette()
@@ -688,8 +688,8 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
         lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "opt_grid_demand_stock_MW"].sum()
     ).reset_index(name="prosumager low price demand")
     plot_df = pd.merge(right=low_demand_ref, left=low_demand_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df["1st quantile demand increase (%)"] = (plot_df["prosumager low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
-    x_order = plot_df.groupby("country")["1st quantile demand increase (%)"].mean().sort_values().index
+    plot_df["1st quartile demand increase (%)"] = (plot_df["prosumager low price demand"] - plot_df["reference low price demand"]) / plot_df["reference low price demand"] * 100
+    x_order = plot_df.groupby("country")["1st quartile demand increase (%)"].mean().sort_values().index
     
     g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
 
@@ -697,7 +697,7 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
     g.map_dataframe(
         sns.barplot,
         x="country",
-        y="1st quantile demand increase (%)",
+        y="1st quartile demand increase (%)",
         hue="year",
         order=x_order,
         palette=sns.color_palette()
@@ -717,7 +717,7 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
 
     # Increase of demand in 1st price quantile on EU level:
     eu_groups = plot_df.groupby(["year", "ID_EnergyPrice"])[["prosumager low price demand", "reference low price demand"]].sum().reset_index()
-    eu_groups["1st quantile demand increase (%)"] = (eu_groups["prosumager low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
+    eu_groups["1st quartile demand increase (%)"] = (eu_groups["prosumager low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
 
     # increase in demand at high prices:
     high_demand_ref = groups[["ref_grid_demand_stock_MW", "price (cent/kWh)"]].apply(
@@ -727,7 +727,7 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
         lambda g: g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "opt_grid_demand_stock_MW"].sum()
     ).reset_index(name="prosumager high price demand")
     plot_df = pd.merge(right=high_demand_ref, left=high_demand_opt, on=["year", "country", "ID_EnergyPrice"])
-    plot_df["3rd quantile demand increase (%)"] = (plot_df["prosumager high price demand"] - plot_df["reference high price demand"]) / plot_df["reference high price demand"] * 100
+    plot_df["4th quartile demand increase (%)"] = (plot_df["prosumager high price demand"] - plot_df["reference high price demand"]) / plot_df["reference high price demand"] * 100
     
     g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
 
@@ -735,7 +735,7 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
     g.map_dataframe(
         sns.barplot,
         x="country",
-        y="3rd quantile demand increase (%)",
+        y="4th quartile demand increase (%)",
         hue="year",
         order=x_order,
         palette=sns.color_palette()
@@ -755,13 +755,13 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
 
     # Increase of demand in 1st price quantile on EU level:
     eu_groups2 = plot_df.groupby(["year", "ID_EnergyPrice"])[["prosumager high price demand", "reference high price demand"]].sum().reset_index()
-    eu_groups2["3rd quantile demand increase (%)"] = (eu_groups2["prosumager high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
-    eu_df = pd.merge(left=eu_groups, right=eu_groups2[["year", "ID_EnergyPrice", "3rd quantile demand increase (%)"]], on=["year", "ID_EnergyPrice"])
+    eu_groups2["4th quartile demand increase (%)"] = (eu_groups2["prosumager high price demand"] - eu_groups2["reference high price demand"]) / eu_groups2["reference high price demand"] * 100
+    eu_df = pd.merge(left=eu_groups, right=eu_groups2[["year", "ID_EnergyPrice", "4th quartile demand increase (%)"]], on=["year", "ID_EnergyPrice"])
     
 
     ax2 = sns.barplot(
         data=eu_df,
-        x="3rd quantile demand increase (%)",
+        x="4th quartile demand increase (%)",
         y="year",
         hue="ID_EnergyPrice",
         palette=sns.color_palette(),
@@ -772,7 +772,7 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
 
     ax1 = sns.barplot(
         data=eu_df,
-        x="1st quantile demand increase (%)",
+        x="1st quartile demand increase (%)",
         y="year",
         hue="ID_EnergyPrice",
         palette=sns.color_palette(),
@@ -789,8 +789,8 @@ def show_residential_demand_increase_in_high_and_low_price_quantile(loads: pd.Da
     ]
     plt.legend(handles=legend_handles, title="Electricity price scenario",)
     plt.xlim(
-        min(eu_df["3rd quantile demand increase (%)"]),
-        max(eu_df["1st quantile demand increase (%)"])
+        min(eu_df["4th quartile demand increase (%)"]),
+        max(eu_df["1st quartile demand increase (%)"])
     )
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"Change_in_residential_demand_in_price_quantiles_EU_cooling{COOLING_PERCENTAGE}.svg")
@@ -1322,11 +1322,11 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     plt.close()
 
 
-    numbers_order = hp_numbers.groupby("country")["number_of_buildings"].mean().sort_values().index
+    numbers_order = hp_numbers.groupby("country")["number of HPs in country"].mean().sort_values().index
     sns.barplot(
         data=hp_numbers,
         x="country",
-        y="number_of_buildings",
+        y="number of HPs in country",
         hue="year",
         palette=sns.color_palette(),
         order=numbers_order
@@ -1378,19 +1378,19 @@ def main(percentage_cooling: float):
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
     calculate_price_correlations(loads=df, national=national_demand)
-    # analyse_prices(loads=df, national=national_demand)
-    # analyse_peak_demand(loads=df, national=national_demand)
-    # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
-    # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
-    # plot_shifted_electricity(loads=df)
-    # plot_PV_self_consumption(loads=df)
+    analyse_prices(loads=df, national=national_demand)
+    analyse_peak_demand(loads=df, national=national_demand)
+    show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
+    show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
+    plot_shifted_electricity(loads=df)
+    plot_PV_self_consumption(loads=df)
     plot_flexible_storage_efficiency(loads=df)
-    # show_average_day_profile(loads=df)
-    # show_flexibility_factor(loads=df)
-    # show_GSCrel_and_GSC_abs(loads=df)
-    # plot_grid_demand_increase(loads=df)
+    show_average_day_profile(loads=df)
+    show_flexibility_factor(loads=df)
+    show_GSCrel_and_GSC_abs(loads=df)
+    plot_grid_demand_increase(loads=df)
 
-    # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
+    plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
     # show_day_with_peak_deamand(loads=df, scenario="shiny happy", national=national_demand)
 
@@ -1400,7 +1400,7 @@ if __name__ == "__main__":
     main(
         percentage_cooling=COOLING_PERCENTAGE,
     )
-    # TODO weather profile check!
+    # TODO 
     # weather data from balmorel
     # quartile! 4th
     # p hat ist pstrich
