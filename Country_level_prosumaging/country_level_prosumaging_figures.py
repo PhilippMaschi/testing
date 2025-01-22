@@ -1276,6 +1276,13 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     merged8 = pd.merge(left=merged7, right=gsc, on=["country", "year", "ID_EnergyPrice"])
     output_variables.append("GSC_rel")
 
+    # include outside temperature
+    temp_df = Cp.create_national_temperature_df()
+    mean_temp = temp_df.groupby(["country","year"])["temperature"].mean().reset_index()
+    mean_temp["year"] = mean_temp["year"].astype(int)
+    merged9 = pd.merge(left=merged8, right=mean_temp, on=["country", "year"])
+    input_variables.append("temperature")
+
     # normalize
     # numeric_columns = ['mean', 'std', 'max', 'min', 'national demand peak increase (%)', "prosumager demand change (%)", "flexibility factor reference", "flexibility factor prosumager", "flexibility factor change"]
     # df[numeric_columns] = df[numeric_columns].apply(lambda x: (x - x.min()) / (x.max() - x.min()))
@@ -1284,10 +1291,7 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     # Loop over columns and calculate correlation with target columns
     for column in output_variables:
         # Calculate correlation between each column and all target columns
-        correlation_results[column] = merged8[input_variables].apply(lambda x: x.corr(merged8[column]))
-
-    m = pd.merge(left=merged, right = loads, on=["Hour", "ID_EnergyPrice", "country", "year"])
-    merged["demand_opt"].corr(merged["price (cent/kWh)"])
+        correlation_results[column] = merged9[input_variables].apply(lambda x: x.corr(merged9[column]))
     
     sns.heatmap(
         data=correlation_results,
@@ -1345,6 +1349,20 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     plt.xticks(rotation=90)
     plt.savefig(SAVING_PATH / f"heat_demand_avg.svg")
     plt.close()
+
+    temperature_order = mean_temp.groupby("country")["temperature"].mean().sort_values().index
+    sns.barplot(
+        data=mean_temp,
+        x="country",
+        y="temperature",
+        palette=sns.color_palette(),
+        hue="country",
+        order=temperature_order
+    )   
+    plt.ylabel("average yearly temperature (°C)")
+    plt.xticks(rotation=90)
+    plt.savefig(SAVING_PATH / f"temperature_avg.svg")
+    plt.close()
     
 
 def main(percentage_cooling: float):
@@ -1359,7 +1377,7 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    # calculate_price_correlations(loads=df, national=national_demand)
+    calculate_price_correlations(loads=df, national=national_demand)
     # analyse_prices(loads=df, national=national_demand)
     # analyse_peak_demand(loads=df, national=national_demand)
     # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
@@ -1382,3 +1400,9 @@ if __name__ == "__main__":
     main(
         percentage_cooling=COOLING_PERCENTAGE,
     )
+    # TODO weather profile check!
+    # weather data from balmorel
+    # quartile! 4th
+    # p hat ist pstrich
+    #GSC gewichten mit täglichem Verbruach mal durchschnitts preis
+    # describe excluding malta ...

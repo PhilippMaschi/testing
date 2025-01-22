@@ -297,6 +297,11 @@ def get_heating_demand(db: DB):
     ref = db.read_dataframe(table_name="OperationResult_RefYear")
     return (ref[["ID_Scenario", "Q_RoomHeating"]], opt[["ID_Scenario", "Q_RoomHeating"]])
 
+def get_country_temperature_profile(folder_name: Path):
+    db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
+    temp_table = db.read_dataframe(table_name="OperationScenario_RegionWeather")
+    return temp_table[["id_hour", "temperature", "pv_generation_optimal"]]
+     
 def get_country_specific_heating_demand(folder_name: Path, perc_cooling: float):
     db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
     scenario_table = db.read_dataframe(table_name="OperationScenario")
@@ -372,6 +377,27 @@ def get_price_profile(folder_name: Path):
     db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
     price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1", "electricity_2"])
     return price_table
+
+def create_national_temperature_df():
+    path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
+    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    dfs = []
+    for folder_name in folder_names:
+        if folder_name in ["CYP_2020", "MLT_2020"]:
+            continue
+        folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[-2]
+        year = folder.name.split("_")[-1]
+        df = get_country_temperature_profile(
+            folder_name=folder,
+        )
+        df["country"] = country
+        df["year"] = year
+        dfs.append(df)
+        
+    big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
+    big_df.columns = [str(col) for col in big_df.columns]
+    return big_df
 
 def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
