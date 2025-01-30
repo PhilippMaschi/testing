@@ -292,17 +292,21 @@ def get_total_number_of_buildings_with_HP(folder_name: Path, perc_cooling: float
     df = building_numbers.groupby("ID_EnergyPrice")["number_of_buildings"].sum().reset_index()
     return df
 
-def get_heating_demand(db: DB):
-    opt = db.read_dataframe(table_name="OperationResult_OptYear", )
-    ref = db.read_dataframe(table_name="OperationResult_RefYear")
-    return (ref[["ID_Scenario", "Q_RoomHeating"]], opt[["ID_Scenario", "Q_RoomHeating"]])
-
+def get_heating_demand(db: DB, include_opt: bool = True):
+    if include_opt:
+        opt = db.read_dataframe(table_name="OperationResult_OptYear", )
+        ref = db.read_dataframe(table_name="OperationResult_RefYear")
+        return (ref[["ID_Scenario", "Q_RoomHeating"]], opt[["ID_Scenario", "Q_RoomHeating"]])
+    else:
+        ref = db.read_dataframe(table_name="OperationResult_RefYear")
+        return (ref[["ID_Scenario", "Q_RoomHeating"]], _)
+    
 def get_country_temperature_profile(folder_name: Path):
     db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
     temp_table = db.read_dataframe(table_name="OperationScenario_RegionWeather")
     return temp_table[["id_hour", "temperature", "pv_generation_optimal"]]
      
-def get_country_specific_heating_demand(folder_name: Path, perc_cooling: float):
+def get_country_specific_heating_demand(folder_name: Path, perc_cooling: float, include_opt: bool = True):
     db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
     scenario_table = db.read_dataframe(table_name="OperationScenario")
     building_table = db.read_dataframe(table_name="OperationScenario_Component_Building")
@@ -318,17 +322,24 @@ def get_country_specific_heating_demand(folder_name: Path, perc_cooling: float):
     scen_df = pd.merge(left=scenario_df, right=building_table[["ID_Building", "Af"]], on="ID_Building")
 
     building_numbers = scen_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice", "Af"]].copy()
-    opt_stock = pd.merge(left=building_numbers, right=opt_heating, on="ID_Scenario") 
-    opt_stock["Q_RoomHeating_opt_kWh/m2"] = opt_stock["Q_RoomHeating"] / opt_stock["Af"] / 1_000
-    opt_stock.drop(columns="Q_RoomHeating", inplace=True)
-    stock = pd.merge(left=opt_stock, right=ref_heating, on="ID_Scenario")
-    stock["Q_RoomHeating_ref_kWh/m2"] = stock["Q_RoomHeating"] / stock["Af"] / 1_000
-    stock.drop(columns="Q_RoomHeating", inplace=True)
+    if include_opt:
+        opt_stock = pd.merge(left=building_numbers, right=opt_heating, on="ID_Scenario") 
+        opt_stock["Q_RoomHeating_opt_kWh/m2"] = opt_stock["Q_RoomHeating"] / opt_stock["Af"] / 1_000
+        opt_stock.drop(columns="Q_RoomHeating", inplace=True)
+        stock = pd.merge(left=opt_stock, right=ref_heating, on="ID_Scenario")
+        stock["Q_RoomHeating_ref_kWh/m2"] = stock["Q_RoomHeating"] / stock["Af"] / 1_000
+        stock.drop(columns="Q_RoomHeating", inplace=True)
 
-    avg_heating_ref = stock.groupby(["ID_EnergyPrice"])[["Q_RoomHeating_ref_kWh/m2", "number_of_buildings"]].apply(lambda x: (x['Q_RoomHeating_ref_kWh/m2'] * x['number_of_buildings']).sum() / x['number_of_buildings'].sum()).reset_index(name="Heating ref demand (kWh/m2)")
-    avg_heating_opt = stock.groupby(["ID_EnergyPrice"])[["Q_RoomHeating_opt_kWh/m2", "number_of_buildings"]].apply(lambda x: (x['Q_RoomHeating_opt_kWh/m2'] * x['number_of_buildings']).sum() / x['number_of_buildings'].sum()).reset_index(name="Heating opt demand (kWh/m2)")
+        avg_heating_ref = stock.groupby(["ID_EnergyPrice"])[["Q_RoomHeating_ref_kWh/m2", "number_of_buildings"]].apply(lambda x: (x['Q_RoomHeating_ref_kWh/m2'] * x['number_of_buildings']).sum() / x['number_of_buildings'].sum()).reset_index(name="Heating ref demand (kWh/m2)")
+        avg_heating_opt = stock.groupby(["ID_EnergyPrice"])[["Q_RoomHeating_opt_kWh/m2", "number_of_buildings"]].apply(lambda x: (x['Q_RoomHeating_opt_kWh/m2'] * x['number_of_buildings']).sum() / x['number_of_buildings'].sum()).reset_index(name="Heating opt demand (kWh/m2)")
 
-    df = pd.concat([avg_heating_ref, avg_heating_opt[["Heating opt demand (kWh/m2)"]]], axis=1)
+        df = pd.concat([avg_heating_ref, avg_heating_opt[["Heating opt demand (kWh/m2)"]]], axis=1)
+    else:
+        stock = pd.merge(left=building_numbers, right=ref_heating, on="ID_Scenario")
+        stock["Q_RoomHeating_ref_kWh/m2"] = stock["Q_RoomHeating"] / stock["Af"] / 1_000
+        stock.drop(columns="Q_RoomHeating", inplace=True)
+        df = stock.groupby(["ID_EnergyPrice"])[["Q_RoomHeating_ref_kWh/m2", "number_of_buildings"]].apply(lambda x: (x['Q_RoomHeating_ref_kWh/m2'] * x['number_of_buildings']).sum() / x['number_of_buildings'].sum()).reset_index(name="Heating ref demand (kWh/m2)")
+
     return df
 
 def get_country_load_profiles(folder_name: Path, perc_cooling: float):
@@ -421,6 +432,29 @@ def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
     big_df.columns = [str(col) for col in big_df.columns]
     return big_df
 
+def read_ref_2020_national_heat_demand(percentage_cooling: float) -> pd.DataFrame:
+    path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
+    
+    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020]]
+    dfs = []
+    for folder_name in folder_names:
+        if folder_name in ["CYP_2020", "MLT_2020"]:
+            continue
+        folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[-2]
+        year = folder.name.split("_")[-1]
+        df = get_country_specific_heating_demand(
+            folder_name=folder,
+            perc_cooling=percentage_cooling,
+            include_opt=False
+        )
+        df["country"] = country
+        df["year"] = year
+        dfs.append(df)
+
+    big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
+    big_df.columns = [str(col) for col in big_df.columns]
+    return big_df
 
 def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
@@ -438,6 +472,7 @@ def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
         df = get_country_specific_heating_demand(
             folder_name=folder,
             perc_cooling=percentage_cooling,
+            include_opt=True
         )
         df["country"] = country
         df["year"] = year

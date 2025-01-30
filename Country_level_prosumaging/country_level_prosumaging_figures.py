@@ -217,8 +217,6 @@ def plot_flexible_storage_efficiency(loads: pd.DataFrame):
 
     g.set_titles("{col_name}")
     for ax in g.axes.flat:
-        a0 = 1
-        ax.set_xticks(ax.get_xticklabels(), rotation=90)
         ax.set_xticklabels(ax.get_xticklabels(), rotation=90)  
     # g.fig.subplots_adjust(bottom=0.2)
     g.set_axis_labels("", "storage efficiency including PV")
@@ -922,21 +920,31 @@ def calculate_GSC(loads: pd.DataFrame)-> pd.DataFrame:
         GSC_rel_ref = max(min(100, GSC_rel_ref), -100)
         GSC_rel_opt = max(min(100, GSC_rel_opt), -100)
 
-        dfs.append(pd.DataFrame(data=[[day, country, year, price_id, GSC_ref_achieved, GSC_opt_achieved, GSC_rel_ref, GSC_rel_opt]], 
-                     columns=["day", "country", "year", "ID_EnergyPrice", "GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt"]))
+        GSC_rel_ref_weighted = GSC_rel_ref * (mean_price * demand_ref_sum)
+        GSC_rel_opt_weighted = GSC_rel_opt * (mean_price * demand_opt_sum)
+
+
+        dfs.append(pd.DataFrame(data=[[day, country, year, price_id, GSC_ref_achieved, GSC_opt_achieved, GSC_rel_ref, GSC_rel_opt, GSC_rel_ref_weighted, GSC_rel_opt_weighted, (mean_price * demand_opt_sum)]], 
+                     columns=["day", "country", "year", "ID_EnergyPrice", "GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt", "GSC_rel_ref_weighted", "GSC_rel_opt_weighted", "mean_price*demand"]))
     
     GSC_df = pd.concat(dfs, axis=0).reset_index(drop=True)
+    GSC_weighted = GSC_df.groupby(["ID_EnergyPrice", "country", "year"])[["GSC_rel_ref_weighted", "GSC_rel_opt_weighted", "mean_price*demand"]].sum().reset_index()
+    GSC_weighted["GSC_rel_ref_weighted"] = GSC_weighted["GSC_rel_ref_weighted"] / GSC_weighted["mean_price*demand"]
+    GSC_weighted["GSC_rel_opt_weighted"] = GSC_weighted["GSC_rel_opt_weighted"] / GSC_weighted["mean_price*demand"]
 
     GSC_mean = GSC_df.groupby(["ID_EnergyPrice", "country", "year"])[["GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt"]].mean().reset_index()
+    GSC = pd.merge(left=GSC_mean, right=GSC_weighted[["ID_EnergyPrice", "country", "year", "GSC_rel_ref_weighted", "GSC_rel_opt_weighted"]], on=["ID_EnergyPrice", "country", "year"])
 
-    copy = GSC_mean.loc[GSC_mean["ID_EnergyPrice"]=="Price 1", :].copy()
+    copy = GSC.loc[GSC["ID_EnergyPrice"]=="Price 1", :].copy()
     copy["ID_EnergyPrice"] = "reference"
-    eu_df = pd.concat([GSC_mean[["ID_EnergyPrice", "country", "year", "GSC_rel_opt"]].rename(columns={"GSC_rel_opt": "GSC_rel"}), copy[["ID_EnergyPrice", "country", "year", "GSC_rel_ref"]].rename(columns={"GSC_rel_ref": "GSC_rel"})], axis=0)
+    eu_df = pd.concat([GSC[["ID_EnergyPrice", "country", "year", "GSC_rel_opt", "GSC_rel_opt_weighted"]].rename(columns={"GSC_rel_opt": "GSC_rel", "GSC_rel_opt_weighted": "GSC_rel_weighted"}), 
+                       copy[["ID_EnergyPrice", "country", "year", "GSC_rel_ref", "GSC_rel_ref_weighted"]].rename(columns={"GSC_rel_ref": "GSC_rel", "GSC_rel_ref_weighted": "GSC_rel_weighted"})], axis=0)
     return eu_df
 
 
 def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     eu_df = calculate_GSC(loads=loads)
+
     sns.boxplot(
         data=eu_df,
         x="GSC_rel",
@@ -969,6 +977,21 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"GSC_relative_cooling{COOLING_PERCENTAGE}.svg")
     # plt.show()
+    plt.close()
+
+    # gewichteter GSC
+    sns.boxplot(
+        data=eu_df,
+        x="GSC_rel_weighted",
+        y="year",
+        hue="ID_EnergyPrice",
+        orient="y",
+        palette=sns.color_palette()
+    )
+    plt.xlabel("GSC relative weighted")
+    plt.legend(title="Electricity Price scenario")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"GSC_relative_weighted_EU_cooling{COOLING_PERCENTAGE}.svg")
     plt.close()
 
 
@@ -1364,6 +1387,31 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     plt.savefig(SAVING_PATH / f"temperature_avg.svg")
     plt.close()
     
+def compare_heat_demand_with_invert_2020():
+    df = Cp.read_ref_2020_national_heat_demand(percentage_cooling=0.1)
+    df["year"] = df["year"].astype(int)
+    df["country"] = df["country"].astype(str)
+    df["ID_EnergyPrice"] = df["ID_EnergyPrice"].astype(int)
+    df = df.loc[df["ID_EnergyPrice"]==1, :].copy()
+    df["source"] = "FLEX"
+    
+    invert = pd.read_csv(SAVING_PATH.parent / "hwb_Invert_HP_heated_buildings.csv")
+    invert = invert.loc[invert["year"]==2020, :].copy()
+    invert["source"] = "Invert"
+    invert.rename(columns={"avg_hwb": "Heating ref demand (kWh/m2)"}, inplace=True)
+
+    merged = pd.concat([df, invert], axis=0).reset_index(drop=True)
+    sns.barplot(
+        data=merged,
+        x="country",
+        y="Heating ref demand (kWh/m2)",
+        hue="source",
+        palette=sns.color_palette()
+    )
+    plt.ylabel("average specific heating demand (kWh/m2)")
+    plt.xticks(rotation=90)
+    plt.savefig(SAVING_PATH / f"comparison_heat_demand_2020.svg")
+    plt.close()
 
 def main(percentage_cooling: float):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
@@ -1377,20 +1425,21 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    calculate_price_correlations(loads=df, national=national_demand)
-    analyse_prices(loads=df, national=national_demand)
-    analyse_peak_demand(loads=df, national=national_demand)
-    show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
-    show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
-    plot_shifted_electricity(loads=df)
-    plot_PV_self_consumption(loads=df)
-    plot_flexible_storage_efficiency(loads=df)
-    show_average_day_profile(loads=df)
-    show_flexibility_factor(loads=df)
-    show_GSCrel_and_GSC_abs(loads=df)
-    plot_grid_demand_increase(loads=df)
+    compare_heat_demand_with_invert_2020()
+    # calculate_price_correlations(loads=df, national=national_demand)
+    # analyse_prices(loads=df, national=national_demand)
+    # analyse_peak_demand(loads=df, national=national_demand)
+    # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
+    # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
+    # plot_shifted_electricity(loads=df)
+    # plot_PV_self_consumption(loads=df)
+    # plot_flexible_storage_efficiency(loads=df)
+    # show_average_day_profile(loads=df)
+    # show_flexibility_factor(loads=df)
+    # show_GSCrel_and_GSC_abs(loads=df)
+    # plot_grid_demand_increase(loads=df)
 
-    plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
+    # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
     # show_day_with_peak_deamand(loads=df, scenario="shiny happy", national=national_demand)
 
@@ -1402,7 +1451,11 @@ if __name__ == "__main__":
     )
     # TODO 
     # weather data from balmorel
-    # quartile! 4th
-    # p hat ist pstrich
-    #GSC gewichten mit täglichem Verbruach mal durchschnitts preis
-    # describe excluding malta ...
+    # hwb im csv checken GRC 2040
+    # paper mit hooks lesen und ins paper einbauen
+    #  add weighted GSC to correclation matrix
+    # using 220 and the generation of renewables from ENTSO-E try see if a variable grid fee would enhance the results even more
+    # or create more price scenarios where 1/4 of buildings have different grid fees
+    # include shifted energy into analysis (total amount of shifted electricity)
+    # daily load factor
+    
