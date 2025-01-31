@@ -1413,6 +1413,94 @@ def compare_heat_demand_with_invert_2020():
     plt.savefig(SAVING_PATH / f"comparison_heat_demand_2020.svg")
     plt.close()
 
+def plot_daily_load_factor(loads: pd.DataFrame, national: pd.DataFrame):
+    df_national = pd.merge(left=national, right=loads, on=["country", "year", "Hour"])
+    df_national["day"] = (df_national["Hour"]-1) // 24 + 1
+    df_national["demand opt"] = df_national["opt_grid_demand_stock_MW"] - df_national["ref_grid_demand_stock_MW"] + df_national["demand"]
+    
+    def calculate_load_factor(df: pd.DataFrame, opt_column: str, ref_column: str):
+        # load factor is the mean demand divided by the max demand in a day
+        df["day"] = (df["Hour"]-1) // 24 + 1
+        load_factor_opt = pd.DataFrame(df.groupby(["country", "year", "ID_EnergyPrice", "day"])[opt_column].mean() / df.groupby(["country", "year", "ID_EnergyPrice", "day"])[opt_column].max())
+        load_factor_opt.reset_index(inplace=True)
+        load_factor_opt.rename(columns={opt_column: "load factor"}, inplace=True)
+
+        load_factor_ref = pd.DataFrame(df.groupby(["country", "year", "ID_EnergyPrice", "day"])[ref_column].mean() / df.groupby(["country", "year", "ID_EnergyPrice", "day"])[ref_column].max())
+        load_factor_ref.reset_index(inplace=True)
+        load_factor_ref = load_factor_ref[load_factor_ref["ID_EnergyPrice"]=="Price 1"].copy()
+        load_factor_ref.rename(columns={ref_column: "load factor"}, inplace=True)
+        load_factor_ref.loc[:, "ID_EnergyPrice"] = "reference"
+
+        merged = pd.concat([load_factor_opt, load_factor_ref], axis=0).reset_index(drop=True)
+        return merged
+    
+    merged = calculate_load_factor(df=loads, opt_column="opt_grid_demand_stock_MW", ref_column="ref_grid_demand_stock_MW")
+    merged_national = calculate_load_factor(df=df_national, opt_column="demand opt", ref_column="demand")
+    order = merged.groupby("country")["load factor"].mean().sort_values().index
+    g = sns.FacetGrid(merged, col="ID_EnergyPrice", col_wrap=3, height=5, aspect=1.5, sharex=True, sharey=True)
+    g.map_dataframe(
+        sns.boxplot,
+        x="country",
+        y="load factor",
+        hue="year",
+        palette=sns.color_palette(),
+        order=order,
+        showfliers=False
+    )
+    plt.ylabel("daily load factor")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(list(order), rotation=90)
+    g.set_titles("{col_name}")
+    g.add_legend(title="year")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"daily_load_factor_residential.svg")
+    plt.close()
+
+    # plot it on eu level by just taking the daily data of all countries
+    sns.boxplot(
+        data=merged,
+        x="load factor",
+        y="ID_EnergyPrice",
+        palette=sns.color_palette(),
+    )
+    plt.xlabel("daily load factor of residential demand across countries")
+    plt.ylabel("energy price scenario")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"daily_load_factor_EU_residential.svg")
+    plt.close()
+
+    # load factor for total demand
+    g = sns.FacetGrid(merged_national, col="ID_EnergyPrice", col_wrap=3, height=5, aspect=1.5, sharex=True, sharey=True)
+    g.map_dataframe(
+        sns.boxplot,
+        x="country",
+        y="load factor",
+        hue="year",
+        palette=sns.color_palette(),
+        order=order,
+        showfliers=False
+    )
+    plt.ylabel("daily load factor")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(list(order), rotation=90)
+    g.set_titles("{col_name}")
+    g.add_legend(title="year")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"daily_load_factor_total_demand.svg")
+    plt.close()
+
+    sns.boxplot(
+        data=merged_national,
+        x="load factor",
+        y="ID_EnergyPrice",
+        palette=sns.color_palette(),
+    )
+    plt.xlabel("daily load factor of total demand across countries")
+    plt.ylabel("energy price scenario")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"daily_load_factor_EU_total_demand.svg")
+    plt.close()
+
 def main(percentage_cooling: float):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
     if not path_2_demand_file.exists():
@@ -1425,13 +1513,14 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     national_demand = national_demand.loc[(national_demand["scenario"]=="shiny happy") | (national_demand["scenario"]=="baseyear"), :]
     
-    compare_heat_demand_with_invert_2020()
+    plot_daily_load_factor(loads=df)
+    # compare_heat_demand_with_invert_2020()
     # calculate_price_correlations(loads=df, national=national_demand)
     # analyse_prices(loads=df, national=national_demand)
     # analyse_peak_demand(loads=df, national=national_demand)
     # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
     # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
-    # plot_shifted_electricity(loads=df)
+    plot_shifted_electricity(loads=df)
     # plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)
     # show_average_day_profile(loads=df)
