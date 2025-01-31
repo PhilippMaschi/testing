@@ -1146,6 +1146,8 @@ def analyse_peak_demand(loads: pd.DataFrame, national: pd.DataFrame):
     demand_peaks = merged.groupby(["year", "country", "ID_EnergyPrice"])[["demand", "demand_opt"]].max().reset_index()
     demand_peaks["peak increase"] = (demand_peaks["demand_opt"] - demand_peaks["demand"]) / demand_peaks["demand"] * 100  # %
 
+
+
     sns.boxplot(
         data=demand_peaks,
         x="peak increase",
@@ -1187,6 +1189,52 @@ def analyse_peak_demand(loads: pd.DataFrame, national: pd.DataFrame):
     plt.savefig(SAVING_PATH / f"Peak_demand_increase_cooling{COOLING_PERCENTAGE}.svg")
     plt.close()
 
+
+    merged["day"] = (merged["Hour"]-1) // 24 + 1
+    peak_to_peak_ref = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand": "peak to peak ref"})
+    peak_to_peak_opt = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand_opt"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand_opt": "peak to peak opt"})
+    peak_merge = pd.merge(left=peak_to_peak_ref, right=peak_to_peak_opt, on=["year", "country", "day", "ID_EnergyPrice"])
+    peak_merge["peak to peak change"] = peak_merge["peak to peak opt"] - peak_merge["peak to peak ref"]
+    peak_merge["peak to peak change (%)"] = peak_merge["peak to peak change"] / peak_merge["peak to peak ref"] * 100
+    
+
+    g = sns.FacetGrid(peak_merge, col="ID_EnergyPrice", col_wrap=1, height=5, aspect=1.5, sharex=True, sharey=False)
+    order = peak_merge.groupby("country")["peak to peak change (%)"].mean().sort_values().index
+    g.map_dataframe(
+        sns.boxplot,
+        x="country",
+        y="peak to peak change (%)",
+        hue="year",
+        palette=sns.color_palette(),
+        order=order,
+        showfliers=False
+    )
+    for ax in g.axes.flat:
+        ax.set_xticklabels(order, rotation=90)
+    g.add_legend(title="year")
+    g.set_axis_labels("Country", "Daily peak to peak demand change (%)")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Peak_to_peak_demand_change_cooling{COOLING_PERCENTAGE}.svg")
+    plt.close()
+
+    sns.boxplot(
+        data=peak_merge,
+        x="peak to peak change (%)",
+        y="year",
+        hue="ID_EnergyPrice",
+        palette=sns.color_palette(),
+        orient="y",
+        showfliers=False
+    )
+    plt.legend(title="Electricity price scenario")
+    plt.xlabel("daily peak to peak demand change (%)")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Peak_to_peak_demand_change_EU_cooling{COOLING_PERCENTAGE}.svg")
+    plt.close()
+
+    
+    
+    
 def analyse_prices(loads: pd.DataFrame, national: pd.DataFrame):
     price_props = loads.groupby(["ID_EnergyPrice", "year", "country"])["price (cent/kWh)"].agg(['mean', 'std', 'max', 'min']).reset_index()
 
@@ -1517,7 +1565,7 @@ def main(percentage_cooling: float):
     # compare_heat_demand_with_invert_2020()
     # calculate_price_correlations(loads=df, national=national_demand)
     # analyse_prices(loads=df, national=national_demand)
-    # analyse_peak_demand(loads=df, national=national_demand)
+    analyse_peak_demand(loads=df, national=national_demand)
     # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
     # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
     plot_shifted_electricity(loads=df)
