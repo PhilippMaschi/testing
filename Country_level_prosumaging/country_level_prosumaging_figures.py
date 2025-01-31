@@ -1354,6 +1354,30 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     merged9 = pd.merge(left=merged8, right=mean_temp, on=["country", "year"])
     input_variables.append("temperature")
 
+    # include change in peak to peak demand
+    merged["day"] = (merged["Hour"]-1) // 24 + 1
+    peak_to_peak_ref = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand": "peak to peak ref"})
+    peak_to_peak_opt = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand_opt"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand_opt": "peak to peak opt"})
+    peak_merge = pd.merge(left=peak_to_peak_ref, right=peak_to_peak_opt, on=["year", "country", "day", "ID_EnergyPrice"])
+    peak_merge["peak to peak change"] = peak_merge["peak to peak opt"] - peak_merge["peak to peak ref"]
+    peak_merge["daily peak to peak change (%)"] = peak_merge["peak to peak change"] / peak_merge["peak to peak ref"] * 100
+    merged10 = pd.merge(left=merged9, right=peak_merge[["country", "year", "ID_EnergyPrice", "daily peak to peak change (%)"]], on=["country", "year", "ID_EnergyPrice"])
+    output_variables.append("daily peak to peak change (%)")
+    
+    # inlcude daily load factor
+    load_factor_opt = pd.DataFrame(merged.groupby(["country", "year", "ID_EnergyPrice", "day"])["demand_opt"].mean() / merged.groupby(["country", "year", "ID_EnergyPrice", "day"])["demand_opt"].max())
+    load_factor_opt.reset_index(inplace=True)
+    load_factor_opt.rename(columns={"demand_opt": "load factor opt"}, inplace=True)
+
+    load_factor_ref = pd.DataFrame(merged.groupby(["country", "year", "ID_EnergyPrice", "day"])["demand"].mean() / merged.groupby(["country", "year", "ID_EnergyPrice", "day"])["demand"].max())
+    load_factor_ref.reset_index(inplace=True)
+    load_factor_ref = load_factor_ref[load_factor_ref["ID_EnergyPrice"]=="Price 1"].copy()
+    load_factor_ref.rename(columns={"demand": "load factor ref"}, inplace=True)
+    load_factor = pd.merge(left=load_factor_opt, right=load_factor_ref, on=["country", "year", "ID_EnergyPrice", "day"])
+    merged11 = pd.merge(left=merged10, right=load_factor, on=["country", "year", "ID_EnergyPrice", "day"])
+    output_variables.append("load factor opt")
+    output_variables.append("load factor ref")
+
     # normalize
     # numeric_columns = ['mean', 'std', 'max', 'min', 'national demand peak increase (%)', "prosumager demand change (%)", "flexibility factor reference", "flexibility factor prosumager", "flexibility factor change"]
     # df[numeric_columns] = df[numeric_columns].apply(lambda x: (x - x.min()) / (x.max() - x.min()))
@@ -1362,7 +1386,7 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     # Loop over columns and calculate correlation with target columns
     for column in output_variables:
         # Calculate correlation between each column and all target columns
-        correlation_results[column] = merged9[input_variables].apply(lambda x: x.corr(merged9[column]))
+        correlation_results[column] = merged11[input_variables].apply(lambda x: x.corr(merged11[column]))
     
     sns.heatmap(
         data=correlation_results,
@@ -1563,7 +1587,7 @@ def main(percentage_cooling: float):
     
     plot_daily_load_factor(loads=df)
     # compare_heat_demand_with_invert_2020()
-    # calculate_price_correlations(loads=df, national=national_demand)
+    calculate_price_correlations(loads=df, national=national_demand)
     # analyse_prices(loads=df, national=national_demand)
     analyse_peak_demand(loads=df, national=national_demand)
     # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
