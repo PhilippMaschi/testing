@@ -93,7 +93,7 @@ HEADERS = {
 
 if __name__ == "__main__":
 
-    path_to_sqlite = Path(r"")
+    path_to_sqlite = Path(__file__).parent / "ForeFront_data.sqlite"
     db = SQLITE_DB(path=path_to_sqlite)
 
     epc_df = data_to_dataframe(endpoint="/api/v1/epc")
@@ -101,13 +101,14 @@ if __name__ == "__main__":
     db.write_dataframe(
         table_name="EPC_data",
         data_frame=epc_df,
-        if_exists="repace"
+        if_exists="replace"
     )
     db.write_dataframe(
         table_name="BBR_data",
         data_frame=bbr_df,
         if_exists="replace"
     )
+    print("saved EPC and BBR data")
 
     for heat_id in list(bbr_df["heat_meter_id"]):
         if heat_id == None:
@@ -119,6 +120,7 @@ if __name__ == "__main__":
             data_frame=heat_meter_df,
             if_exists="append"
         )
+    print("downloaded heat meter data")
 
     for water_id in list(bbr_df["water_meter_id"]):
         if water_id == None:
@@ -129,6 +131,7 @@ if __name__ == "__main__":
             data_frame=water_df,
             if_exists="append"
         )
+    print("dowloaded water meter data")
 
 
 
