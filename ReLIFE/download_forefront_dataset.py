@@ -142,6 +142,7 @@ if __name__ == "__main__":
             data_frame=water_df,
             if_exists=if_exist
         )
+        i = 1
     print("dowloaded water meter data")
 
 
