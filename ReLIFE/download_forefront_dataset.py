@@ -4,6 +4,7 @@ import sqlalchemy
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Dict
 from access_token import maschi_acceess_token
+import tqdm
 
 class SQLITE_DB:
         def __init__(self, path: Path):
@@ -110,26 +111,36 @@ if __name__ == "__main__":
     )
     print("saved EPC and BBR data")
 
-    for heat_id in list(bbr_df["heat_meter_id"]):
+    i = 0
+    for heat_id in tqdm.tqdm(list(bbr_df["heat_meter_id"])):
         if heat_id == None:
             continue
-
+        if i == 0:
+            if_exist = "replace"
+        else:
+            if_exist = "append"
         heat_meter_df = data_to_dataframe(endpoint="/api/v1/shmdataid", params={"heat_meter_ids": heat_id})
         db.write_dataframe(
             table_name="Heat_meter_data",
             data_frame=heat_meter_df,
-            if_exists="append"
+            if_exists=if_exist
         )
+        i = 1
     print("downloaded heat meter data")
 
-    for water_id in list(bbr_df["water_meter_id"]):
+    i = 0
+    for water_id in tqdm.tqdm(list(bbr_df["water_meter_id"])):
         if water_id == None:
             continue
         water_df = data_to_dataframe(endpoint="/api/v1/swmdataid", params={"water_meter_ids": water_id})
+        if i == 0:
+            if_exist = "replace"
+        else:
+            if_exist = "append"
         db.write_dataframe(
             table_name="Water_meter_data",
             data_frame=water_df,
-            if_exists="append"
+            if_exists=if_exist
         )
     print("dowloaded water meter data")
 
