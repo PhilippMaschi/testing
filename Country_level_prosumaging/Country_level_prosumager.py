@@ -63,7 +63,7 @@ COUNTRY_CODES = {
     "MT": 'MLT' ,
     "NL": 'NLD' ,
     "PL": 'POL',
-    "PO": "POL",
+    "PL": "POL",
     "PT": 'PRT',
     "RO": 'ROU',
     "SK": 'SVK',
@@ -95,38 +95,65 @@ BOILER = {
 
 
 def get_national_demand_profiles():
-    
-    gen_file = Path(__file__).parent.parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
-    entsoe = pd.read_csv(gen_file, sep=";")
-    demand = entsoe.melt(var_name="country", value_name="demand").reset_index(drop=True)
-    demand["year"] = 2020
-    demand["scenario"] = "baseyear"
-    levethian = pd.read_csv(Path(__file__).parent / "AURES_leviathan_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
-    levethian["scenario"] = "levethian"
-    shiny_happy = pd.read_csv(Path(__file__).parent / "AURES_shiny_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
-    shiny_happy["scenario"] = "shiny happy"
+    secures_path = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/Secures") / "Demand_all_countries.csv"
+    if not secures_path.exists():
+        demand_dfs = []
+        for year in [2030, 2050]:
+            for country in COUNTRY_CODES.keys():
+                if country == "CY" or country == "MT":
+                    continue
+                columns_2_extract = ["Exogenous", "Elect2Heat", "Interseasonal storage (PS)", "Elec-demand H2 prod", "Trans-losses", "Intreasonal storage (battery)"]
+                gen_file = Path(__file__).parent.parent.parent / "FLEX" / "projects" / "Secures" / "prices" / f"{year}" / f"{country}_DN_{year}_Normal.xlsx"
+                df = pd.read_excel(
+                    gen_file,
+                    engine="openpyxl",                
+                    sheet_name=f"EL_dem",
+                    header=1
+                )[columns_2_extract]
+                df_1 = pd.concat([df, df.iloc[-24:, :]], axis=0).reset_index(drop=True)
+                df_1["demand MW"] = df_1.sum(axis=1)
+                df_1.drop(columns=columns_2_extract, inplace=True)
+                df_1["country"] = COUNTRY_CODES[country]
+                df_1["year"] = year
+                df_1["Hour"] = np.arange(1, 8761)
+                demand_dfs.append(df_1)
 
-    df = pd.concat([demand, shiny_happy, levethian], axis=0, ignore_index=True)
-    df["country"] = df["country"].map(COUNTRY_CODES)
+        big_df = pd.concat(demand_dfs, axis=0)
+        big_df.to_csv(secures_path, index=False, sep=";")
+    else:
+        big_df = pd.read_csv(secures_path, sep=";")
+    return big_df
+
+    # entsoe = pd.read_csv(gen_file, sep=";")
+    # demand = entsoe.melt(var_name="country", value_name="demand").reset_index(drop=True)
+    # demand["year"] = 2020
+    # demand["scenario"] = "baseyear"
+    # levethian = pd.read_csv(Path(__file__).parent / "AURES_leviathan_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
+    # levethian["scenario"] = "levethian"
+    # shiny_happy = pd.read_csv(Path(__file__).parent / "AURES_shiny_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
+    # shiny_happy["scenario"] = "shiny happy"
+
+    # df = pd.concat([demand, shiny_happy, levethian], axis=0, ignore_index=True)
+    # df["country"] = df["country"].map(COUNTRY_CODES)
 
 
-    # AURES data only contains 8735 values: duplicate the last ones
-    extended_data = []
-    for (country, year, scenario), group in df.groupby(["country", "year", "scenario"]):
-        if len(group) != 8760:
-            extended_values = group['demand'].tolist() + group["demand"].iloc[-24:].to_list()
-            extended_group = pd.DataFrame({
-                'country': [country] * 8760,
-                'year': [year] * 8760,
-                'scenario': [scenario] * 8760,
-                'demand': extended_values,
-                "Hour": np.arange(1, 8761)
-            })
-            extended_data.append(extended_group)
-        else:
-            group["Hour"] = np.arange(1, 8761)
-            extended_data.append(group)
-    extended_df = pd.concat(extended_data, ignore_index=True)
+    # # AURES data only contains 8735 values: duplicate the last ones
+    # extended_data = []
+    # for (country, year, scenario), group in df.groupby(["country", "year", "scenario"]):
+    #     if len(group) != 8760:
+    #         extended_values = group['demand'].tolist() + group["demand"].iloc[-24:].to_list()
+    #         extended_group = pd.DataFrame({
+    #             'country': [country] * 8760,
+    #             'year': [year] * 8760,
+    #             'scenario': [scenario] * 8760,
+    #             'demand': extended_values,
+    #             "Hour": np.arange(1, 8761)
+    #         })
+    #         extended_data.append(extended_group)
+    #     else:
+    #         group["Hour"] = np.arange(1, 8761)
+    #         extended_data.append(group)
+    # extended_df = pd.concat(extended_data, ignore_index=True)
     
     # replace the 2 digit country code with 3 digits
     assert not extended_df.country.isna().any()
@@ -261,7 +288,7 @@ def define_tech_scenario(prob_cooling: float, df_scenarios: pd.DataFrame, df_hp:
     """Based on the adaption values (0 to 1) the buildings having the technology are randomly selected"""
 
     price_dfs = []
-    for price_id in [1, 2]:
+    for price_id in df_scenarios["ID_EnergyPrice"].unique():
         scenarios_with_numbers = []
 
         scenarios_price = df_scenarios.query(f"ID_EnergyPrice=={price_id}")
@@ -412,7 +439,7 @@ def create_national_temperature_df():
 
 def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
@@ -430,6 +457,9 @@ def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
         
     big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
     big_df.columns = [str(col) for col in big_df.columns]
+    big_df["ID_EnergyPrice"] = big_df["ID_EnergyPrice"].map({i: f"Price {i}" for i in range(1, len(big_df["ID_EnergyPrice"].unique())+1)})
+    big_df["year"] = big_df["year"].astype(int)
+    big_df.rename(columns={"number_of_buildings": "number of HPs in country"}, inplace=True)
     return big_df
 
 def read_ref_2020_national_heat_demand(percentage_cooling: float) -> pd.DataFrame:
@@ -486,14 +516,15 @@ def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
 def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_file: Path):
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    folder_names=["AUT_2030_grid_fees", "AUT_2050_grid_fees"]
     dfs = []
     for folder_name in folder_names:
-        if folder_name in ["CYP_2020", "MLT_2020"]:
+        if folder_name in ["CYP_2020_grid_fees", "MLT_2020_grid_fees"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         print(f"analysing {country} {year}")
 
         country_loads = get_country_load_profiles(
@@ -528,7 +559,7 @@ def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_f
 
 def main(percentage_cooling: float):
     print(f"creating parquet file for {percentage_cooling} cooling percentage")
-    parquet_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
+    parquet_file = Path(__file__).parent / f"EU27_loads_grid_fees_cooling-{percentage_cooling}.parquet.gzip"
 
     create_national_demand_profiles_parquet(percentage_cooling,  parquet_file)
 
