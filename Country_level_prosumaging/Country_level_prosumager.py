@@ -517,7 +517,6 @@ def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_f
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
     folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
-    folder_names=["AUT_2030_grid_fees", "AUT_2050_grid_fees"]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020_grid_fees", "MLT_2020_grid_fees"]:

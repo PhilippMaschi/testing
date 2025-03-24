@@ -17,7 +17,7 @@ import matplotlib.patches as mpatches
 import geopandas as gpd
 from matplotlib.lines import Line2D
 
-SAVING_PATH = Path(__file__).parent / "figures"
+SAVING_PATH = Path(__file__).parent / "figures_grid_fees"
     # Ensure the log directory exists
 log_file_path = Path(__file__).parent / "logfile.log"
 log_level = logging.INFO
@@ -121,16 +121,16 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
     # merge the type and energy price columns:
     
     plot_df = pd.concat([self_consumption_ref, self_consumption_opt] , axis=0).reset_index(drop=True)
-    x_order = plot_df.groupby("country")["PV self consumption"].mean().sort_values().index
+    x_order = plot_df.groupby(["country"])["PV self consumption"].mean().sort_values().index
 
-    g = sns.FacetGrid(plot_df, col="year", col_wrap=2, height=5, aspect=1.5)
+    g = sns.FacetGrid(plot_df, col="type", row="year", height=5, aspect=1.5)
 
     # Map the barplot to each facet
     g.map_dataframe(
         sns.barplot,
         x="country",
         y="PV self consumption",
-        hue="type",
+        hue="ID_EnergyPrice",
         dodge=True,  # Ensures bars are grouped within x-axis categories
         hue_order=None, 
         order=x_order,
@@ -140,7 +140,7 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
     # Adjust plot aesthetics
     g.set_axis_labels("Country", "PV self consumption")
     g.add_legend()
-    g.set_titles("Year {col_name}")
+    g.set_titles("{col_name}")
     for ax in g.axes.flat:
         ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
 
@@ -152,17 +152,21 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
 
     # average PV self consumption over Europe:
     eu_df = plot_df.groupby(["year", "type", "ID_EnergyPrice"])["PV self consumption"].mean().reset_index()
-    eu_df = eu_df[~((eu_df["type"] == "reference") & (eu_df["ID_EnergyPrice"] ==2))]
-    eu_df.loc[:, "type - price"] = eu_df["type"].astype(str) + " - " + eu_df["ID_EnergyPrice"].astype(str)
-    plt.figure()
-    sns.barplot(
-        data=eu_df,
+    eu_df = eu_df[~((eu_df["type"] == "reference") & (eu_df["ID_EnergyPrice"] != "Price 1"))]
+    # eu_df.loc[:, "type - price"] = eu_df["type"].astype(str) + " - " + eu_df["ID_EnergyPrice"].astype(str)
+
+    g = sns.FacetGrid(eu_df, col="type", col_wrap=2, height=5, aspect=1.5)
+    g.map_dataframe(
+        sns.barplot,
         x="PV self consumption",
         y="year",
-        hue="type - price",
-        orient="y"
+        hue="ID_EnergyPrice",
+        orient="y",
+        dodge=True,  # Ensures bars are grouped within x-axis categories
+        hue_order=None, 
+        palette=sns.color_palette()
     )
-    plt.xlabel("average PV self consumption over all countries (%)")
+    g.set_axis_labels("year", "average PV self consumption over all countries (%)")
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"PV_self_consumption_EU_cooling{COOLING_PERCENTAGE}.svg")
     # plt.show()
@@ -278,15 +282,15 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
     
     i = 0
     for country in Cp.EUROPEAN_COUNTRIES.keys():
-        for year in [2020, 2030, 2040, 2050]:
-            if year == 2020 and (country == "CYP" or country=="MLT" or country=="NLD"):
+        for year in [2030, 2050]:
+            if country == "CYP" or country=="MLT":
                 continue
             else:
                 if year == 2020:
                     scen = "baseyear"
                 else:
                     scen = scenario
-                demand = national.loc[(national["country"]==country) & (national["year"].astype(int)==year) & (national["scenario"]==scen), "demand"].reset_index(drop=True)
+                demand = national.loc[(national["country"]==country) & (national["year"].astype(int)==year) & (national["scenario"]==scen), "demand MW"].reset_index(drop=True)
                 peak_demand_hour = demand.idxmax()
                 min_demand_hour = demand.idxmin()
                 for price in ["Price 1", "Price 2"]:
@@ -311,7 +315,7 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
     plot_df["year"] = plot_df["year"].astype(int)
 
     def plot_load_factor(column_name: str):    
-        g = sns.FacetGrid(plot_df, col="ID_EnergyPrice", col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
+        g = sns.FacetGrid(plot_df, col="ID_EnergyPrice", col_wrap=3, height=5, aspect=1.5, sharey=True, sharex=True)
         g.map_dataframe(
             sns.barplot,
                 x="country",
@@ -365,14 +369,14 @@ def plot_load_factor(loads: pd.DataFrame, national: pd.DataFrame, scenario: str)
 def plot_national_peaks(peak_df: pd.DataFrame):
     plot_df = peak_df.reset_index()
     # order = plot_df.groupby("country")["price"].mean().sort_values().index
-    g = sns.FacetGrid(plot_df, col="price", col_wrap=2, height=5, aspect=1.5, sharey=True)
+    g = sns.FacetGrid(plot_df, col="year", col_wrap=2, height=5, aspect=1.5, sharey=True)
 
     # Map the barplot to each facet
     g.map_dataframe(
         sns.barplot,
         x="country",
         y="change in peak relative",
-        hue="year",
+        hue="price",
         # order=order,
         palette=sns.color_palette()
     )
@@ -561,13 +565,13 @@ def plot_frequency_of_peaks_in_seasons(peak_df: pd.DataFrame):
     plt.show()
 
 def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataFrame, national: pd.DataFrame):
-    merged = pd.merge(left=loads, right=national[["country", "demand", "year", "Hour"]], on=["year", "Hour", "country"])
-    merged["demand_opt"] = merged["demand"] - merged["ref_grid_demand_stock_MW"] + merged["opt_grid_demand_stock_MW"]
+    merged = pd.merge(left=loads, right=national[["country", "demand MW", "year", "Hour"]], on=["year", "Hour", "country"])
+    merged["demand_opt"] = merged["demand MW"] - merged["ref_grid_demand_stock_MW"] + merged["opt_grid_demand_stock_MW"]
     groups = merged.groupby(["year", "country", "ID_EnergyPrice"])
 
     # increase in demand at low prices:
-    low_demand_ref = groups[["demand", "price (cent/kWh)"]].apply(
-        lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "demand"].sum()
+    low_demand_ref = groups[["demand MW", "price (cent/kWh)"]].apply(
+        lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "demand MW"].sum()
     ).reset_index(name="reference low price demand")
     low_demand_opt = groups[["demand_opt", "price (cent/kWh)"]].apply(
         lambda g: g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "demand_opt"].sum()
@@ -580,8 +584,8 @@ def show_national_demand_increase_in_high_and_low_price_quantile(loads: pd.DataF
     eu_groups["1st quartile demand increase (%)"] = (eu_groups["prosumager low price demand"] - eu_groups["reference low price demand"]) / eu_groups["reference low price demand"] * 100
     
     
-    high_demand_ref = groups[["demand", "price (cent/kWh)"]].apply(
-        lambda g: g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "demand"].sum()
+    high_demand_ref = groups[["demand MW", "price (cent/kWh)"]].apply(
+        lambda g: g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "demand MW"].sum()
     ).reset_index(name="reference high price demand")
     high_demand_opt = groups[["demand_opt", "price (cent/kWh)"]].apply(
         lambda g: g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "demand_opt"].sum()
@@ -832,14 +836,14 @@ def show_flexibility_factor(loads: pd.DataFrame):
     # plt.show()
     plt.close()
 
-    g = sns.FacetGrid(plot_df, col="ID_EnergyPrice",col_wrap=2, height=5, aspect=1.5, sharey=True)
+    g = sns.FacetGrid(plot_df, col="year", col_wrap=2, height=5, aspect=1.5, sharey=True)
 
     # Map the barplot to each facet
     g.map_dataframe(
         sns.barplot,
         x="country",
         y="flexibility factor change",
-        hue="year",
+        hue="ID_EnergyPrice",
         order=x_order,
         palette=sns.color_palette()
 
@@ -961,17 +965,20 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     plt.savefig(SAVING_PATH / f"GSC_relative_EU_cooling{COOLING_PERCENTAGE}.svg")
     plt.close()
 
-    g = sns.FacetGrid(eu_df, col="ID_EnergyPrice", col_wrap=3, height=5, aspect=1.5, sharey=True, sharex=True)
+
+    x_order = eu_df.groupby("country")["GSC_rel"].max().sort_values().index
+    g = sns.FacetGrid(eu_df, col="year", col_wrap=2, height=5, aspect=1.5, sharey=True, sharex=True)
     # Map the barplot to each facet
     g.map_dataframe(
         sns.barplot,
         x="country",
         y="GSC_rel",
-        hue="year",
+        hue="ID_EnergyPrice",
         palette=sns.color_palette(),
+        order=x_order,
     )
 
-    g.set_axis_labels("year", "relative GSC prosumager")
+    g.set_axis_labels("country", "relative GSC prosumager")
     g.add_legend(title="", loc="lower right")
     g.set_titles("Price {col_name}")
     for ax in g.axes.flat:
@@ -997,21 +1004,17 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     plt.close()
 
 
-def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.DataFrame):
+def show_day_with_peak_deamand(loads: pd.DataFrame, national: pd.DataFrame):
     day_df = pd.DataFrame()
     peak_df = pd.DataFrame(index=pd.MultiIndex.from_tuples([], names=["country", "year", "price"]))
     for country in Cp.EUROPEAN_COUNTRIES.keys():
         for year in [2020, 2030, 2040, 2050]:
-            if year == 2020 and (country == "CYP" or country=="MLT" or country=="NLD"):
+            if country == "CYP" or country=="MLT":
                 continue
             else:
-                if year == 2020:
-                    scen = "baseyear"
-                else:
-                    scen = scenario
                 ref_col = f"ref_grid_demand_stock_MW"
                 opt_col = f"opt_grid_demand_stock_MW"
-                national_demand_ref = national.loc[(national["country"]==country) & (national["year"]==year) & (national["scenario"]==scen), "demand"].copy().reset_index(drop=True)
+                national_demand_ref = national.loc[(national["country"]==country) & (national["year"]==year), "demand MW"].copy().reset_index(drop=True)
                 peak_demand_hour_ref = national_demand_ref.idxmax()
                 peak_day_ref = int(peak_demand_hour_ref/24)
                 peak_day_ref_season = get_season(peak_day_ref)
@@ -1020,7 +1023,7 @@ def show_day_with_peak_deamand(loads: pd.DataFrame, scenario: str, national: pd.
                 peak_ref = national_demand_ref.loc[peak_demand_hour_ref]
                 day_df.loc[:, f"ref_{country}_{year}_price1"] = ref_peak_day.reset_index(drop=True)
             
-                for price in ["Price 1", "Price 2"]:
+                for price in loads["ID_EnergyPrice"].unique():
                     price_load = loads.loc[(loads["year"]==year) & (loads["country"]==country) & (loads["ID_EnergyPrice"]==price), :].copy().reset_index(drop=True)
                     national_demand_opt = national_demand_ref - price_load.loc[:, ref_col] + price_load.loc[:, opt_col]
 
@@ -1083,7 +1086,7 @@ def plot_grid_demand_increase(loads: pd.DataFrame):
 
     # Show the plot
     plt.tight_layout()
-    plt.savefig(SAVING_PATH / f"Change_in_grid_demand_cooling{COOLING_PERCENTAGE}.svg")
+    plt.savefig(SAVING_PATH / f"Change_in_residential_grid_demand_cooling{COOLING_PERCENTAGE}.svg")
     plt.close()
 
     # average increae on EU level:
@@ -1102,7 +1105,7 @@ def plot_grid_demand_increase(loads: pd.DataFrame):
     plt.xlabel("change in total electricity grid demand (%)")
     plt.xticks(rotation=0)
     plt.tight_layout()
-    plt.savefig(SAVING_PATH / f"Change_in_grid_demand_EU_cooling{COOLING_PERCENTAGE}.svg")
+    plt.savefig(SAVING_PATH / f"Change_in_residential_grid_demand_EU_cooling{COOLING_PERCENTAGE}.svg")
     # plt.show()
     plt.close()
 
@@ -1116,14 +1119,14 @@ def plot_shifted_electricity(loads: pd.DataFrame):
     
     x_order = shifted_df.groupby("country")["shifted (%)"].mean().sort_values().index
 
-    g = sns.FacetGrid(shifted_df, col="ID_EnergyPrice", col_wrap=2, height=5, aspect=1.5, sharex=True, sharey=True)
+    g = sns.FacetGrid(shifted_df, col="year", col_wrap=2, height=5, aspect=1.5, sharex=True, sharey=True)
 
     # Map the barplot to each facet
     g.map_dataframe(
         sns.barplot,
         x="country",
         y="shifted (%)",
-        hue="year",
+        hue="ID_EnergyPrice",
         dodge=True,  # Ensures bars are grouped within x-axis categories
         hue_order=None, 
         order=x_order,
@@ -1262,10 +1265,10 @@ def analyse_peak_demand(loads: pd.DataFrame, national: pd.DataFrame):
     price_std = loads.groupby(["ID_EnergyPrice", "year", "country"])["price (cent/kWh)"].std().reset_index()
 
     hp_numbers = Cp.create_number_of_HPs_df(COOLING_PERCENTAGE)
-    national_demand = national.groupby(["country", "year", "scenario"])["demand"].sum().reset_index()
+    national_demand = national.groupby(["country", "year", "scenario"])["demand MW"].sum().reset_index()
     national_demand["year"] = national_demand["year"].astype(int)
     hp = pd.merge(left=hp_numbers, right=national_demand, on=["country", "year"])
-    hp["number HPs per national demand"] = hp["number of HPs in country"] / hp["demand"] * 1_000
+    hp["number HPs per national demand"] = hp["number of HPs in country"] / hp["demand MW"] * 1_000
 
     create_demand_peaks_for_different_prosumager_shares(df=merged)
     # price_figs = plot_values_on_EU_map(price_std.loc[price_std["ID_EnergyPrice"]=="Price 2", :], columns2plot="price (cent/kWh)", y_label="standard deviation of the price profiles (cent/kWh)")
@@ -1315,7 +1318,7 @@ def analyse_peak_demand(loads: pd.DataFrame, national: pd.DataFrame):
 
 
     merged["day"] = (merged["Hour"]-1) // 24 + 1
-    peak_to_peak_ref = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand": "peak to peak ref"})
+    peak_to_peak_ref = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand MW"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand MW": "peak to peak ref"})
     peak_to_peak_opt = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand_opt"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand_opt": "peak to peak opt"})
     peak_merge = pd.merge(left=peak_to_peak_ref, right=peak_to_peak_opt, on=["year", "country", "day", "ID_EnergyPrice"])
     peak_merge["peak to peak change"] = peak_merge["peak to peak opt"] - peak_merge["peak to peak ref"]
@@ -1398,16 +1401,16 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     input_variables = []
     output_variables = []
 
-    merged = pd.merge(left=loads, right=national[["country", "demand", "year", "Hour"]], on=["year", "Hour", "country"])
-    merged["demand_opt"] = merged["demand"] - merged["ref_grid_demand_stock_MW"] + merged["opt_grid_demand_stock_MW"]
-    demand_peaks = merged.groupby(["year", "country", "ID_EnergyPrice"])[["demand", "demand_opt"]].max().reset_index()
-    demand_peaks["national demand peak increase (%)"] = (demand_peaks["demand_opt"] - demand_peaks["demand"]) / demand_peaks["demand"] * 100  # %
+    merged = pd.merge(left=loads, right=national[["country", "demand MW", "year", "Hour"]], on=["year", "Hour", "country"])
+    merged["demand_opt"] = merged["demand MW"] - merged["ref_grid_demand_stock_MW"] + merged["opt_grid_demand_stock_MW"]
+    demand_peaks = merged.groupby(["year", "country", "ID_EnergyPrice"])[["demand MW", "demand_opt"]].max().reset_index()
+    demand_peaks["national demand peak increase (%)"] = (demand_peaks["demand_opt"] - demand_peaks["demand MW"]) / demand_peaks["demand MW"] * 100  # %
     demand_peaks = demand_peaks[["country", "year", "ID_EnergyPrice", "national demand peak increase (%)"]].copy()
     output_variables.append("national demand peak increase (%)")
 
     # national demand
-    national_demand = merged.groupby(["year", "country", "ID_EnergyPrice"])["demand"].sum().reset_index()
-    national_demand.rename(columns={"demand": "national demand MWh"}, inplace=True)
+    national_demand = merged.groupby(["year", "country", "ID_EnergyPrice"])["demand MW"].sum().reset_index()
+    national_demand.rename(columns={"demand MW": "national demand MWh"}, inplace=True)
     merged2 = pd.merge(left=demand_peaks, right=national_demand, on=["country", "year", "ID_EnergyPrice"])
     input_variables.append("national demand MWh")
 
@@ -1477,7 +1480,7 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
 
     # include change in peak to peak demand
     merged["day"] = (merged["Hour"]-1) // 24 + 1
-    peak_to_peak_ref = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand": "peak to peak ref"})
+    peak_to_peak_ref = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand MW"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand MW": "peak to peak ref"})
     peak_to_peak_opt = merged.groupby(["year", "country", "ID_EnergyPrice", "day"])["demand_opt"].agg(lambda x: x.max() - x.min()).reset_index().rename(columns={"demand_opt": "peak to peak opt"})
     peak_merge = pd.merge(left=peak_to_peak_ref, right=peak_to_peak_opt, on=["year", "country", "day", "ID_EnergyPrice"])
     peak_merge["peak to peak change"] = peak_merge["peak to peak opt"] - peak_merge["peak to peak ref"]
@@ -1490,10 +1493,10 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
     load_factor_opt.reset_index(inplace=True)
     load_factor_opt.rename(columns={"demand_opt": "load factor opt"}, inplace=True)
 
-    load_factor_ref = pd.DataFrame(merged.groupby(["country", "year", "ID_EnergyPrice", "day"])["demand"].mean() / merged.groupby(["country", "year", "ID_EnergyPrice", "day"])["demand"].max())
+    load_factor_ref = pd.DataFrame(merged.groupby(["country", "year", "ID_EnergyPrice", "day"])["demand MW"].mean() / merged.groupby(["country", "year", "ID_EnergyPrice", "day"])["demand MW"].max())
     load_factor_ref.reset_index(inplace=True)
     load_factor_ref = load_factor_ref[load_factor_ref["ID_EnergyPrice"]=="Price 1"].copy()
-    load_factor_ref.rename(columns={"demand": "load factor ref"}, inplace=True)
+    load_factor_ref.rename(columns={"demand MW": "load factor ref"}, inplace=True)
     load_factor = pd.merge(left=load_factor_opt, right=load_factor_ref, on=["country", "year", "ID_EnergyPrice", "day"])
     load_factor = load_factor.groupby(["country", "year", "ID_EnergyPrice"])[["load factor opt", "load factor ref"]].mean().reset_index()  # take the mean over all days
     merged11 = pd.merge(left=merged10, right=load_factor, on=["country", "year", "ID_EnergyPrice"])
@@ -1610,7 +1613,7 @@ def compare_heat_demand_with_invert_2020():
 def plot_daily_load_factor(loads: pd.DataFrame, national: pd.DataFrame):
     df_national = pd.merge(left=national, right=loads, on=["country", "year", "Hour"])
     df_national["day"] = (df_national["Hour"]-1) // 24 + 1
-    df_national["demand opt"] = df_national["opt_grid_demand_stock_MW"] - df_national["ref_grid_demand_stock_MW"] + df_national["demand"]
+    df_national["demand opt"] = df_national["opt_grid_demand_stock_MW"] - df_national["ref_grid_demand_stock_MW"] + df_national["demand MW"]
     
     def calculate_load_factor(df: pd.DataFrame, opt_column: str, ref_column: str):
         # load factor is the mean demand divided by the max demand in a day
@@ -1629,7 +1632,7 @@ def plot_daily_load_factor(loads: pd.DataFrame, national: pd.DataFrame):
         return merged
     
     merged = calculate_load_factor(df=loads, opt_column="opt_grid_demand_stock_MW", ref_column="ref_grid_demand_stock_MW")
-    merged_national = calculate_load_factor(df=df_national, opt_column="demand opt", ref_column="demand")
+    merged_national = calculate_load_factor(df=df_national, opt_column="demand opt", ref_column="demand MW")
     order = merged.groupby("country")["load factor"].mean().sort_values().index
     g = sns.FacetGrid(merged, col="ID_EnergyPrice", col_wrap=3, height=5, aspect=1.5, sharex=True, sharey=True)
     g.map_dataframe(
@@ -1793,24 +1796,24 @@ def main(percentage_cooling: float):
     # plot_daily_load_factor(loads=df, national=national_demand)
 
     
-    # analyse_prices(loads=df, national=national_demand)
+    analyse_prices(loads=df, national=national_demand)
     analyse_peak_demand(loads=df, national=national_demand)
     # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand)
     # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df)
-    # plot_shifted_electricity(loads=df)
-    # plot_PV_self_consumption(loads=df)
+    plot_shifted_electricity(loads=df)
+    plot_PV_self_consumption(loads=df)
     # plot_flexible_storage_efficiency(loads=df)
-    # show_average_day_profile(loads=df)
-    # show_flexibility_factor(loads=df)
-    # show_GSCrel_and_GSC_abs(loads=df)
-    # plot_grid_demand_increase(loads=df)
+    show_average_day_profile(loads=df)
+    show_flexibility_factor(loads=df)
+    show_GSCrel_and_GSC_abs(loads=df)
+    plot_grid_demand_increase(loads=df)
     # compare_heat_demand_with_invert_2020()
-    # calculate_price_correlations(loads=df, national=national_demand)
+    calculate_price_correlations(loads=df, national=national_demand)
     # plot_load_factor(loads=df, national=national_demand, scenario="shiny happy")
 
     # plot_PV_installations_and_size_distribution()
     # plot_price_quariles(loads=df)
-    # show_day_with_peak_deamand(loads=df, scenario="shiny happy", national=national_demand)
+    show_day_with_peak_deamand(loads=df, national=national_demand)
 
 
 if __name__ == "__main__":
