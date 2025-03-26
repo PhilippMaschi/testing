@@ -413,19 +413,19 @@ def get_country_load_profiles(folder_name: Path, perc_cooling: float):
 
 def get_price_profile(folder_name: Path):
     db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
-    price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1", "electricity_2"])
+    price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1", "electricity_2", "electricity_3", "electricity_4", "electricity_5"])
     return price_table
 
 def create_national_temperature_df():
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         df = get_country_temperature_profile(
             folder_name=folder,
         )
@@ -439,14 +439,14 @@ def create_national_temperature_df():
 
 def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         df = get_total_number_of_buildings_with_HP(
             folder_name=folder,
             perc_cooling=percentage_cooling
@@ -465,14 +465,14 @@ def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
 def read_ref_2020_national_heat_demand(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020]]
+    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         df = get_country_specific_heating_demand(
             folder_name=folder,
             perc_cooling=percentage_cooling,
@@ -489,14 +489,14 @@ def read_ref_2020_national_heat_demand(percentage_cooling: float) -> pd.DataFram
 def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         print(f"analysing {country} {year}")
 
         df = get_country_specific_heating_demand(
