@@ -349,10 +349,10 @@ def get_shifted_energy_per_appliance_type(folder_name: Path, perc_cooling: float
 def calculate_shifted_energy_per_appliance_type(perc_cooling, price_id):
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
-        if folder_name in ["CYP_2020_grid_fees", "MLT_2020_grid_fees"]:
+        if folder_name in [f"CYP_2020_{PROJECT_ACRONYM}", f"MLT_2020_{PROJECT_ACRONYM}"]:
             continue
         folder = path_2_model_results / folder_name
         country = folder.name.split("_")[0]
@@ -523,7 +523,7 @@ def get_price_profile(folder_name: Path):
 
 def create_national_temperature_df():
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
-    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
@@ -544,7 +544,7 @@ def create_national_temperature_df():
 
 def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
-    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
@@ -570,7 +570,7 @@ def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
 def read_ref_2020_national_heat_demand(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
@@ -594,7 +594,7 @@ def read_ref_2020_national_heat_demand(percentage_cooling: float) -> pd.DataFram
 def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
@@ -621,10 +621,10 @@ def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
 def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_file: Path):
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}_grid_fees" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
-        if folder_name in ["CYP_2020_grid_fees", "MLT_2020_grid_fees"]:
+        if folder_name in [f"CYP_2020_{PROJECT_ACRONYM}", f"MLT_2020_{PROJECT_ACRONYM}"]:
             continue
         folder = path_2_model_results / folder_name
         country = folder.name.split("_")[0]
@@ -661,19 +661,19 @@ def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_f
 
 
 
-def main(percentage_cooling: float):
+def main(percentage_cooling: float,):
     print(f"creating parquet file for {percentage_cooling} cooling percentage")
-    parquet_file = Path(__file__).parent / f"EU27_loads_grid_fees_cooling-{percentage_cooling}.parquet.gzip"
+    parquet_file = Path(__file__).parent / f"EU27_loads_{PROJECT_ACRONYM}_cooling-{percentage_cooling}.parquet.gzip"
 
     create_national_demand_profiles_parquet(percentage_cooling,  parquet_file)
 
 
 
 
-
+PROJECT_ACRONYM = "grid_fees"
 if __name__ == "__main__":
     main(
-        percentage_cooling=0.8,
+        percentage_cooling=0.1,
     )
 
     # 10 cent/kWh levelized cost for offshore wind, onshore and PV are below that [https://www.ise.fraunhofer.de/en/publications/studies/cost-of-electricity.html]
