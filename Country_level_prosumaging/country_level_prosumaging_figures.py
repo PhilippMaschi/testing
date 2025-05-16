@@ -105,32 +105,23 @@ def plot_supply_and_demand_matching_over_price(loads: pd.DataFrame):
     plt.close()
 
 
-def plot_PV_self_consumption(loads: pd.DataFrame):
+def plot_PV_self_consumption(loads: pd.DataFrame, percentage_cooling, project_acronym):
+    # need to load only the buildings that have PV installed:
+    parquet_file = Path(__file__).parent / f"PV_loads_{project_acronym}_cooling-{percentage_cooling}.parquet.gzip"
+    if not parquet_file.exists():
+        Cp.load_only_PV_building_profiles(percentage_cooling, parquet_file, project_acronym)
+    df = pd.read_parquet(parquet_file)
 
-    grouped = loads.groupby(["country", "year", "ID_EnergyPrice"])
-    self_consumption_ref = grouped["ref_PV2Load_MW"].sum() / grouped["ref_PhotovoltaicProfile_MW"].sum() 
-    self_consumption_opt = grouped["opt_PV2Load_MW"].sum() / grouped["opt_PhotovoltaicProfile_MW"].sum() 
+    plot_df=df.copy()
+    plot_df["ID_EnergyPrice"]=plot_df["ID_EnergyPrice"].map({i+1:val for i,val in enumerate(add_price_information().values())})
+    x_order = plot_df.groupby(["country"])["self_consumption"].mean().sort_values().index
 
-    self_consumption_ref = self_consumption_ref.reset_index()
-    self_consumption_opt = self_consumption_opt.reset_index()
-    self_consumption_ref["type"] = "reference"
-    self_consumption_opt["type"] = "prosumager"
-
-    self_consumption_ref.rename(columns={0: "PV self consumption"}, inplace=True)
-    # drop the ID_EnergyPrice = 2 of ref because its the same
-
-    self_consumption_opt.rename(columns={0: "PV self consumption"}, inplace=True)
-    # merge the type and energy price columns:
-    
-    plot_df = pd.concat([self_consumption_ref, self_consumption_opt] , axis=0).reset_index(drop=True)
-    plot_df["ID_EnergyPrice"] = plot_df["ID_EnergyPrice"].map(add_price_information())
-    x_order = plot_df.groupby(["country"])["PV self consumption"].mean().sort_values().index
-
+    fontsize = 20
     g = sns.FacetGrid(plot_df, col="type", row="year", height=8, aspect=1, sharey=True)
     g.map_dataframe(
-        sns.barplot,
+        sns.boxplot,
         x="country",
-        y="PV self consumption",
+        y="self_consumption",
         hue="ID_EnergyPrice",
         dodge=True,  # Ensures bars are grouped within x-axis categories
         hue_order=None, 
@@ -145,22 +136,26 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
         loc='lower center',  # centered horizontally
         bbox_to_anchor=(0.5, 1.05),  # positioned above the plot
         ncol=5,
-        frameon=False
+        frameon=False,
+        prop={"size": fontsize}
     )
-    g.set_titles(row_template='{row_name}', col_template='{col_name}')
-    g.set_axis_labels("Country", "PV self consumption (%)")
+    g.set_titles(row_template='{row_name}', col_template='{col_name}', size=fontsize)
+    g.set_axis_labels("Country", "PV self consumption (%)", fontsize=fontsize)
     for ax in g.axes.flat:
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
-
-    # Show the plot
+        ax.tick_params(labelbottom=True, labelsize=fontsize)  # Force show x labels
+    g.set_xticklabels(rotation=90)
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"PV_self_consumption_cooling{COOLING_PERCENTAGE}.svg")
-    # plt.show()
+    plt.show()
     plt.close()
 
     # average PV self consumption over Europe:
-    eu_df = plot_df.groupby(["year", "type", "ID_EnergyPrice"])["PV self consumption"].mean().reset_index()
-    eu_df = eu_df[~((eu_df["type"] == "reference") & (eu_df["ID_EnergyPrice"] != "Price 1"))]
+    eu_df = df.copy()
+    eu_df = eu_df.groupby(["year", "type", "ID_EnergyPrice"])["self_consumption"].mean().reset_index()
+    eu_df = eu_df[~((eu_df["type"] == "simulation") & (eu_df["ID_EnergyPrice"] != 1))]
+    eu_df["ID_EnergyPrice"]=eu_df["ID_EnergyPrice"].map({i+1:val for i,val in enumerate(add_price_information().values())})
+    eu_df.loc[eu_df["type"] == "simulation","ID_EnergyPrice"] = "simulation"
+
     plt.rcParams.update({
         'axes.labelsize': 10,    # x and y axis labels
         'axes.titlesize': 12,    # subplot titles
@@ -168,16 +163,17 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
         'ytick.labelsize': 8,   # y-axis tick labels
         'legend.fontsize': 8,   # legend text size
     })
+    palette = {"simulation": sns.color_palette()[5]} | {list(add_price_information().values())[i]:sns.color_palette()[i] for i in range(5)}
     fig, ax = plt.subplots(figsize=(3,5))
     sns.barplot(
         data=eu_df,
         x="year",
-        y="PV self consumption",
+        y="self_consumption",
         hue="ID_EnergyPrice",
         orient="x",
         dodge=True,  # Ensures bars are grouped within x-axis categories
-        hue_order=None, 
-        palette=sns.color_palette(),
+        hue_order=["simulation"]+list(add_price_information().values()), 
+        palette=palette,
         linewidth=0.5
     )
     ax.set_xlabel("year")
@@ -190,7 +186,7 @@ def plot_PV_self_consumption(loads: pd.DataFrame):
     )
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"PV_self_consumption_EU_cooling{COOLING_PERCENTAGE}.svg")
-    # plt.show()
+    plt.show()
     plt.close()
 
 
@@ -2082,26 +2078,35 @@ def plot_PV_installations_and_size_distribution():
     
     size_df = pv_df.groupby(["size m2", "year"])["number"].sum().reset_index()
     size_df["number"] = size_df["number"] / 1_000_000
+    size_df["peak power (kWp)"] = size_df["size m2"] / 8
+
+    agg = size_df.groupby("year").agg({
+    "number": "median",
+    "peak power (kWp)": "median"
+    }).reset_index()
     plt.rcParams.update({
         'axes.labelsize': 16,    # x and y axis labels
         'axes.titlesize': 16,    # subplot titles
         'xtick.labelsize': 16,   # x-axis tick labels
         'ytick.labelsize': 16,   # y-axis tick labels
         'legend.fontsize': 16,   # legend text size
-    })
+    })    
     sns.scatterplot(
         data=size_df,
-        x="size m2",
-        y="number",
+        y="peak power (kWp)",
+        x="number",
         hue="year",
         palette=sns.color_palette(),
-        alpha=0.5
+        alpha=0.5,
     )
-    plt.xlabel("size of PV installations (m$^{2}$)")
-    plt.ylabel("number of PV installations on \n residential buildings with HP (mio.)")
+
+    plt.ylim(0,50)
+    plt.ylabel("size of PV installations (kWp)")
+    plt.xlabel("number of PV installations on \n residential buildings with HP (mio.)")
     plt.legend(title="")
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"PV_size_distribution.svg")
+    plt.show()
     plt.close()
 
     number_df = pv_df.groupby(["country", "year"])["number"].sum().reset_index()
@@ -2128,6 +2133,7 @@ def plot_PV_installations_and_size_distribution():
     plt.legend(title="", loc="upper left")
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"PV_number_of_installations.svg")
+    plt.show()
     plt.close()
 
 def plot_price_quariles(loads: pd.DataFrame):
@@ -2158,11 +2164,29 @@ def plot_price_quariles(loads: pd.DataFrame):
 def show_installed_HP_capacity_over_mean_national_demand(national: pd.DataFrame):
     df = pd.read_csv(SAVING_PATH.parent / "Installed_HP_capacity_per_country.csv", sep=";")
     df = df.rename(columns={"Unnamed: 0": "year"}).melt(id_vars=["year"], var_name="country", value_name="installed capacity (MW)")
+    df["installed (GW)"] = df["installed capacity (MW)"] / 1_000
     national_mean = national.groupby(["country", "year"])["demand MW"].mean().reset_index()
     merged = pd.merge(left=df, right=national_mean, on=["country", "year"])
     merged["capacity per mean demand"] = merged["installed capacity (MW)"] / merged["demand MW"] * 100
     plot_values_on_EU_map(plot_df=merged, columns2plot="capacity per mean demand", y_label="installed HP capacity per mean grid demand (%)")
-
+    
+    order = df.groupby("country")["installed (GW)"].mean().sort_values().index
+    sns.barplot(
+        df,
+        x="country",
+        y="installed (GW)",
+        hue="year",
+        palette=sns.color_palette(),
+        order=order
+    )
+    plt.xlabel("country")
+    plt.legend(title="", loc="upper left")
+    plt.xticks(rotation=90)
+    plt.ylabel("installed heat pump capacity (GW)")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Installed_HP_capacity.svg")
+    plt.show()
+    plt.close()
 
 def show_shifted_demand_over_year_in_days_stacked(loads):
     loads["day"] = (loads["Hour"]-1) // 24 + 1
@@ -2473,7 +2497,7 @@ def load_project_files(percentage_cooling, project_acronym):
 def main(percentage_cooling: float):
     df = load_project_files(percentage_cooling, project_acronym=PROJECT_ACRONYM)
     national_demand = Cp.get_national_demand_profiles()
-    compare_peak_pricing_with_fixed_grid_fees(percentage_cooling, national_demand)
+    # compare_peak_pricing_with_fixed_grid_fees(percentage_cooling, national_demand)
     
     # plot_shifted_demand_per_appliance_EU(price_id=4)
     # plot_daily_load_factor(loads=df, national=national_demand)
@@ -2483,8 +2507,8 @@ def main(percentage_cooling: float):
     # analyse_peak_demand(loads=df, national=national_demand)
     # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand) 
     # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df) 
-    plot_shifted_electricity(loads=df)
-    # plot_PV_self_consumption(loads=df)
+    # plot_shifted_electricity(loads=df)
+    plot_PV_self_consumption(loads=df, percentage_cooling=percentage_cooling, project_acronym=PROJECT_ACRONYM)
 
     # show_average_day_profile(loads=df)
     # show_flexibility_factor(loads=df)

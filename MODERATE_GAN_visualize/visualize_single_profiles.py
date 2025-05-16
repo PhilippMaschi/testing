@@ -204,6 +204,8 @@ def create_gif_from_pngs(directory_path, output_gif_path, pattern="hourly_trend.
     
     print(f"GIF created successfully: {output_gif_path}")
 
+    
+
 
 
 if __name__ == "__main__":
@@ -233,11 +235,6 @@ if __name__ == "__main__":
     gif_output_path = plot_path / "hourly_trends_animation.gif"
 
     create_gif_from_pngs(plot_path, gif_output_path, duration=250)
-
-
-
-
-
 
 
 

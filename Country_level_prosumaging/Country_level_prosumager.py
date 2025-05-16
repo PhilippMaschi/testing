@@ -474,6 +474,59 @@ def get_country_specific_heating_demand(folder_name: Path, perc_cooling: float, 
 
     return df
 
+def get_country_load_profiles_for_PV_buidlings(folder_name: Path, perc_cooling: float):
+    db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
+    scenario_table = db.read_dataframe(table_name="OperationScenario")
+
+    # filter out only buildings with air HP and ground HP
+    building_table = db.read_dataframe(table_name="OperationScenario_Component_Building")
+
+    # return 0 for those..
+    if building_table.empty:
+        return pd.DataFrame.from_dict({"opt_grid_demand_stock_MW": np.zeros(8760), 
+                                       "ref_grid_demand_stock_MW": np.zeros(8760),
+                                       "Hour": np.arange(1, 8761)},  orient="index").T
+    else:
+
+        scenario_df = define_tech_scenario(
+            prob_cooling=perc_cooling,
+            df_scenarios=scenario_table,
+            df_hp=building_table
+        )
+        # define scenario ids that have PV
+        ids = [i for i in scenario_df.loc[scenario_df["ID_PV"]!=1, "ID_Scenario"]]
+        opt_loads, ref_loads = load_electricity_demand_profiles(scenario_ids=ids, folder=folder_name / "output")
+         
+        # merge the numbers of each building scenario with the opt and ref loads:
+        building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice"]].copy().set_index("ID_Scenario").sort_index()
+        opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers) 
+        opt_stock["opt_grid_demand_stock_MW"] = opt_stock["Grid"] * opt_stock["number_of_buildings"] / 1_000_000  # MW
+        opt_stock["opt_PV2Grid_MW"] = opt_stock["PV2Grid"] * opt_stock["number_of_buildings"] / 1_000_000 # MW
+        opt_stock["opt_PhotovoltaicProfile_MW"] = opt_stock["PhotovoltaicProfile"] * opt_stock["number_of_buildings"] / 1_000_000 # MW
+        opt_stock["opt_PV2Load_MW"] = opt_stock["PV2Load"] * opt_stock["number_of_buildings"] / 1_000_000 # MW
+
+        ref_stock = ref_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+        ref_stock["ref_grid_demand_stock_MW"] = ref_stock["Grid"] * ref_stock["number_of_buildings"] / 1_000_000  # MW
+        ref_stock["ref_PV2Grid_MW"] = ref_stock["PV2Grid"] * ref_stock["number_of_buildings"] / 1_000_000 # MW
+        ref_stock["ref_PhotovoltaicProfile_MW"] = ref_stock["PhotovoltaicProfile"] * ref_stock["number_of_buildings"] / 1_000_000 # MW
+        ref_stock["ref_PV2Load_MW"] = ref_stock["PV2Load"] * ref_stock["number_of_buildings"] / 1_000_000 # MW
+        
+        opt_stock_grouped = opt_stock.reset_index().groupby(["ID_Scenario", "ID_EnergyPrice"])
+        ref_stock_grouped = ref_stock.reset_index().groupby(["ID_Scenario", "ID_EnergyPrice"])
+
+
+        self_consumption_ref = ref_stock_grouped["ref_PV2Load_MW"].sum() / ref_stock_grouped["ref_PhotovoltaicProfile_MW"].sum() 
+        self_consumption_opt = opt_stock_grouped["opt_PV2Load_MW"].sum() / opt_stock_grouped["opt_PhotovoltaicProfile_MW"].sum() 
+        self_consumption_ref = self_consumption_ref.reset_index().rename(columns={0: "self_consumption"})
+        self_consumption_opt = self_consumption_opt.reset_index().rename(columns={0: "self_consumption"})
+        self_consumption_ref["type"] = "simulation"
+        self_consumption_opt["type"] = "optimization"
+
+
+        country_load_df = pd.concat([self_consumption_opt, self_consumption_ref], axis=0)
+
+        return country_load_df
+
 def get_country_load_profiles(folder_name: Path, perc_cooling: float):
     db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
     scenario_table = db.read_dataframe(table_name="OperationScenario")
@@ -617,6 +670,33 @@ def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
     big_df.columns = [str(col) for col in big_df.columns]
     return big_df
 
+
+def load_only_PV_building_profiles(percentage_cooling: float, parquet_file: Path, project_acronym):
+    path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
+    folder_names = [f"{country}_{year}_{project_acronym}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    dfs = []
+    for folder_name in folder_names:
+        if folder_name in [f"CYP_2020_{PROJECT_ACRONYM}", f"MLT_2020_{PROJECT_ACRONYM}"]:
+            continue
+        folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
+        print(f"getting PV {country} {year}")
+
+        country_loads = get_country_load_profiles_for_PV_buidlings(
+            folder_name=folder,
+            perc_cooling=percentage_cooling,
+        )
+       
+
+        country_loads["country"] = country
+        country_loads["year"] = year
+
+        dfs.append(country_loads)
+        
+    big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
+    big_df.columns = [str(col) for col in big_df.columns]
+    big_df.to_parquet(parquet_file)
 
 def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_file: Path):
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
