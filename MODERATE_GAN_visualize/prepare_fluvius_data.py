@@ -3,11 +3,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-translation_dict = {
-    "Warmtepomp_Indicator": "heat pump",
-    "Elektrisch_Voertuig_Indicator": "electric vehicle",
-    "PV-Installatie_Indicator": "PV",
-}
 
 def preprocess_fluvius_data(df):
     """
@@ -130,19 +125,24 @@ def plot_label_distribution(indicators_df):
     # Sort by count (optional)
     label_counts = label_counts.sort_values(ascending=False)
     
+    # Set larger font sizes for all text
+    plt.rcParams.update({'font.size': 14})
+    
     # Create figure
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(14, 10))
     
-    # Create bar plot
-    bars = ax.bar(label_counts.index, label_counts.values, color='skyblue', edgecolor='navy')
+    # Create bar plot with thicker bars
+    bars = ax.bar(label_counts.index, label_counts.values, color='skyblue', 
+                 edgecolor='navy', width=0.7, linewidth=1.5)
     
-    # Add count labels on top of bars
+    # Add count labels on top of bars with larger font
     for bar in bars:
         height = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
-                f'{height}', ha='center', va='bottom', fontweight='bold')
+                f'{int(height)}', ha='center', va='bottom', 
+                fontweight='bold', fontsize=16)
     
-    # Add percentage labels inside bars
+    # Add percentage labels inside bars with larger font
     total = label_counts.sum()
     for i, bar in enumerate(bars):
         height = bar.get_height()
@@ -150,21 +150,26 @@ def plot_label_distribution(indicators_df):
         if height > 0:  # Only add text if the bar has height
             ax.text(bar.get_x() + bar.get_width()/2., height/2,
                     f'{percentage:.1f}%', ha='center', va='center', 
-                    color='black', fontweight='bold')
+                    color='black', fontweight='bold', fontsize=16)
     
-    # Set title and labels
-    ax.set_title('Distribution of Energy Profile Types', fontsize=16)
-    ax.set_xlabel('Profile Type', fontsize=14)
-    ax.set_ylabel('Count', fontsize=14)
+    # Set title and labels with larger font
+    ax.set_title('Distribution of Energy Profile Types', fontsize=22, pad=20)
+    ax.set_xlabel('Profile Type', fontsize=18, labelpad=15)
+    ax.set_ylabel('Count', fontsize=18, labelpad=15)
     
-    # Rotate x-axis labels for better readability
-    plt.xticks(rotation=45, ha='right')
+    # Rotate x-axis labels for better readability and increase font size
+    plt.xticks(rotation=45, ha='right', fontsize=16)
+    plt.yticks(fontsize=16)
     
     # Add grid lines for better readability
-    ax.grid(axis='y', linestyle='--', alpha=0.7)
+    ax.grid(axis='y', linestyle='--', alpha=0.7, linewidth=1.5)
     
-    # Adjust layout
-    plt.tight_layout()
+    # Add spines with thicker lines
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.5)
+    
+    # Adjust layout with more padding
+    plt.tight_layout(pad=2.0)
     
     return fig
 
