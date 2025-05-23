@@ -48,7 +48,7 @@ def plot_distribution_comparison(test_data, synthetic_datasets, save_path=None):
     # Plot histograms for each synthetic dataset
     for size, synthetic_data in synthetic_datasets.items():
         if size in [261, 261*2, 261*4, 4000]:
-            synth_values = synthetic_data.values.flatten()
+            synth_values = synthetic_datasets[261].values.flatten()
             sns.histplot(data=synth_values, label=f'Synthetic Data (size {size})', alpha=0.3, stat='density')
     
     plt.xlabel('electricity consumption (kWh/h)')
@@ -58,7 +58,7 @@ def plot_distribution_comparison(test_data, synthetic_datasets, save_path=None):
     plt.ylim(0, 3)   
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=900)
+        plt.savefig(save_path, dpi=600)
     plt.show()
     plt.close()
     
@@ -86,7 +86,7 @@ def plot_distribution_comparison(test_data, synthetic_datasets, save_path=None):
     plt.tight_layout()
     if save_path:
         cdf_save_path = str(save_path).replace('.png', '_cdf.png')
-        plt.savefig(cdf_save_path, dpi=900)
+        plt.savefig(cdf_save_path, dpi=600)
     plt.show()
     plt.close()
 
@@ -121,11 +121,11 @@ def plot_train_test_comparison(train_data, test_data, save_path=None):
     
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=900)
+        plt.savefig(save_path, dpi=600)
     plt.show()
     plt.close()
 
-def analyze_profile_patterns(real_data, synthetic_data, save_path=None):
+def analyze_profile_patterns(real_data, synthetic_data):
     """Analyze profile-specific patterns and variations."""
     # Set font sizes
     plt.rcParams.update({
@@ -185,66 +185,11 @@ def analyze_profile_patterns(real_data, synthetic_data, save_path=None):
     axes[1,1].set_ylabel('Count')
     
     plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=900)
-    plt.show()
-    plt.close()
+    return fig
 
-def analyze_temporal_patterns(real_data, synthetic_data, save_path=None):
-    """Analyze temporal patterns and seasonality."""
-    # Set font sizes
-    plt.rcParams.update({
-        'font.size': 14,
-        'axes.titlesize': 16,
-        'axes.labelsize': 14,
-        'xtick.labelsize': 12,
-        'ytick.labelsize': 12,
-        'legend.fontsize': 12
-    })
-    
-    # Convert string indices to datetime
-    real_data.index = pd.to_datetime(real_data.index)
-    synthetic_data.index = pd.to_datetime(synthetic_data.index)
-    
-    # Calculate daily patterns
-    real_daily = real_data.groupby(real_data.index.hour).mean()
-    synth_daily = synthetic_data.groupby(synthetic_data.index.hour).mean()
-    
-    # Calculate weekly patterns
-    real_weekly = real_data.groupby(real_data.index.dayofweek).mean()
-    synth_weekly = synthetic_data.groupby(synthetic_data.index.dayofweek).mean()
-    
-    # Create comparison plots
-    fig, axes = plt.subplots(2, 1, figsize=(12, 10))
-    fig.suptitle('Temporal Pattern Comparison')
-    
-    # Daily patterns
-    sns.lineplot(data=real_daily, label='Real', ax=axes[0])
-    sns.lineplot(data=synth_daily, label='Synthetic', ax=axes[0])
-    axes[0].set_title('Average Daily Pattern')
-    axes[0].set_xlabel('Hour of Day')
-    axes[0].set_ylabel('Average Consumption')
-    axes[0].set_xticks(range(0, 24, 2))  # Show every other hour for clarity
-    
-    # Weekly patterns
-    sns.lineplot(data=real_weekly, label='Real', ax=axes[1])
-    sns.lineplot(data=synth_weekly, label='Synthetic', ax=axes[1])
-    axes[1].set_title('Average Weekly Pattern')
-    axes[1].set_xlabel('Day of Week')
-    axes[1].set_ylabel('Average Consumption')
-    axes[1].set_xticks(range(7))
-    axes[1].set_xticklabels(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
-    
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=900)
-    plt.show()
-    plt.close()
-
-def analyze_clustering_behavior(real_data, synthetic_data, save_path=None):
-    """Analyze clustering behavior and pattern recognition."""
+def analyze_pca_comparison(train_data, test_data, synthetic_data):
+    """Analyze and compare PCA projections of training, test and synthetic data."""
     from sklearn.decomposition import PCA
-    from sklearn.cluster import KMeans
     
     # Set font sizes
     plt.rcParams.update({
@@ -258,28 +203,96 @@ def analyze_clustering_behavior(real_data, synthetic_data, save_path=None):
     
     # Perform PCA
     pca = PCA(n_components=2)
-    real_pca = pca.fit_transform(real_data.T)
+    # Fit PCA on training data and transform all datasets
+    train_pca = pca.fit_transform(train_data.T)
+    test_pca = pca.transform(test_data.T)
     synth_pca = pca.transform(synthetic_data.T)
     
-    # Perform clustering
-    kmeans = KMeans(n_clusters=3, random_state=42)
-    real_clusters = kmeans.fit_predict(real_pca)
-    synth_clusters = kmeans.predict(synth_pca)
-    
     # Create comparison plot
-    plt.figure(figsize=(10, 8))
-    plt.scatter(real_pca[:, 0], real_pca[:, 1], c=real_clusters, label='Real', alpha=0.6)
-    plt.scatter(synth_pca[:, 0], synth_pca[:, 1], c=synth_clusters, label='Synthetic', alpha=0.6, marker='x')
-    plt.title('PCA and Clustering Comparison')
+    fig = plt.figure(figsize=(10, 8))
+    plt.scatter(train_pca[:, 0], train_pca[:, 1], c='blue', label='Training Data', alpha=0.6)
+    plt.scatter(test_pca[:, 0], test_pca[:, 1], c='red', label='Test Data', alpha=0.6)
+    plt.scatter(synth_pca[:, 0], synth_pca[:, 1], c='green', label='Synthetic Data', alpha=0.6, marker='x')
+    
+    plt.title('PCA Comparison of Training, Test and Synthetic Data')
     plt.xlabel('First Principal Component')
     plt.ylabel('Second Principal Component')
     plt.legend()
     
     plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=900)
-    plt.show()
-    plt.close()
+    return fig
+
+def plot_dataset_distributions(train_data, test_data, synthetic_data, save_path=None):
+    """Create distribution comparison plots with histograms for training, test and synthetic data."""
+    # Set font sizes
+    plt.rcParams.update({
+        'font.size': 14,
+        'axes.titlesize': 16,
+        'axes.labelsize': 14,
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        'legend.fontsize': 12
+    })
+    
+    # Flatten all datasets
+    train_values = train_data.values.flatten()
+    test_values = test_data.values.flatten()
+    synth_values = synthetic_data.values.flatten()
+    
+    # Create figure for histogram
+    fig = plt.figure(figsize=(8, 6))
+    sns.histplot(data=train_values, label='Training Data', alpha=0.6, stat='density', color='blue')
+    sns.histplot(data=test_values, label='Test Data', alpha=0.6, stat='density', color='red')
+    sns.histplot(data=synth_values, label='Synthetic Data', alpha=0.6, stat='density', color='green')
+    
+    plt.xlabel('electricity consumption (kWh/h)')
+    plt.ylabel('probability density')
+    plt.legend()
+    plt.xlim(0, 2)  
+    plt.ylim(0, 3)   
+    plt.tight_layout()
+    return fig
+
+def plot_cdf(train_data, test_data, synthetic_data, save_path=None):
+    train_values = train_data.values.flatten()
+    test_values = test_data.values.flatten()
+    synth_values = synthetic_data.values.flatten()
+    # Create separate figure for CDF
+    fig = plt.figure(figsize=(8, 6))
+    
+    # Plot CDFs for all datasets
+    x = np.sort(train_values)
+    y = np.arange(1, len(x) + 1) / len(x)
+    plt.plot(x, y, label='Training Data', linewidth=2, color='blue')
+    
+    x = np.sort(test_values)
+    y = np.arange(1, len(x) + 1) / len(x)
+    plt.plot(x, y, label='Test Data', linewidth=2, color='red')
+    
+    x = np.sort(synth_values)
+    y = np.arange(1, len(x) + 1) / len(x)
+    plt.plot(x, y, label='Synthetic Data', linewidth=2, color='green')
+    
+    plt.xlabel('electricity consumption (kWh/h)')
+    plt.ylabel('Cumulative Probability')
+    plt.legend()
+    plt.xlim(0, 2.5)  # Zoom in on x-axis
+    
+    plt.tight_layout()
+    return fig
+
+def plot_wasserstein_by_size(overall_metrics):
+    """Create a plot of Wasserstein distances by synthetic dataset size."""
+    fig = plt.figure(figsize=(10, 6))
+    sizes = list(overall_metrics.keys())
+    wasserstein_dists = [metrics['wasserstein_dist'] for metrics in overall_metrics.values()]
+    
+    plt.plot(sizes, wasserstein_dists, marker='o')
+    plt.xlabel('Synthetic dataset size')
+    plt.ylabel('Wasserstein Distance')
+    plt.tight_layout()
+    return fig
+
 
 def main():
     data_dir = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/GAN/data/Fluvius_processed/")
@@ -313,33 +326,38 @@ def main():
         metrics = calculate_overall_metrics(test_df, synthetic_data)
         overall_metrics[size] = metrics
         
-        # Add new analyses for each synthetic dataset
-        profile_patterns_path = output_dir / f"profile_patterns_{size}.png"
-        analyze_profile_patterns(test_df, synthetic_data, profile_patterns_path)
-        
-        temporal_patterns_path = output_dir / f"temporal_patterns_{size}.png"
-        analyze_temporal_patterns(test_df, synthetic_data, temporal_patterns_path)
-        
-        clustering_path = output_dir / f"clustering_behavior_{size}.png"
-        analyze_clustering_behavior(test_df, synthetic_data, clustering_path)
+    # Create profile patterns plot
+    profile_patterns_path = output_dir / f"profile_patterns_{261}.png"
+    profile_patterns_fig = analyze_profile_patterns(test_df, synthetic_datasets[261])
+    profile_patterns_fig.savefig(profile_patterns_path, dpi=600)
+    profile_patterns_fig.close()
+    
+    # Create PCA plot
+    pca_comparison_path = output_dir / f"pca_comparison_{261}.png"
+    pca_comparison_fig = analyze_pca_comparison(train_df, test_df, synthetic_datasets[261])
+    pca_comparison_fig.savefig(pca_comparison_path, dpi=600)
+    pca_comparison_fig.close()
     
     # Create distribution comparison plot
-    plot_path = output_dir / "overall_distribution_comparison.png"
-    plot_distribution_comparison(test_df, synthetic_datasets, plot_path)
+    synthetic_df = synthetic_datasets[261]
+    plot_path = output_dir / "dataset_distributions.png"
+    hist_plot = plot_dataset_distributions(train_df, test_df, synthetic_df, plot_path)
+    hist_plot.savefig(plot_path, dpi=600)
+    hist_plot.close()
     
-    # Create summary plot of Wasserstein distances
-    plt.figure(figsize=(10, 6))
-    sizes = list(overall_metrics.keys())
-    wasserstein_dists = [metrics['wasserstein_dist'] for metrics in overall_metrics.values()]
-    
-    plt.plot(sizes, wasserstein_dists, marker='o')
-    plt.xlabel('Synthetic dataset size')
-    plt.ylabel('Wasserstein Distance')
-    plt.tight_layout()
-    plt.savefig(output_dir / "wasserstein_by_size.png", dpi=900)
-    plt.show()
-    plt.close()
+    # Create CDF plot
+    cdf_plot_path = output_dir / "cdf_plot.png"
+    cdf_plot = plot_cdf(train_df, test_df, synthetic_df, cdf_plot_path)
+    cdf_plot.savefig(cdf_plot_path, dpi=600)
+    cdf_plot.close()
 
+    # Create Wasserstein plot
+    wasserstein_plot_path = output_dir / "wasserstein_by_size.png"
+    wasserstein_plot = plot_wasserstein_by_size(overall_metrics)
+    wasserstein_plot.savefig(wasserstein_plot_path, dpi=600)
+    wasserstein_plot.close()
+
+    
 if __name__ == "__main__":
     main()
 
