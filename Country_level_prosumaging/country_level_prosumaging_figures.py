@@ -19,6 +19,8 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import PercentFormatter
 from scipy.signal import find_peaks
 from matplotlib.patches import Patch, ConnectionPatch
+import matplotlib.patches as mpatches
+
 
     # Ensure the log directory exists
 log_file_path = Path(__file__).parent / "logfile.log"
@@ -1390,7 +1392,7 @@ def plot_values_on_EU_map(plot_df: pd.DataFrame, columns2plot: str, y_label: str
         ax.set_yticks([],)
         ax.set_title(f"{year}")
     plt.tight_layout()
-    plt.savefig(SAVING_PATH / f"EU_map_{y_label.replace(' ', '_').replace('cent/kWh','').replace('(HP/GWh)','').replace('(kWh/m2)','')}.svg")
+    plt.savefig(SAVING_PATH / f"EU_map_{y_label.replace(' ', '_').replace('cent/kWh','').replace('(HP/GWh)','').replace('(kWh/m2)','').replace('(kWh/m$^2$)','').replace('(kWh/m^2)','').replace('(kWh/(m$^2$*year))','')}.svg")
     # plt.show()
     plt.close()
 
@@ -1623,9 +1625,14 @@ def analyse_prices(loads: pd.DataFrame, national: pd.DataFrame):
             'prominence': avg_prom
         })
      
-    price_props = loads.groupby(["ID_EnergyPrice", "year", "country"])["price (cent/kWh)"].agg(['mean', 'std', 'max', 'min', frequency_of_changes, mean_absolute_successive_difference]).reset_index()
+    price_props = loads.groupby(["ID_EnergyPrice", "year", "country"])["price (cent/kWh)"].agg(
+        ['mean', 'std', 'max', 'min', frequency_of_changes, mean_absolute_successive_difference]
+        ).reset_index()
     
     local_peaks = loads.groupby(["ID_EnergyPrice", "year", "country"])["price (cent/kWh)"].apply(local_peaks).reset_index().rename(columns={"level_3": "type", "price (cent/kWh)": "values"})
+    merged_price_props = pd.merge(left=local_peaks, right=price_props.loc[:, ["ID_EnergyPrice", "year", "country", "frequency_of_changes", "mean"]], on=["ID_EnergyPrice", "year", "country"])
+    merged_price_props["prominence_per_mean"] = merged_price_props["values"] / merged_price_props["mean"]
+    
     plt.rcParams.update({
         'axes.labelsize': 18,    # x and y axis labels
         'axes.titlesize': 20,    # subplot titles
@@ -1635,20 +1642,20 @@ def analyse_prices(loads: pd.DataFrame, national: pd.DataFrame):
     })
     fig = plt.figure(figsize=(8,6))
     sns.barplot(
-        local_peaks.loc[(local_peaks["type"]=="peaks") & (local_peaks["ID_EnergyPrice"]=="Price 4"), :],
+        price_props.loc[(price_props["ID_EnergyPrice"]=="Price 4"), :],
         x="country",
-        y="values",
+        y="frequency_of_changes",
         hue="year",
         palette=sns.color_palette(),
-        order=local_peaks.loc[(local_peaks["type"]=="peaks") & (local_peaks["ID_EnergyPrice"]=="Price 4"), :].groupby("country")["values"].mean().sort_values().index
+        order=price_props.loc[(price_props["ID_EnergyPrice"]=="Price 4"), :].groupby("country")["frequency_of_changes"].mean().sort_values().index,
     )
-    plt.ylabel("local peaks per year (-)")
+    plt.ylabel("frequency of price changes per year (-)")
     plt.legend(title="")
     plt.xticks(rotation=90)
     plt.tight_layout()
-    plt.savefig(SAVING_PATH / f"Price_peaks_cooling{COOLING_PERCENTAGE}.svg")
+    plt.savefig(SAVING_PATH / f"Price_frequency_of_changes_cooling{COOLING_PERCENTAGE}.svg")
 
-
+    order=local_peaks.loc[(local_peaks["type"]=="prominence") & (local_peaks["ID_EnergyPrice"]=="Price 4"), :].groupby("country")["values"].mean().sort_values().index
     fig = plt.figure(figsize=(8,6))
     sns.barplot(
         local_peaks.loc[(local_peaks["type"]=="prominence") & (local_peaks["ID_EnergyPrice"]=="Price 4"), :],
@@ -1656,7 +1663,7 @@ def analyse_prices(loads: pd.DataFrame, national: pd.DataFrame):
         y="values",
         hue="year",
         palette=sns.color_palette(),
-        order=local_peaks.loc[(local_peaks["type"]=="prominence") & (local_peaks["ID_EnergyPrice"]=="Price 4"), :].groupby("country")["values"].mean().sort_values().index
+        order=order
     )
     plt.ylabel("average prominence of peaks \n per year (cent/kWh)")
     plt.legend(title="")
@@ -1665,6 +1672,42 @@ def analyse_prices(loads: pd.DataFrame, national: pd.DataFrame):
     plt.tight_layout()
     plt.savefig(SAVING_PATH / f"Price_peak_prominence_cooling{COOLING_PERCENTAGE}.svg")
     print(f'local price peaks change from 2030 to 2050 by {local_peaks.loc[local_peaks["ID_EnergyPrice"]=="Price 4", :].groupby("year")["values"].sum().reset_index().pct_change().dropna()["values"].values[0]*100} %')
+
+    merged_price_props["ID_EnergyPrice"] = merged_price_props["ID_EnergyPrice"].map(add_price_information())
+    fig, axes = plt.subplots(figsize=(16,6), nrows=1, ncols=2, sharex=True, sharey=True)
+
+    sns.scatterplot(
+        data=merged_price_props.loc[(merged_price_props["type"]=="prominence") & (merged_price_props["year"]==2030), :],
+        x="country",
+        y="prominence_per_mean",
+        hue="ID_EnergyPrice",
+        palette=sns.color_palette(),
+        style="ID_EnergyPrice",
+        legend=True,
+        ax=axes[0],
+    )
+    sns.scatterplot(
+        data=merged_price_props.loc[(merged_price_props["type"]=="prominence") & (merged_price_props["year"]==2050), :],
+        x="country",
+        y="prominence_per_mean",
+        hue="ID_EnergyPrice",
+        palette=sns.color_palette(),
+        style="ID_EnergyPrice",
+        legend=False,
+        ax=axes[1],
+    )   
+    axes[0].legend(title="")
+    for ax in axes:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+        ax.set_ylabel("average prominence of price peaks \n over mean price per year (-)", fontsize=18)
+        ax.yaxis.set_major_locator(plt.MultipleLocator(0.5))
+        ax.set_ylim(0, 3)
+
+    axes[0].set_title("2030")
+    axes[1].set_title("2050")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Price_peak_prominence_over_mean_cooling{COOLING_PERCENTAGE}.svg")
+    plt.close()
 
     def plot_price_prop(column_name, price_df, y_label, hue, ):
         order = price_df.groupby("country")[column_name].mean().sort_values().index
@@ -1912,7 +1955,7 @@ def calculate_price_correlations(loads: pd.DataFrame, national: pd.DataFrame):
         palette=sns.color_palette(),
         order=heat_order
     )   
-    plt.ylabel("average specific heating demand (kWh/m2)")
+    plt.ylabel("average specific heating demand (kWh/m$^2$")
     plt.xticks(rotation=90)
     plt.savefig(SAVING_PATH / f"heat_demand_avg.svg")
     plt.close()
@@ -1952,7 +1995,7 @@ def compare_heat_demand_with_invert_2020():
         hue="source",
         palette=sns.color_palette()
     )
-    plt.ylabel("average specific heating demand (kWh/m2)")
+    plt.ylabel("average specific heating demand (kWh/m$^2$)")
     plt.xticks(rotation=90)
     plt.savefig(SAVING_PATH / f"comparison_heat_demand_2020.svg")
     plt.close()
@@ -2049,7 +2092,7 @@ def plot_country_specific_heating_demand(percentage_cooling):
     df = Cp.create_national_heat_demand_df(percentage_cooling=percentage_cooling)
     df = df.loc[df["ID_EnergyPrice"]==1, :].copy()
 
-    plot_values_on_EU_map(plot_df=df, columns2plot="Heating ref demand (kWh/m2)", y_label="specific heating demand (kWh/m2)")
+    plot_values_on_EU_map(plot_df=df, columns2plot="Heating ref demand (kWh/m2)", y_label="specific heating demand (kWh/(m$^2$*year))")
 
 def plot_PV_installations_and_size_distribution():
     path2_projects = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects")
@@ -2256,6 +2299,129 @@ def show_shifted_demand_over_year_in_days_stacked(loads):
     plt.show()
     plt.close()
 
+
+def plot_shifted_electricity_per_appliance_EU(price_id: int):
+    def plot_stackplot(df, columns_positive, columns_negative, color_dict_positive, color_dict_negative, legend_elements, hp: str):
+        fig, axes = plt.subplots(figsize=(12, 5), ncols=2, nrows=1, sharey=True)
+        for ax, year in zip(axes, [2030, 2050]):
+            year_df_increase = df.loc[df["year"]==year, columns_positive+["day"]]
+            x_axis=year_df_increase["day"].to_numpy()
+            y_data = year_df_increase[columns_positive].to_numpy().T
+            type_colors = [color_dict_positive.get(name, "#cccccc") for name in columns_positive]
+
+            ax.stackplot(
+                x_axis,
+                y_data,
+                labels=columns_positive,
+                colors=type_colors,
+                # edgecolor='black',
+                linewidth=0.5
+            )
+
+            year_df_decrease = df.loc[df["year"]==year, columns_negative]
+            y_data = year_df_decrease[columns_negative].to_numpy().T
+            type_colors_negative = [color_dict_negative.get(name, "#cccccc") for name in columns_negative]
+
+            ax.stackplot(
+                x_axis,
+                y_data,
+                labels=columns_negative,
+                colors=type_colors_negative,
+                # edgecolor='black',
+                linewidth=0.5
+            )
+
+
+            ax.set_title(f"{year}")
+            ax.set_xlabel("days")
+            ax.set_ylabel("daily shifted demand (GWh$_{el}$)")
+            ax.set_ylim(-200,200)
+        
+            ax.legend(handles=legend_elements, loc='lower center')
+        
+        plt.tight_layout()
+        plt.savefig(SAVING_PATH / f"Daily_electric_demand_shift_Appliances_price{price_id}_{COOLING_PERCENTAGE}_cooling_{hp}.svg", bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+    df = Cp.calculate_shifted_electricity_per_appliance_type(COOLING_PERCENTAGE, price_id=price_id)
+    df.reset_index(inplace=True)
+    
+    df["day"] = (df["Hour"]-1) // 24 + 1
+
+    columns_positive = [
+        "thermal_mass_shift_increase",  
+        "DHW_shift_increase",  
+        "Buffer_shift_increase",
+        "thermal_mass_shift_cooling_increase",
+    ]
+    columns_negative = [
+        "thermal_mass_shift_decrease", 
+        "DHW_shift_decrease", 
+        "Buffer_shift_decrease",
+        "thermal_mass_shift_cooling_decrease",
+    ]
+    grouped = df.groupby(["ID_EnergyPrice", "year", "day"])[columns_positive+columns_negative].sum()
+    grouped[[c for c in grouped.columns]] =  grouped[[c for c in grouped.columns]] / 1_000 
+    
+    df_new = grouped.reset_index()
+    df_new["year"] = df_new["year"].astype(int)
+
+    color_dict_positive = {col: sns.color_palette("Paired")[i*2] for i, col in enumerate(columns_positive)}
+    color_dict_negative = {col: sns.color_palette("Paired")[i*2-1] for i, col in enumerate(columns_negative, start=1)}
+    # Create custom legend with 3 patches
+    legend_elements = [
+        plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative["thermal_mass_shift_decrease"], label="Thermal Mass"),
+        plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative["DHW_shift_decrease"], label="DHW Tank"),
+        plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative["Buffer_shift_decrease"], label="Heating Tank"),
+        plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative["thermal_mass_shift_cooling_decrease"], label="Cooling")
+    ]
+    plot_stackplot(df_new, columns_positive, columns_negative, color_dict_positive, color_dict_negative, legend_elements, hp="")
+    total_sum = df_new.groupby("year")[columns_positive].sum()
+    print(f"\nPercentages of total shifted electricity demand in Price scenario {price_id}:")
+    for year in [2030, 2050]:
+        year_data = total_sum.loc[year]
+        year_percentages = (year_data / year_data.sum() * 100).round(2)
+        print(f"\nYear {year}:")
+        for col, percentage in year_percentages.items():
+            print(f"{col}: {percentage}%  -  {year_data[col]}GWh")
+
+    # make the same plot only for HP heating and HP DHW and Cooling
+    columns_positive_HP = [
+        "space_cooling_shift_increase",
+        "heating_HP_shift_increase",
+        "DHW_HP_shift_increase",
+    ]
+    columns_negative_HP = [
+        "space_cooling_shift_decrease",
+        "heating_HP_shift_decrease",
+        "DHW_HP_shift_decrease",
+    ]
+    grouped_HP = df.groupby(["ID_EnergyPrice", "year", "day"])[columns_positive_HP+columns_negative_HP].sum()
+    grouped_HP[[c for c in grouped_HP.columns]] =  grouped_HP[[c for c in grouped_HP.columns]] / 1_000 
+    df_new_HP = grouped_HP.reset_index()
+    df_new_HP["year"] = df_new_HP["year"].astype(int)
+
+    color_dict_positive_HP = {col: sns.color_palette("Paired")[i*2] for i, col in enumerate(columns_positive_HP)}
+    color_dict_negative_HP = {col: sns.color_palette("Paired")[i*2-1] for i, col in enumerate(columns_negative_HP, start=1)}
+    # Create custom legend with 3 patches
+    legend_elements = [
+        plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative_HP["heating_HP_shift_decrease"], label="Heating"),
+        plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative_HP["DHW_HP_shift_decrease"], label="DHW"),
+        plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative_HP["space_cooling_shift_decrease"], label="Cooling"),
+    ]
+    plot_stackplot(df_new_HP, columns_positive_HP, columns_negative_HP, color_dict_positive_HP, color_dict_negative_HP, legend_elements, hp="HP")
+
+    # Calculate percentages for each year
+    total_sum_HP = df_new_HP.groupby("year")[columns_positive_HP].sum()
+    print(f"\nPercentages of total shifted electricity demand in Price scenario {price_id} for HP:")
+    for year in [2030, 2050]:
+        year_data = total_sum_HP.loc[year]
+        year_percentages = (year_data / year_data.sum() * 100).round(2)
+        print(f"\nYear {year}:")
+        for col, percentage in year_percentages.items():
+            print(f"{col}: {percentage}%  -  {year_data[col]}GWh")
+
 def plot_shifted_demand_per_appliance_EU(price_id: int):
     df = Cp.calculate_shifted_energy_per_appliance_type(COOLING_PERCENTAGE, price_id=price_id)
     df.reset_index(inplace=True)
@@ -2266,11 +2432,13 @@ def plot_shifted_demand_per_appliance_EU(price_id: int):
         "thermal_mass_shift_increase",  
         "DHW_shift_increase",  
         "Buffer_shift_increase",
+        "space_cooling_shift_increase",
     ]
     columns_negative = [
         "thermal_mass_shift_decrease", 
         "DHW_shift_decrease", 
-        "Buffer_shift_decrease"
+        "Buffer_shift_decrease",
+        "space_cooling_shift_decrease",
     ]
     grouped = df.groupby(["ID_EnergyPrice", "year", "day"])[columns_positive+columns_negative].sum()
     grouped[[c for c in grouped.columns]] =  grouped[[c for c in grouped.columns]] / 1_000 / 1_000
@@ -2315,13 +2483,14 @@ def plot_shifted_demand_per_appliance_EU(price_id: int):
         ax.set_title(f"{year}")
         ax.set_xlabel("days")
         ax.set_ylabel("daily shifted demand (TWh$_{th}$)")
-        ax.set_ylim(-1.5,1.5)
+        ax.set_ylim(-0.8,0.8)
     
         # Create custom legend with 3 patches
         legend_elements = [
             plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative["thermal_mass_shift_decrease"], label="Thermal Mass"),
             plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative["DHW_shift_decrease"], label="DHW Tank"),
-            plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative["Buffer_shift_decrease"], label="Heating Tank")
+            plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative["Buffer_shift_decrease"], label="Heating Tank"),
+            plt.Rectangle((0,0), 1, 1, facecolor=color_dict_negative["space_cooling_shift_decrease"], label="Cooling")
         ]
         ax.legend(handles=legend_elements, loc='lower center')
     
@@ -2340,6 +2509,246 @@ def plot_shifted_demand_per_appliance_EU(price_id: int):
         for col, percentage in year_percentages.items():
             print(f"{col}: {percentage}%  -  {year_data[col]}TWh")
 
+
+def plot_daily_load_comparison_between_peak_and_fees(percentage_cooling):
+    df_fees = load_project_files(percentage_cooling, project_acronym="grid_fees")
+    df_peak = load_project_files(percentage_cooling, project_acronym="peak_price")
+    daily_load_fees = df_fees.copy()
+    daily_load_fees["hourofday"] = (daily_load_fees["Hour"]-1) % 24 + 1
+    daily_load_fees = daily_load_fees.groupby(["year", "country", "ID_EnergyPrice", "hourofday"])["opt_grid_demand_stock_MW"].mean().reset_index()
+
+    daily_load_peak = df_peak.copy()
+    daily_load_peak["hourofday"] = (daily_load_peak["Hour"]-1) % 24 + 1
+    daily_load_peak = daily_load_peak.groupby(["year", "country", "ID_EnergyPrice", "hourofday"])["opt_grid_demand_stock_MW"].mean().reset_index()
+    # Create plotly subplot comparing daily load profiles
+    years = sorted(daily_load_fees["year"].unique())
+    countries = sorted(daily_load_fees["country"].unique())
+    prices = sorted(daily_load_fees["ID_EnergyPrice"].unique())
+    
+    # Create subplot figure with columns for years and rows for prices
+    fig = make_subplots(
+        rows=len(prices),
+        cols=len(years),
+        shared_xaxes=True,
+        shared_yaxes=True,
+        vertical_spacing=0.05,
+        horizontal_spacing=0.05,
+        subplot_titles=[f"Year {year}" for year in years] * len(prices),
+        row_titles=[f"{price}" for price in prices],
+    )
+    
+    # Create color mapping for countries
+    country_colors = {country: color for country, color in zip(countries, cycle(qualitative.Plotly))}
+    
+    # Add traces for each year, price, country, and scenario
+    for i, price in enumerate(prices):
+        for j, year in enumerate(years):
+            row_num = i + 1
+            col_num = j + 1
+            
+            # Filter data for this year and price scenario
+            year_data_fees = daily_load_fees[(daily_load_fees["year"] == year) & 
+                                           (daily_load_fees["ID_EnergyPrice"] == price)]
+            year_data_peak = daily_load_peak[(daily_load_peak["year"] == year) & 
+                                           (daily_load_peak["ID_EnergyPrice"] == price)]
+            
+            for country in countries:
+                country_data_fees = year_data_fees[year_data_fees["country"] == country]
+                country_data_peak = year_data_peak[year_data_peak["country"] == country]
+                
+                if not country_data_fees.empty:
+                    # Add solid line for grid fees scenario
+                    fig.add_trace(
+                        go.Scatter(
+                            x=country_data_fees["hourofday"],
+                            y=country_data_fees["opt_grid_demand_stock_MW"],
+                            mode="lines",
+                            name=f"{country} - Grid Fees",
+                            line=dict(color=country_colors[country], dash="solid"),
+                            legendgroup=country,
+                            showlegend=(i == 0 and j == 0),  # Only show legend for first subplot
+                        ),
+                        row=row_num,
+                        col=col_num,
+                    )
+                
+                if not country_data_peak.empty:
+                    # Add dashed line for peak pricing scenario
+                    fig.add_trace(
+                        go.Scatter(
+                            x=country_data_peak["hourofday"],
+                            y=country_data_peak["opt_grid_demand_stock_MW"],
+                            mode="lines",
+                            name=f"{country} - Peak Price",
+                            line=dict(color=country_colors[country], dash="dash"),
+                            legendgroup=country,
+                            showlegend=(i == 0 and j == 0),  # Only show legend for first subplot
+                        ),
+                        row=row_num,
+                        col=col_num,
+                    )
+    
+    # Update layout
+    fig.update_layout(
+        height=300 * len(prices),  # Adjust height based on number of price scenarios
+        width=1000 * len(years),    # Adjust width based on number of years
+        title="Daily Load Profiles: Grid Fees vs Peak Pricing",
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.01
+        )
+    )
+    
+    # Update x and y axis labels
+    # Add x-axis labels only to bottom row
+    for j in range(1, len(years) + 1):
+        fig.update_xaxes(title_text="Hour of Day", row=len(prices), col=j)
+    
+    # Add y-axis labels only to first column
+    for i in range(1, len(prices) + 1):
+        fig.update_yaxes(title_text="Grid Demand (MW)", row=i, col=1)
+    
+    # Save the plot as HTML
+    saving_path = SAVING_PATH.parent / f"daily_load_comparison_{PROJECT_ACRONYM}_cooling{COOLING_PERCENTAGE}.html"
+    fig.write_html(saving_path)
+    LOGGER.info(f"Saved plotly figure: daily_load_comparison_{PROJECT_ACRONYM}_cooling{COOLING_PERCENTAGE}.html")
+
+
+def plot_peak_day_comparison_between_peak_and_fees(percentage_cooling):
+    df_fees = load_project_files(percentage_cooling, project_acronym="grid_fees")
+    df_peak = load_project_files(percentage_cooling, project_acronym="peak_price")
+    
+    def extract_peak_day_profiles(df):
+        """Extract the 24-hour profile for the day with peak opt_grid_demand_stock_MW"""
+        df["day"] = (df["Hour"] - 1) // 24 + 1
+        df["hourofday"] = (df["Hour"] - 1) % 24 + 1
+        
+        peak_day_profiles = []
+        
+        for (country, year, price), group in df.groupby(["country", "year", "ID_EnergyPrice"]):
+            # Find the hour with peak demand
+            peak_hour = group.loc[group["opt_grid_demand_stock_MW"].idxmax(), "Hour"]
+            peak_day = (peak_hour - 1) // 24 + 1
+            
+            # Extract the full 24-hour profile for that day
+            day_profile = group[group["day"] == peak_day].copy()
+            day_profile = day_profile.sort_values("hourofday")
+            
+            if len(day_profile) == 24:  # Ensure we have complete 24-hour data
+                peak_day_profiles.append(day_profile)
+        
+        return pd.concat(peak_day_profiles, ignore_index=True) if peak_day_profiles else pd.DataFrame()
+    
+    # Extract peak day profiles for both scenarios
+    peak_day_fees = extract_peak_day_profiles(df_fees)
+    peak_day_peak = extract_peak_day_profiles(df_peak)
+    
+    if peak_day_fees.empty or peak_day_peak.empty:
+        LOGGER.warning("No complete peak day profiles found")
+        return
+    
+    # Create the plotly visualization
+    years = sorted(peak_day_fees["year"].unique())
+    countries = sorted(peak_day_fees["country"].unique())
+    prices = sorted(peak_day_fees["ID_EnergyPrice"].unique())
+    
+    # Create subplot figure with columns for years and rows for prices
+    fig = make_subplots(
+        rows=len(prices),
+        cols=len(years),
+        shared_xaxes=True,
+        shared_yaxes=True,
+        vertical_spacing=0.05,
+        horizontal_spacing=0.05,
+        subplot_titles=[f"Year {year}" for year in years] * len(prices),
+        row_titles=[f"{price}" for price in prices],
+    )
+    
+    # Create color mapping for countries
+    country_colors = {country: color for country, color in zip(countries, cycle(qualitative.Plotly))}
+    
+    # Add traces for each year, price, country, and scenario
+    for i, price in enumerate(prices):
+        for j, year in enumerate(years):
+            row_num = i + 1
+            col_num = j + 1
+            
+            # Filter data for this year and price scenario
+            year_data_fees = peak_day_fees[(peak_day_fees["year"] == year) & 
+                                         (peak_day_fees["ID_EnergyPrice"] == price)]
+            year_data_peak = peak_day_peak[(peak_day_peak["year"] == year) & 
+                                         (peak_day_peak["ID_EnergyPrice"] == price)]
+            
+            for country in countries:
+                country_data_fees = year_data_fees[year_data_fees["country"] == country]
+                country_data_peak = year_data_peak[year_data_peak["country"] == country]
+                
+                if not country_data_fees.empty:
+                    # Add solid line for grid fees scenario
+                    fig.add_trace(
+                        go.Scatter(
+                            x=country_data_fees["hourofday"],
+                            y=country_data_fees["opt_grid_demand_stock_MW"],
+                            mode="lines",
+                            name=f"{country} - Grid Fees",
+                            line=dict(color=country_colors[country], dash="solid"),
+                            legendgroup=country,
+                            showlegend=(i == 0 and j == 0),  # Only show legend for first subplot
+                        ),
+                        row=row_num,
+                        col=col_num,
+                    )
+                
+                if not country_data_peak.empty:
+                    # Add dashed line for peak pricing scenario
+                    fig.add_trace(
+                        go.Scatter(
+                            x=country_data_peak["hourofday"],
+                            y=country_data_peak["opt_grid_demand_stock_MW"],
+                            mode="lines",
+                            name=f"{country} - Peak Price",
+                            line=dict(color=country_colors[country], dash="dash"),
+                            legendgroup=country,
+                            showlegend=(i == 0 and j == 0),  # Only show legend for first subplot
+                        ),
+                        row=row_num,
+                        col=col_num,
+                    )
+    
+    # Update layout
+    fig.update_layout(
+        height=300 * len(prices),  # Adjust height based on number of price scenarios
+        width=1000 * len(years),    # Adjust width based on number of years
+        title="Peak Day Load Profiles: Grid Fees vs Peak Pricing",
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.01
+        )
+    )
+    
+    # Update x and y axis labels
+    # Add x-axis labels only to bottom row
+    for j in range(1, len(years) + 1):
+        fig.update_xaxes(title_text="Hour of Day", row=len(prices), col=j)
+    
+    # Add y-axis labels only to first column
+    for i in range(1, len(prices) + 1):
+        fig.update_yaxes(title_text="Grid Demand (MW)", row=i, col=1)
+    
+    # Save the plot as HTML
+    saving_path = SAVING_PATH.parent / f"peak_day_load_comparison_{PROJECT_ACRONYM}_cooling{COOLING_PERCENTAGE}.html"
+    fig.write_html(saving_path)
+    LOGGER.info(f"Saved plotly figure: peak_day_load_comparison_{PROJECT_ACRONYM}_cooling{COOLING_PERCENTAGE}.html")
+
+
 def compare_peak_pricing_with_fixed_grid_fees(percentage_cooling, national):
     df_fees = load_project_files(percentage_cooling, project_acronym="grid_fees")
     df_peak = load_project_files(percentage_cooling, project_acronym="peak_price")
@@ -2347,35 +2756,157 @@ def compare_peak_pricing_with_fixed_grid_fees(percentage_cooling, national):
     national_fees = pd.merge(left=df_fees, right=national[["country", "demand MW", "year", "Hour"]], on=["year", "Hour", "country"])
     national_fees["demand_opt"] = national_fees["demand MW"] - national_fees["ref_grid_demand_stock_MW"] + national_fees["opt_grid_demand_stock_MW"]
     demand_peaks_fees = national_fees.groupby(["year", "country", "ID_EnergyPrice"])[["demand MW", "demand_opt"]].max().reset_index()
-    demand_peaks_fees["no peak price"] = (demand_peaks_fees["demand_opt"] - demand_peaks_fees["demand MW"]) / demand_peaks_fees["demand MW"] * 100  # %
+    demand_peaks_fees["national_increase"] = (demand_peaks_fees["demand_opt"] - demand_peaks_fees["demand MW"]) / demand_peaks_fees["demand MW"] * 100 
 
     national_peak = pd.merge(left=df_peak, right=national[["country", "demand MW", "year", "Hour"]], on=["year", "Hour", "country"])
     national_peak["demand_opt"] = national_peak["demand MW"] - national_peak["ref_grid_demand_stock_MW"] + national_peak["opt_grid_demand_stock_MW"]
     demand_peaks_peak = national_peak.groupby(["year", "country", "ID_EnergyPrice"])[["demand MW", "demand_opt"]].max().reset_index()
-    demand_peaks_peak["peak price"] = (demand_peaks_peak["demand_opt"] - demand_peaks_peak["demand MW"]) / demand_peaks_peak["demand MW"] * 100  # %
+    demand_peaks_peak["national_increase_peak"] = (demand_peaks_peak["demand_opt"] - demand_peaks_peak["demand MW"]) / demand_peaks_peak["demand MW"] * 100 
 
-    merged = pd.merge(left=demand_peaks_fees, right=demand_peaks_peak[["country", "year", "ID_EnergyPrice", "peak price"]], on=["year", "country", "ID_EnergyPrice"])
-    merged["decrease in peak"] =  merged["peak price"] - merged["no peak price"]
+    merged = pd.merge(left=demand_peaks_fees, right=demand_peaks_peak[["country", "year", "ID_EnergyPrice", "national_increase_peak"]], on=["year", "country", "ID_EnergyPrice"])
     
-    plot_df = merged.copy()
-    plot_df["ID_EnergyPrice"] = plot_df["ID_EnergyPrice"].map(add_price_information())
-    plt.figure(figsize=(10, 8))
-    sns.boxplot(
-        data=plot_df,
-        x="decrease in peak",
+    # plot_df = merged.copy()
+    # plot_df["ID_EnergyPrice"] = plot_df["ID_EnergyPrice"].map(add_price_information())
+    plt.rcParams.update({
+        'axes.labelsize': 14,    # x and y axis labels
+        'axes.titlesize': 14,    # subplot titles
+        'xtick.labelsize': 14,   # x-axis tick labels
+        'ytick.labelsize': 14,   # y-axis tick labels
+        'legend.fontsize': 14,   # legend text size
+    })
+    # Create offset datasets for side-by-side plotting
+    plot_df_peak = demand_peaks_peak.copy()
+    plot_df_peak["ID_EnergyPrice"] = plot_df_peak["ID_EnergyPrice"].map(add_price_information())
+    plot_df_fees = demand_peaks_fees.copy()
+    plot_df_fees["ID_EnergyPrice"] = plot_df_fees["ID_EnergyPrice"].map(add_price_information())
+
+    # Map years to sequential integers and then apply offset
+    prices = plot_df_peak["ID_EnergyPrice"].unique()
+    offsets = [-1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1]
+    price_offsets_fees = {price:offsets[::2][i] for i, price in enumerate(prices)}
+    price_offsets_peak = {price:offsets[1::2][i] for i, price in enumerate(prices)}
+
+    plot_df_peak["price_offset"] = plot_df_peak["ID_EnergyPrice"].map(price_offsets_peak) 
+    plot_df_peak.loc[plot_df_peak["year"] == 2030, "price_offset"] += 0
+    plot_df_peak.loc[plot_df_peak["year"] == 2050, "price_offset"] += 4
+
+    plot_df_fees["price_offset"] = plot_df_fees["ID_EnergyPrice"].map(price_offsets_fees) 
+    plot_df_fees.loc[plot_df_fees["year"] == 2030, "price_offset"] += 0
+    plot_df_fees.loc[plot_df_fees["year"] == 2050, "price_offset"] += 4
+    merged_offset = pd.concat([plot_df_fees[["year", "ID_EnergyPrice", "national_increase", "price_offset"]], plot_df_peak[["year", "ID_EnergyPrice", "national_increase", "price_offset"]]], axis=0)
+    merged_offset["price_offset"] = pd.to_numeric(merged_offset["price_offset"], errors="coerce")
+    import matplotlib.path as mpath
+    fig, ax = plt.subplots(figsize=(10, 8))
+    # Add hatching to peak pricing boxes 
+    bp2 = sns.boxplot(
+        data=merged_offset,
+        x="national_increase",
+        y="price_offset",
+        hue="ID_EnergyPrice",
+        orient="h",
+        palette=sns.color_palette(),
+        ax=ax,
+        dodge=False,
+        width=0.9,
+    )
+    
+    for i, thisbar in enumerate(bp2.artists):  # Access Rectangle objects
+    # Get the corresponding price_offset for this box
+        y_offset = merged_offset.iloc[i // len(merged_offset["national_increase"].unique())]["price_offset"]
+
+        # Modify the position of each rectangle (box)
+        thisbar.set_y(y_offset - thisbar.get_height() / 2)  # Center the box at the y_offset
+
+    for i,thisbar in enumerate(bp2.patches):
+        if i % 2 == 1:
+            thisbar.set_hatch("///")
+   
+    legend_elements = []
+    # Add price scenario colors
+    for i, price in enumerate(prices):
+        legend_elements.append(mpatches.Patch(color=sns.color_palette()[i], label=price))
+    
+    # Add scenario patterns
+    legend_elements.extend([
+        mpatches.Patch(facecolor="lightgray", edgecolor="black", label="Grid Fees"),
+        mpatches.Patch(facecolor="lightgray", edgecolor="black", hatch="///", label="Peak Pricing"),
+    ])
+    
+    ax.legend(handles=legend_elements, title="", loc="lower right", ncol=1)
+    ax.set_xlabel("National peak demand increase (%)")
+    ax.set_ylabel("year")
+    ax.set_yticks([0, 4])
+    ax.set_yticklabels(["2030", "2050"])
+    
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH.parent / f"Peak_demand_comparison_national_EU_cooling_seperated{COOLING_PERCENTAGE}.svg")
+    plt.show()
+    plt.close()
+
+    # plot the peak reduction of the residential buildings
+    peaks_fees = df_fees.groupby(["year", "country", "ID_EnergyPrice"])[["opt_grid_demand_stock_MW", "ref_grid_demand_stock_MW"]].max().reset_index()
+    peaks_fees["peak_increase_fees"] = (peaks_fees["opt_grid_demand_stock_MW"] - peaks_fees["ref_grid_demand_stock_MW"]) / peaks_fees["ref_grid_demand_stock_MW"] * 100
+    peaks_peak = df_peak.groupby(["year", "country", "ID_EnergyPrice"])[["opt_grid_demand_stock_MW", "ref_grid_demand_stock_MW"]].max().reset_index()
+    peaks_peak["peak_increase_peak"] = (peaks_peak["opt_grid_demand_stock_MW"] - peaks_peak["ref_grid_demand_stock_MW"]) / peaks_peak["ref_grid_demand_stock_MW"] * 100
+    merged_peaks = pd.merge(left=peaks_fees, right=peaks_peak[["year", "country", "ID_EnergyPrice", "peak_increase_peak"]], on=["year", "country", "ID_EnergyPrice"])
+    
+
+    merged_peaks["ID_EnergyPrice"] = merged_peaks["ID_EnergyPrice"].map(add_price_information())
+     
+    plt.rcParams.update({
+        'axes.labelsize': 14,    # x and y axis labels
+        'axes.titlesize': 14,    # subplot titles
+        'xtick.labelsize': 14,   # x-axis tick labels
+        'ytick.labelsize': 14,   # y-axis tick labels
+        'legend.fontsize': 14,   # legend text size
+    })
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    # Add hatching to peak pricing boxes 
+    
+    bp2 = sns.boxplot(
+        data=merged_peaks,
+        x="peak_increase_peak",
         y="year",
         hue="ID_EnergyPrice",
         orient="y",
         palette=sns.color_palette(),
+        ax=ax,
+        dodge=True,
         
     )
-    plt.legend()
-    plt.xlabel("national peak demand decrease by adding peak pricing in EU (%)")
+    for i,thisbar in enumerate(bp2.patches):
+        # Set a different hatch for each bar
+        thisbar.set_hatch("///")
+
+    bp = sns.boxplot(
+        data=merged_peaks,
+        x="peak_increase_fees",
+        y="year",
+        hue="ID_EnergyPrice",
+        orient="y",
+        palette=sns.color_palette(),
+        ax=ax,
+        dodge=True
+    )
+    
+    legend_elements = []
+    # Add price scenario colors
+    for i, price in enumerate(merged_peaks["ID_EnergyPrice"].unique()):
+        legend_elements.append(mpatches.Patch(color=sns.color_palette()[i], label=price))
+    
+    # Add scenario patterns
+    legend_elements.extend([
+        mpatches.Patch(facecolor="lightgray", edgecolor="black", label="Grid Fees"),
+        mpatches.Patch(facecolor="lightgray", edgecolor="black", hatch="///", label="Peak Pricing"),
+    ])
+    
+    ax.legend(handles=legend_elements, title="", loc="lower center", ncol=1)
+    ax.set_xlabel("Prosumager peak demand increase (%)")
     plt.tight_layout()
-    plt.savefig(SAVING_PATH.parent / f"Peak_demand_comparison_EU_cooling{COOLING_PERCENTAGE}.svg")
+    plt.savefig(SAVING_PATH.parent / f"Peak_demand_comparison_residential_EU_cooling_seperated{COOLING_PERCENTAGE}.svg")
     plt.show()
     plt.close()
-
 
     
     # shifted electricity
@@ -2459,7 +2990,6 @@ def compare_peak_pricing_with_fixed_grid_fees(percentage_cooling, national):
         Patch(facecolor="white", hatch="", label="grid fees", edgecolor="black"),
         ]
 
-
     plt.legend(title="", loc="upper left", handles=legend_elements)
     plt.xlabel("year")
     plt.ylabel("shifted electricity in the EU in TWh")
@@ -2468,20 +2998,7 @@ def compare_peak_pricing_with_fixed_grid_fees(percentage_cooling, national):
     plt.show()
     plt.close()
 
-    # sns.barplot(
-    #     data=plot_df,
-    #     x="year",
-    #     y="shifted TWh",
-    #     hue="ID_EnergyPrice",
-    #     palette=sns.color_palette()
-    # )
-    # plt.legend(title="", loc="upper left")
-    # plt.xlabel("year")
-    # plt.ylabel("shifted electricity in the EU in TWh")
-    # plt.tight_layout()
-    # plt.savefig(SAVING_PATH.parent / f"Shifted_EU_absolute_grid_demand_coling{COOLING_PERCENTAGE}.svg")
-    # plt.show()
-    # plt.close()
+
 
 def load_project_files(percentage_cooling, project_acronym):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_{project_acronym}_cooling-{percentage_cooling}.parquet.gzip"
@@ -2499,6 +3016,7 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     # compare_peak_pricing_with_fixed_grid_fees(percentage_cooling, national_demand)
     
+    plot_shifted_electricity_per_appliance_EU(price_id=4)
     # plot_shifted_demand_per_appliance_EU(price_id=4)
     # plot_daily_load_factor(loads=df, national=national_demand)
     # show_shifted_demand_over_year_in_days_stacked(df)
@@ -2508,7 +3026,9 @@ def main(percentage_cooling: float):
     # show_national_demand_increase_in_high_and_low_price_quantile(loads=df, national=national_demand) 
     # show_residential_demand_increase_in_high_and_low_price_quantile(loads=df) 
     # plot_shifted_electricity(loads=df)
-    plot_PV_self_consumption(loads=df, percentage_cooling=percentage_cooling, project_acronym=PROJECT_ACRONYM)
+    # plot_PV_self_consumption(loads=df, percentage_cooling=percentage_cooling, project_acronym=PROJECT_ACRONYM)
+    # plot_daily_load_comparison_between_peak_and_fees  # creates html file with they mean daily load profiles for both scenarios
+    # plot_peak_day_comparison_between_peak_and_fees  # creates html file with they peak day load profiles for both scenarios
 
     # show_average_day_profile(loads=df)
     # show_flexibility_factor(loads=df)
@@ -2537,6 +3057,7 @@ if __name__ == "__main__":
     main(
         percentage_cooling=COOLING_PERCENTAGE,
     )
+
     # TODO 
     # weather data from balmorel
     # hwb im csv checken GRC 2040

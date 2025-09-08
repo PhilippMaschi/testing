@@ -286,6 +286,87 @@ def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.Da
     
     return df_opt, df_simus
 
+def load_specific_electricity_profiles(scenario_ids: list, folder: Path) -> (pd.DataFrame, pd.DataFrame):
+    def load_data(scen_id):
+        """Helper function to load data for a single scenario."""
+        opt = read_parquet(
+            table_name=f"OperationResult_OptHour",
+            scenario_ID=scen_id,
+            folder=folder,
+            column_names=["ID_Scenario", "Hour", "SpaceHeatingHourlyCOP", "SpaceHeatingHourlyCOP_tank", "HotWaterHourlyCOP", 
+            "HotWaterHourlyCOP_tank", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_HeatingTank_out", "Q_DHWTank_out", "E_Heating_HP_out", "E_DHW_HP_out", "E_RoomCooling"]
+        )
+        sim = read_parquet(
+            table_name=f"OperationResult_RefHour",
+            scenario_ID=scen_id,
+            folder=folder,
+            column_names=["ID_Scenario", "Hour", "SpaceHeatingHourlyCOP", "SpaceHeatingHourlyCOP_tank", "HotWaterHourlyCOP", 
+            "HotWaterHourlyCOP_tank", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_HeatingTank_out", "Q_DHWTank_out", "E_Heating_HP_out", "E_DHW_HP_out", "E_RoomCooling"]
+        )
+        # calculate the electricity demand for the space heating and hot water
+        opt["E_DHW_tank"] = opt["Q_DHWTank_in"] / opt["HotWaterHourlyCOP_tank"]
+        opt["E_buffer_tank_in"] = opt["Q_HeatingTank_in"] / opt["SpaceHeatingHourlyCOP_tank"]
+        opt["E_buffer_tank_out"] = opt["Q_HeatingTank_out"] / opt["SpaceHeatingHourlyCOP_tank"]
+        opt["E_space_heating"] = opt["E_Heating_HP_out"] - opt["E_buffer_tank_in"] + opt["E_buffer_tank_out"]
+        opt["E_DHW"] = opt["E_DHW_HP_out"] 
+        opt["E_space_cooling"] = opt["E_RoomCooling"]
+
+
+        sim["E_DHW_tank"] = sim["Q_DHWTank_in"] / sim["HotWaterHourlyCOP_tank"]
+        sim["E_buffer_tank_in"] = sim["Q_HeatingTank_in"] / sim["SpaceHeatingHourlyCOP_tank"]
+        sim["E_buffer_tank_out"] = sim["Q_HeatingTank_out"] / sim["SpaceHeatingHourlyCOP_tank"]
+        sim["E_space_heating"] = sim["E_Heating_HP_out"] - sim["E_buffer_tank_in"] + sim["E_buffer_tank_out"]
+        sim["E_DHW"] = sim["E_DHW_HP_out"] 
+        sim["E_space_cooling"] = sim["E_RoomCooling"]
+
+        # drop all columns with Q_ and COP to reduce size
+        opt.drop(columns=[c for c in opt.columns if "Q_" in c or "COP" in c], inplace=True)
+        sim.drop(columns=[c for c in sim.columns if "Q_" in c or "COP" in c], inplace=True)
+        return opt, sim
+    
+    # Parallelize the loading of data
+    results = Parallel(n_jobs=max(1, int(CPU_COUNT * 0.75)))(delayed(load_data)(scen_id) for scen_id in scenario_ids)
+    # results = load_data(scenario_ids[0])
+    opts, simus = zip(*results)
+    df_opt = pd.concat(opts)
+    df_simus = pd.concat(simus)
+    return df_opt, df_simus
+
+def get_shifted_electricity_per_appliance_type(folder_name: Path, perc_cooling: float, price_id):
+    db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
+    scenario_table = db.read_dataframe(table_name="OperationScenario")
+
+    # filter out only buildings with air HP and ground HP
+    building_table = db.read_dataframe(table_name="OperationScenario_Component_Building")
+
+    # return 0 for those..
+    if building_table.empty:
+        return pd.DataFrame.from_dict({"opt_grid_demand_stock_MW": np.zeros(8760), 
+                                       "ref_grid_demand_stock_MW": np.zeros(8760),
+                                       "Hour": np.arange(1, 8761)},  orient="index").T
+    else:
+
+        scenario_df = define_tech_scenario(
+            prob_cooling=perc_cooling,
+            df_scenarios=scenario_table,
+            df_hp=building_table
+        )
+        scenario_df = scenario_df.loc[scenario_df["ID_EnergyPrice"]==price_id, :]
+        opt_loads, ref_loads = load_specific_electricity_profiles(scenario_ids=list(scenario_df["ID_Scenario"]), folder=folder_name / "output")
+
+        # merge the numbers of each building scenario with the opt and ref loads:
+        building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice"]].copy().set_index("ID_Scenario").sort_index()
+        opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+        cols = ["E_space_heating", "E_DHW_tank", "E_buffer_tank_in", "E_buffer_tank_out", "E_DHW", "E_space_cooling", "E_Heating_HP_out", "E_DHW_HP_out"]
+        opt_stock[[col + "_stock" for col in cols]] = opt_stock[cols].mul(opt_stock["number_of_buildings"], axis=0)/ 1_000_000  # MW
+
+
+        ref_stock = ref_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+        ref_stock[[col + "_stock_ref" for col in cols]] = ref_stock[cols].mul(ref_stock["number_of_buildings"], axis=0)/ 1_000_000  # MW
+        
+        country_load_df = pd.concat([opt_stock, ref_stock[[col + "_stock_ref" for col in cols]]], axis=1)
+        return country_load_df
+
 def load_specific_heat_profiles(scenario_ids: list, folder: Path) -> (pd.DataFrame, pd.DataFrame):
     def load_data(scen_id):
         """Helper function to load data for a single scenario."""
@@ -293,18 +374,19 @@ def load_specific_heat_profiles(scenario_ids: list, folder: Path) -> (pd.DataFra
             table_name=f"OperationResult_OptHour",
             scenario_ID=scen_id,
             folder=folder,
-            column_names=["ID_Scenario", "Hour", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomHeating"]
+            column_names=["ID_Scenario", "Hour", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomHeating", "Q_RoomCooling"]
         )
         sim = read_parquet(
             table_name=f"OperationResult_RefHour",
             scenario_ID=scen_id,
             folder=folder,
-            column_names=["ID_Scenario", "Hour", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomHeating"]
+            column_names=["ID_Scenario", "Hour", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomHeating", "Q_RoomCooling"]
         )
         return opt, sim
 
     # Parallelize the loading of data
     results = Parallel(n_jobs=max(1, int(CPU_COUNT * 0.75)))(delayed(load_data)(scen_id) for scen_id in scenario_ids)
+    # load_data(scenario_ids[0])
     opts, simus = zip(*results)
     df_opt = pd.concat(opts)
     df_simus = pd.concat(simus)
@@ -336,7 +418,7 @@ def get_shifted_energy_per_appliance_type(folder_name: Path, perc_cooling: float
         # merge the numbers of each building scenario with the opt and ref loads:
         building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice"]].copy().set_index("ID_Scenario").sort_index()
         opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
-        cols = ["Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomHeating"]
+        cols = ["Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomHeating", "Q_RoomCooling"]
         opt_stock[[col + "_stock" for col in cols]] = opt_stock[cols].mul(opt_stock["number_of_buildings"], axis=0)/ 1_000_000  # MW
 
 
@@ -345,6 +427,64 @@ def get_shifted_energy_per_appliance_type(folder_name: Path, perc_cooling: float
         
         country_load_df = pd.concat([opt_stock, ref_stock[[col + "_stock_ref" for col in cols]]], axis=1)
         return country_load_df
+
+def calculate_shifted_electricity_per_appliance_type(perc_cooling, price_id):
+    path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
+    
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    dfs = []
+    for folder_name in folder_names:
+        if folder_name in [f"CYP_2020_{PROJECT_ACRONYM}", f"MLT_2020_{PROJECT_ACRONYM}"]:
+            continue
+        folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
+        print(f"calculating shited energy per appliance for {country} {year}")
+    
+        df = get_shifted_electricity_per_appliance_type(folder, perc_cooling, price_id)
+        df["country"] = country
+        df["year"] = year
+
+        # shifted energy through the thermal mass is the difference in E_space_heating:
+        df["thermal_mass_shift"] = df["E_space_heating_stock"] - df["E_space_heating_stock_ref"]
+        df["thermal_mass_shift_increase"] = df["thermal_mass_shift"].clip(lower=0)
+        df["thermal_mass_shift_decrease"] = df["thermal_mass_shift"].clip(upper=0)
+
+        df["thermal_mass_shift_cooling"] = df["E_space_cooling_stock"] - df["E_space_cooling_stock_ref"]
+        df["thermal_mass_shift_cooling_increase"] = df["thermal_mass_shift_cooling"].clip(lower=0)
+        df["thermal_mass_shift_cooling_decrease"] = df["thermal_mass_shift_cooling"].clip(upper=0)
+
+        # shift in DHW is the difference of the E_DHW which includes the the shifting of the tank
+        df["DHW_shift"] =  df["E_DHW_stock"] - df["E_DHW_stock_ref"] 
+        df["DHW_shift_increase"] = df["DHW_shift"].clip(lower=0)
+        df["DHW_shift_decrease"] = df["DHW_shift"].clip(upper=0)
+
+        # shift in Buffer Tank is the energy that goes into the tank as it is not used in the reference:
+        df["Buffer_shift_increase"] = df["E_buffer_tank_in_stock"]
+        df["Buffer_shift_decrease"] = -df["E_buffer_tank_out_stock"]
+
+        df["space_cooling_shift"] = df["E_space_cooling_stock"] - df["E_space_cooling_stock_ref"]
+        df["space_cooling_shift_increase"] = df["space_cooling_shift"].clip(lower=0)
+        df["space_cooling_shift_decrease"] = df["space_cooling_shift"].clip(upper=0)
+
+        df["heating_HP_shift"] = df["E_Heating_HP_out_stock"] - df["E_Heating_HP_out_stock_ref"]
+        df["heating_HP_shift_increase"] = df["heating_HP_shift"].clip(lower=0)
+        df["heating_HP_shift_decrease"] = df["heating_HP_shift"].clip(upper=0)
+
+        df["DHW_HP_shift"] = df["E_DHW_HP_out_stock"] - df["E_DHW_HP_out_stock_ref"]
+        df["DHW_HP_shift_increase"] = df["DHW_HP_shift"].clip(lower=0)
+        df["DHW_HP_shift_decrease"] = df["DHW_HP_shift"].clip(upper=0)
+
+        cols = ["E_space_heating", "E_DHW_tank", "E_buffer_tank_in", "E_buffer_tank_out", "E_DHW", "E_space_cooling"]
+        cols_opt = [f"{c}_stock" for c in cols]
+        cols_ref = [f"{c}_stock_ref" for c in cols]
+        df.drop(columns=cols+cols_ref+cols_opt+["number_of_buildings"], inplace=True)
+
+        dfs.append(df)
+    
+    big_df = pd.concat(dfs, axis=0)
+    big_df.columns = [str(col) for col in big_df.columns]
+    return big_df
     
 def calculate_shifted_energy_per_appliance_type(perc_cooling, price_id):
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
@@ -374,10 +514,14 @@ def calculate_shifted_energy_per_appliance_type(perc_cooling, price_id):
         df["DHW_shift_decrease"] = df["DHW_shift"].clip(upper=0)
 
         # shift in Buffer Tank is the energy that goes into the tank as it is not used in the reference:
-        df["Buffer_shift"] = df["Q_HeatingTank_in_stock"] + df["Q_HeatingTank_bypass_stock"] - df["Q_HeatingTank_bypass_stock_ref"]
-        df["Buffer_shift_increase"] = df["Buffer_shift"].clip(lower=0)
-        df["Buffer_shift_decrease"] = df["Buffer_shift"].clip(upper=0)
-        cols = ["Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out",]# "Q_RoomHeating"]
+        df["Buffer_shift_increase"] = df["Q_HeatingTank_in_stock"]
+        df["Buffer_shift_decrease"] = -df["Q_HeatingTank_out_stock"]
+
+        df["space_cooling_shift"] = df["Q_RoomCooling_stock"] - df["Q_RoomCooling_stock_ref"]
+        df["space_cooling_shift_increase"] = df["space_cooling_shift"].clip(lower=0)
+        df["space_cooling_shift_decrease"] = df["space_cooling_shift"].clip(upper=0)
+
+        cols = ["Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomCooling"]# "Q_RoomHeating"]
         cols_opt = [f"{c}_stock" for c in cols]
         cols_ref = [f"{c}_stock_ref" for c in cols]
         df.drop(columns=cols+cols_ref+cols_opt+["number_of_buildings"], inplace=True)
