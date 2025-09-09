@@ -586,38 +586,38 @@ def read_hdf5(country: str, output_path: Path, years: list, path_dict: dict, hdf
             # fix the name column:
             final_df['name'] = final_df['name'].apply(lambda x: x.decode('utf-8') if isinstance(x, bytes) else x)
             final_df.to_parquet(output_path / f'INVERT_{country}_{year}.parquet.gzip', compression='gzip', index=False)
-            print_summary_data_from_invert(final_df, year, country)
-            print_percentages_of_heating_systems(final_df, year, country)
+            # print_summary_data_from_invert(final_df, year, country)
+            # print_percentages_of_heating_systems(final_df, year, country)
             print(f"added {year} data to {country}.")
 
 
-def print_summary_data_from_invert(df: pd.DataFrame, year, country):
-    print(f"Printing Invert data on buildings from {country} in {year} \n")
-    df.loc[:, "type"] = df["building_categories_index"].map(SFH_MFH)
-    type_groups = df.groupby("type")
-    for building_type, group in type_groups:
-        print(
-            f"{building_type}: \n "
-            f"UED for DHW = "
-            f"{round((group['ued_dhw'] * group['number_of_buildings']).sum() / 1_000 / 1_000)} MWh \n"  # MWh
-            f"UED for space heating = "
-            f"{round((group['uedh_sh_effective'] * group['number_of_buildings']).sum() / 1_000 / 1_000)} MWh \n"  # MWh
+# def print_summary_data_from_invert(df: pd.DataFrame, year, country):
+#     print(f"Printing Invert data on buildings from {country} in {year} \n")
+#     df.loc[:, "type"] = df["building_categories_index"].map(SFH_MFH)
+#     type_groups = df.groupby("type")
+#     for building_type, group in type_groups:
+#         print(
+#             f"{building_type}: \n "
+#             f"UED for DHW = "
+#             f"{round((group['ued_dhw'] * group['number_of_buildings']).sum() / 1_000 / 1_000)} MWh \n"  # MWh
+#             f"UED for space heating = "
+#             f"{round((group['uedh_sh_effective'] * group['number_of_buildings']).sum() / 1_000 / 1_000)} MWh \n"  # MWh
 
-        )
+#         )
 
-def print_percentages_of_heating_systems(df: pd.DataFrame, year, country):
-    print(f"\n Percentages of heating systems for {country} {year}: \n")
-    total_nr_buildings = df.loc[:, "number_of_buildings"].sum()
-    conventional_percentage = (df.loc[:, "number_buildings_coal"].sum() + df.loc[:, "number_buildings_gas"].sum() + df.loc[:, "number_buildings_oil"].sum() + df.loc[:, "number_buildings_district_heating"].sum() + df.loc[:, "number_buildings_wood"].sum()) / total_nr_buildings * 100
-    hp_air_percentage = df.loc[:, "number_buildings_heat_pump_air"].sum() / total_nr_buildings * 100
-    hp_ground_percentage = df.loc[:, "number_buildings_heat_pump_ground"].sum() / total_nr_buildings * 100
-    split_percentage = df.loc[:, "number_buildings_split_system"].sum() / total_nr_buildings * 100
-    direct_elec_percentage = df.loc[:, "number_buildings_electricity"].sum() / total_nr_buildings * 100
-    print(f"conventional: {round(conventional_percentage)} % \n \
-          Air heat pump: {round(hp_air_percentage)} % \n \
-          Ground heat pump: {round(hp_ground_percentage)} % \n \
-          Split system: {round(split_percentage)} % \n \
-          Direct electric: {round(direct_elec_percentage)} % \n ")
+# def print_percentages_of_heating_systems(df: pd.DataFrame, year, country):
+#     print(f"\n Percentages of heating systems for {country} {year}: \n")
+#     total_nr_buildings = df.loc[:, "number_of_buildings"].sum()
+#     conventional_percentage = (df.loc[:, "number_buildings_coal"].sum() + df.loc[:, "number_buildings_gas"].sum() + df.loc[:, "number_buildings_oil"].sum() + df.loc[:, "number_buildings_district_heating"].sum() + df.loc[:, "number_buildings_wood"].sum()) / total_nr_buildings * 100
+#     hp_air_percentage = df.loc[:, "number_buildings_heat_pump_air"].sum() / total_nr_buildings * 100
+#     hp_ground_percentage = df.loc[:, "number_buildings_heat_pump_ground"].sum() / total_nr_buildings * 100
+#     split_percentage = df.loc[:, "number_buildings_split_system"].sum() / total_nr_buildings * 100
+#     direct_elec_percentage = df.loc[:, "number_buildings_electricity"].sum() / total_nr_buildings * 100
+#     print(f"conventional: {round(conventional_percentage)} % \n \
+#           Air heat pump: {round(hp_air_percentage)} % \n \
+#           Ground heat pump: {round(hp_ground_percentage)} % \n \
+#           Split system: {round(split_percentage)} % \n \
+#           Direct electric: {round(direct_elec_percentage)} % \n ")
 
 
 def copy_hdf5_files(path_dict: dict, out_path: Path, countries: list):
@@ -692,33 +692,33 @@ def clean_up(folder: Path):
 @performance_counter
 def main(paths: dict, years: list, out_path: Path):
     country_list = [
-        # 'AUT',
-        # 'BEL',
-        # 'BGR',
-        # 'HRV',
-        # 'CYP',
-        # 'CZE',
-        # 'DNK',
-        # 'EST',
-        # 'FIN',
-        # 'FRA',
-        # 'DEU',
-        # 'GRC',
-        # 'HUN',
-        # 'IRL',
-        # 'ITA',
-        # 'LVA',
-        # 'LTU',
-        # 'LUX',
-        # 'MLT',
-        # 'NLD',
-        # 'POL',
-        # 'PRT',
-        # 'ROU',
-        # 'SVK',
-        # 'SVN',
-        # 'ESP',
-        # 'SWE'
+        'AUT',
+        'BEL',
+        'BGR',
+        'HRV',
+        'CYP',
+        'CZE',
+        'DNK',
+        'EST',
+        'FIN',
+        'FRA',
+        'DEU',
+        'GRC',
+        'HUN',
+        'IRL',
+        'ITA',
+        'LVA',
+        'LTU',
+        'LUX',
+        'MLT',
+        'NLD',
+        'POL',
+        'PRT',
+        'ROU',
+        'SVK',
+        'SVN',
+        'ESP',
+        'SWE'
     ]
     # copy the hdf files, NOT NEEDED AS THE READ HDF5 USES hdf5 file from orig repository
     # copy_hdf5_files(path_dict=paths, out_path=out_path, countries=country_list)
@@ -733,30 +733,31 @@ def main(paths: dict, years: list, out_path: Path):
     hdf5_was_copied = False
     arglist = [(country, out_path, years, paths, hdf5_was_copied) for country in country_list]
     read_hdf5("AUT", out_path, years, paths, hdf5_was_copied)  # for debugging
-    # cores = int(multiprocessing.cpu_count() / 2)
-    # with multiprocessing.Pool(cores) as pool:
-    #     pool.starmap(read_hdf5, arglist)
+    cores = int(multiprocessing.cpu_count() / 2)
+    with multiprocessing.Pool(cores) as pool:
+        pool.starmap(read_hdf5, arglist)
     print("create building files: Done")
 
 
 if __name__ == "__main__":
     # user inputs:
     project_path = Path(
-        r"E:/projects3/2021_ECEMF/invert/output")  # NewTrends: Path(r"E:\projects3\2022_NewTrends\invert\output")     ECEMF: Path(r"E:/projects3/2021_ECEMF/invert/output")
-    invert_scenario = r"output_ecemf_invert_eelab_secondround_231130_am_pm"  # NewTrends: r"output_230825_hdf5_for_Philipp" ECEMF: r"output_ecemf_invert_eelab_secondround_231130_am_pm"  
-    sub_scenario = "eff_high_elec_ab"   # NewTrends: eff_high_elec_ab, eff_moderate_const_costpot_ab        ECEMF: eff_high_elec_ab, eff_moderate_elec_ab
+        r"X:/projects3/2021_ECEMF/invert/output")  # NewTrends: Path(r"X:\projects3\2022_NewTrends\invert\output")   ECEMF: Path(r"X:/projects3/2021_ECEMF/invert/output"), new ECEMF: Path(r"X:/projects3/2021_ECEMF/invert/output")
+    invert_scenario = r"output_ecemf_invert_eelab_250319_pm"  # NewTrends: r"output_230825_hdf5_for_Philipp" ECEMF: r"output_ecemf_invert_eelab_secondround_231130_am_pm", new ECEMF: "output_ecemf_invert_eelab_250319_pm"
+    sub_scenario = "eff_high_elec_ab"   # NewTrends: eff_high_elec_ab, eff_moderate_const_costpot_ab        ECEMF: eff_high_elec_ab, eff_moderate_elec_ab, new ECEMF: eff_high_elec_ab
     # invert input data ("input") folder
     invert_input_path = Path(
         # r"E:\projects3\2022_NewTrends\invert\input\input_invert_renovcosts_new_trend"      # NewTrends
-        r"E:\projects3\2021_ECEMF\invert\input\input_ecemf_invert_eelab_secondround_231115"  # ECEMF
+        # r"X:\projects3\2021_ECEMF\invert\input\input_ecemf_invert_eelab_secondround_231115"  # ECEMF
+        r"X:\projects3\2021_ECEMF\invert\input\input_ecemf_invert_eelab_250319_pm"  # ECEMF new 
     )
     # define path where data should be saved
     output_folder = Path(
-        r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\building_data\Georgina_paper_newTrends"
+        r"C:\Users\mascherbauer\OneDrive\PycharmProjects\Z_Testing\building_data\Songmin_5year_steps"
     )
-    years = [2020, 2030, 2040, 2050]
+    years = [2020, 2025, 2030, 2035, 2040, 2045, 2050]
 
-    paths = {"SOURCE_PATH": project_path,
+    paths = {"SOURCE_PATH": project_path, 
              "INVERT_SCENARIO": invert_scenario,
              "SUB_SCENARIO": sub_scenario,
              "INVERT_INPUT": invert_input_path}
