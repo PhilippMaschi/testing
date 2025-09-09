@@ -9,6 +9,9 @@ import random
 from joblib import Parallel, delayed
 import os
 
+
+
+
 CPU_COUNT = os.cpu_count()
 
 EUROPEAN_COUNTRIES = {
@@ -63,7 +66,7 @@ COUNTRY_CODES = {
     "MT": 'MLT' ,
     "NL": 'NLD' ,
     "PL": 'POL',
-    "PO": "POL",
+    "PL": "POL",
     "PT": 'PRT',
     "RO": 'ROU',
     "SK": 'SVK',
@@ -95,38 +98,65 @@ BOILER = {
 
 
 def get_national_demand_profiles():
-    
-    gen_file = Path(__file__).parent.parent / "ENTSOE Generation" / "ENTSOE_generation_MWh_2019.csv"
-    entsoe = pd.read_csv(gen_file, sep=";")
-    demand = entsoe.melt(var_name="country", value_name="demand").reset_index(drop=True)
-    demand["year"] = 2020
-    demand["scenario"] = "baseyear"
-    levethian = pd.read_csv(Path(__file__).parent / "AURES_leviathan_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
-    levethian["scenario"] = "levethian"
-    shiny_happy = pd.read_csv(Path(__file__).parent / "AURES_shiny_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
-    shiny_happy["scenario"] = "shiny happy"
+    secures_path = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/Secures") / "Demand_all_countries.csv"
+    if not secures_path.exists():
+        demand_dfs = []
+        for year in [2030, 2050]:
+            for country in COUNTRY_CODES.keys():
+                if country == "CY" or country == "MT":
+                    continue
+                columns_2_extract = ["Exogenous", "Elect2Heat", "Interseasonal storage (PS)", "Elec-demand H2 prod", "Trans-losses", "Intreasonal storage (battery)"]
+                gen_file = Path(__file__).parent.parent.parent / "FLEX" / "projects" / "Secures" / "prices" / f"{year}" / f"{country}_DN_{year}_Normal.xlsx"
+                df = pd.read_excel(
+                    gen_file,
+                    engine="openpyxl",                
+                    sheet_name=f"EL_dem",
+                    header=1
+                )[columns_2_extract]
+                df_1 = pd.concat([df, df.iloc[-24:, :]], axis=0).reset_index(drop=True)
+                df_1["demand MW"] = df_1.sum(axis=1)
+                df_1.drop(columns=columns_2_extract, inplace=True)
+                df_1["country"] = COUNTRY_CODES[country]
+                df_1["year"] = year
+                df_1["Hour"] = np.arange(1, 8761)
+                demand_dfs.append(df_1)
 
-    df = pd.concat([demand, shiny_happy, levethian], axis=0, ignore_index=True)
-    df["country"] = df["country"].map(COUNTRY_CODES)
+        big_df = pd.concat(demand_dfs, axis=0)
+        big_df.to_csv(secures_path, index=False, sep=";")
+    else:
+        big_df = pd.read_csv(secures_path, sep=";")
+    return big_df
+
+    # entsoe = pd.read_csv(gen_file, sep=";")
+    # demand = entsoe.melt(var_name="country", value_name="demand").reset_index(drop=True)
+    # demand["year"] = 2020
+    # demand["scenario"] = "baseyear"
+    # levethian = pd.read_csv(Path(__file__).parent / "AURES_leviathan_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
+    # levethian["scenario"] = "levethian"
+    # shiny_happy = pd.read_csv(Path(__file__).parent / "AURES_shiny_demand.csv", sep=",").drop(columns="UNITS").reset_index(drop=True)
+    # shiny_happy["scenario"] = "shiny happy"
+
+    # df = pd.concat([demand, shiny_happy, levethian], axis=0, ignore_index=True)
+    # df["country"] = df["country"].map(COUNTRY_CODES)
 
 
-    # AURES data only contains 8735 values: duplicate the last ones
-    extended_data = []
-    for (country, year, scenario), group in df.groupby(["country", "year", "scenario"]):
-        if len(group) != 8760:
-            extended_values = group['demand'].tolist() + group["demand"].iloc[-24:].to_list()
-            extended_group = pd.DataFrame({
-                'country': [country] * 8760,
-                'year': [year] * 8760,
-                'scenario': [scenario] * 8760,
-                'demand': extended_values,
-                "Hour": np.arange(1, 8761)
-            })
-            extended_data.append(extended_group)
-        else:
-            group["Hour"] = np.arange(1, 8761)
-            extended_data.append(group)
-    extended_df = pd.concat(extended_data, ignore_index=True)
+    # # AURES data only contains 8735 values: duplicate the last ones
+    # extended_data = []
+    # for (country, year, scenario), group in df.groupby(["country", "year", "scenario"]):
+    #     if len(group) != 8760:
+    #         extended_values = group['demand'].tolist() + group["demand"].iloc[-24:].to_list()
+    #         extended_group = pd.DataFrame({
+    #             'country': [country] * 8760,
+    #             'year': [year] * 8760,
+    #             'scenario': [scenario] * 8760,
+    #             'demand': extended_values,
+    #             "Hour": np.arange(1, 8761)
+    #         })
+    #         extended_data.append(extended_group)
+    #     else:
+    #         group["Hour"] = np.arange(1, 8761)
+    #         extended_data.append(group)
+    # extended_df = pd.concat(extended_data, ignore_index=True)
     
     # replace the 2 digit country code with 3 digits
     assert not extended_df.country.isna().any()
@@ -256,16 +286,262 @@ def load_electricity_demand_profiles(scenario_ids: list, folder: Path) -> (pd.Da
     
     return df_opt, df_simus
 
+def load_specific_electricity_profiles(scenario_ids: list, folder: Path) -> (pd.DataFrame, pd.DataFrame):
+    def load_data(scen_id):
+        """Helper function to load data for a single scenario."""
+        opt = read_parquet(
+            table_name=f"OperationResult_OptHour",
+            scenario_ID=scen_id,
+            folder=folder,
+            column_names=["ID_Scenario", "Hour", "SpaceHeatingHourlyCOP", "SpaceHeatingHourlyCOP_tank", "HotWaterHourlyCOP", 
+            "HotWaterHourlyCOP_tank", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_HeatingTank_out", "Q_DHWTank_out", "E_Heating_HP_out", "E_DHW_HP_out", "E_RoomCooling"]
+        )
+        sim = read_parquet(
+            table_name=f"OperationResult_RefHour",
+            scenario_ID=scen_id,
+            folder=folder,
+            column_names=["ID_Scenario", "Hour", "SpaceHeatingHourlyCOP", "SpaceHeatingHourlyCOP_tank", "HotWaterHourlyCOP", 
+            "HotWaterHourlyCOP_tank", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_HeatingTank_out", "Q_DHWTank_out", "E_Heating_HP_out", "E_DHW_HP_out", "E_RoomCooling"]
+        )
+        # calculate the electricity demand for the space heating and hot water
+        opt["E_DHW_tank"] = opt["Q_DHWTank_in"] / opt["HotWaterHourlyCOP_tank"]
+        opt["E_buffer_tank_in"] = opt["Q_HeatingTank_in"] / opt["SpaceHeatingHourlyCOP_tank"]
+        opt["E_buffer_tank_out"] = opt["Q_HeatingTank_out"] / opt["SpaceHeatingHourlyCOP_tank"]
+        opt["E_space_heating"] = opt["E_Heating_HP_out"] - opt["E_buffer_tank_in"] + opt["E_buffer_tank_out"]
+        opt["E_DHW"] = opt["E_DHW_HP_out"] 
+        opt["E_space_cooling"] = opt["E_RoomCooling"]
+
+
+        sim["E_DHW_tank"] = sim["Q_DHWTank_in"] / sim["HotWaterHourlyCOP_tank"]
+        sim["E_buffer_tank_in"] = sim["Q_HeatingTank_in"] / sim["SpaceHeatingHourlyCOP_tank"]
+        sim["E_buffer_tank_out"] = sim["Q_HeatingTank_out"] / sim["SpaceHeatingHourlyCOP_tank"]
+        sim["E_space_heating"] = sim["E_Heating_HP_out"] - sim["E_buffer_tank_in"] + sim["E_buffer_tank_out"]
+        sim["E_DHW"] = sim["E_DHW_HP_out"] 
+        sim["E_space_cooling"] = sim["E_RoomCooling"]
+
+        # drop all columns with Q_ and COP to reduce size
+        opt.drop(columns=[c for c in opt.columns if "Q_" in c or "COP" in c], inplace=True)
+        sim.drop(columns=[c for c in sim.columns if "Q_" in c or "COP" in c], inplace=True)
+        return opt, sim
+    
+    # Parallelize the loading of data
+    results = Parallel(n_jobs=max(1, int(CPU_COUNT * 0.75)))(delayed(load_data)(scen_id) for scen_id in scenario_ids)
+    # results = load_data(scenario_ids[0])
+    opts, simus = zip(*results)
+    df_opt = pd.concat(opts)
+    df_simus = pd.concat(simus)
+    return df_opt, df_simus
+
+def get_shifted_electricity_per_appliance_type(folder_name: Path, perc_cooling: float, price_id):
+    db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
+    scenario_table = db.read_dataframe(table_name="OperationScenario")
+
+    # filter out only buildings with air HP and ground HP
+    building_table = db.read_dataframe(table_name="OperationScenario_Component_Building")
+
+    # return 0 for those..
+    if building_table.empty:
+        return pd.DataFrame.from_dict({"opt_grid_demand_stock_MW": np.zeros(8760), 
+                                       "ref_grid_demand_stock_MW": np.zeros(8760),
+                                       "Hour": np.arange(1, 8761)},  orient="index").T
+    else:
+
+        scenario_df = define_tech_scenario(
+            prob_cooling=perc_cooling,
+            df_scenarios=scenario_table,
+            df_hp=building_table
+        )
+        scenario_df = scenario_df.loc[scenario_df["ID_EnergyPrice"]==price_id, :]
+        opt_loads, ref_loads = load_specific_electricity_profiles(scenario_ids=list(scenario_df["ID_Scenario"]), folder=folder_name / "output")
+
+        # merge the numbers of each building scenario with the opt and ref loads:
+        building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice"]].copy().set_index("ID_Scenario").sort_index()
+        opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+        cols = ["E_space_heating", "E_DHW_tank", "E_buffer_tank_in", "E_buffer_tank_out", "E_DHW", "E_space_cooling", "E_Heating_HP_out", "E_DHW_HP_out"]
+        opt_stock[[col + "_stock" for col in cols]] = opt_stock[cols].mul(opt_stock["number_of_buildings"], axis=0)/ 1_000_000  # MW
+
+
+        ref_stock = ref_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+        ref_stock[[col + "_stock_ref" for col in cols]] = ref_stock[cols].mul(ref_stock["number_of_buildings"], axis=0)/ 1_000_000  # MW
+        
+        country_load_df = pd.concat([opt_stock, ref_stock[[col + "_stock_ref" for col in cols]]], axis=1)
+        return country_load_df
+
+def load_specific_heat_profiles(scenario_ids: list, folder: Path) -> (pd.DataFrame, pd.DataFrame):
+    def load_data(scen_id):
+        """Helper function to load data for a single scenario."""
+        opt = read_parquet(
+            table_name=f"OperationResult_OptHour",
+            scenario_ID=scen_id,
+            folder=folder,
+            column_names=["ID_Scenario", "Hour", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomHeating", "Q_RoomCooling"]
+        )
+        sim = read_parquet(
+            table_name=f"OperationResult_RefHour",
+            scenario_ID=scen_id,
+            folder=folder,
+            column_names=["ID_Scenario", "Hour", "Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomHeating", "Q_RoomCooling"]
+        )
+        return opt, sim
+
+    # Parallelize the loading of data
+    results = Parallel(n_jobs=max(1, int(CPU_COUNT * 0.75)))(delayed(load_data)(scen_id) for scen_id in scenario_ids)
+    # load_data(scenario_ids[0])
+    opts, simus = zip(*results)
+    df_opt = pd.concat(opts)
+    df_simus = pd.concat(simus)
+    
+    return df_opt, df_simus
+
+def get_shifted_energy_per_appliance_type(folder_name: Path, perc_cooling: float, price_id):
+    db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
+    scenario_table = db.read_dataframe(table_name="OperationScenario")
+
+    # filter out only buildings with air HP and ground HP
+    building_table = db.read_dataframe(table_name="OperationScenario_Component_Building")
+
+    # return 0 for those..
+    if building_table.empty:
+        return pd.DataFrame.from_dict({"opt_grid_demand_stock_MW": np.zeros(8760), 
+                                       "ref_grid_demand_stock_MW": np.zeros(8760),
+                                       "Hour": np.arange(1, 8761)},  orient="index").T
+    else:
+
+        scenario_df = define_tech_scenario(
+            prob_cooling=perc_cooling,
+            df_scenarios=scenario_table,
+            df_hp=building_table
+        )
+        scenario_df = scenario_df.loc[scenario_df["ID_EnergyPrice"]==price_id, :]
+        opt_loads, ref_loads = load_specific_heat_profiles(scenario_ids=list(scenario_df["ID_Scenario"]), folder=folder_name / "output")
+
+        # merge the numbers of each building scenario with the opt and ref loads:
+        building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice"]].copy().set_index("ID_Scenario").sort_index()
+        opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+        cols = ["Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomHeating", "Q_RoomCooling"]
+        opt_stock[[col + "_stock" for col in cols]] = opt_stock[cols].mul(opt_stock["number_of_buildings"], axis=0)/ 1_000_000  # MW
+
+
+        ref_stock = ref_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+        ref_stock[[col + "_stock_ref" for col in cols]] = ref_stock[cols].mul(ref_stock["number_of_buildings"], axis=0)/ 1_000_000  # MW
+        
+        country_load_df = pd.concat([opt_stock, ref_stock[[col + "_stock_ref" for col in cols]]], axis=1)
+        return country_load_df
+
+def calculate_shifted_electricity_per_appliance_type(perc_cooling, price_id):
+    path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
+    
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    dfs = []
+    for folder_name in folder_names:
+        if folder_name in [f"CYP_2020_{PROJECT_ACRONYM}", f"MLT_2020_{PROJECT_ACRONYM}"]:
+            continue
+        folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
+        print(f"calculating shited energy per appliance for {country} {year}")
+    
+        df = get_shifted_electricity_per_appliance_type(folder, perc_cooling, price_id)
+        df["country"] = country
+        df["year"] = year
+
+        # shifted energy through the thermal mass is the difference in E_space_heating:
+        df["thermal_mass_shift"] = df["E_space_heating_stock"] - df["E_space_heating_stock_ref"]
+        df["thermal_mass_shift_increase"] = df["thermal_mass_shift"].clip(lower=0)
+        df["thermal_mass_shift_decrease"] = df["thermal_mass_shift"].clip(upper=0)
+
+        df["thermal_mass_shift_cooling"] = df["E_space_cooling_stock"] - df["E_space_cooling_stock_ref"]
+        df["thermal_mass_shift_cooling_increase"] = df["thermal_mass_shift_cooling"].clip(lower=0)
+        df["thermal_mass_shift_cooling_decrease"] = df["thermal_mass_shift_cooling"].clip(upper=0)
+
+        # shift in DHW is the difference of the E_DHW which includes the the shifting of the tank
+        df["DHW_shift"] =  df["E_DHW_stock"] - df["E_DHW_stock_ref"] 
+        df["DHW_shift_increase"] = df["DHW_shift"].clip(lower=0)
+        df["DHW_shift_decrease"] = df["DHW_shift"].clip(upper=0)
+
+        # shift in Buffer Tank is the energy that goes into the tank as it is not used in the reference:
+        df["Buffer_shift_increase"] = df["E_buffer_tank_in_stock"]
+        df["Buffer_shift_decrease"] = -df["E_buffer_tank_out_stock"]
+
+        df["space_cooling_shift"] = df["E_space_cooling_stock"] - df["E_space_cooling_stock_ref"]
+        df["space_cooling_shift_increase"] = df["space_cooling_shift"].clip(lower=0)
+        df["space_cooling_shift_decrease"] = df["space_cooling_shift"].clip(upper=0)
+
+        df["heating_HP_shift"] = df["E_Heating_HP_out_stock"] - df["E_Heating_HP_out_stock_ref"]
+        df["heating_HP_shift_increase"] = df["heating_HP_shift"].clip(lower=0)
+        df["heating_HP_shift_decrease"] = df["heating_HP_shift"].clip(upper=0)
+
+        df["DHW_HP_shift"] = df["E_DHW_HP_out_stock"] - df["E_DHW_HP_out_stock_ref"]
+        df["DHW_HP_shift_increase"] = df["DHW_HP_shift"].clip(lower=0)
+        df["DHW_HP_shift_decrease"] = df["DHW_HP_shift"].clip(upper=0)
+
+        cols = ["E_space_heating", "E_DHW_tank", "E_buffer_tank_in", "E_buffer_tank_out", "E_DHW", "E_space_cooling"]
+        cols_opt = [f"{c}_stock" for c in cols]
+        cols_ref = [f"{c}_stock_ref" for c in cols]
+        df.drop(columns=cols+cols_ref+cols_opt+["number_of_buildings"], inplace=True)
+
+        dfs.append(df)
+    
+    big_df = pd.concat(dfs, axis=0)
+    big_df.columns = [str(col) for col in big_df.columns]
+    return big_df
+    
+def calculate_shifted_energy_per_appliance_type(perc_cooling, price_id):
+    path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
+    
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    dfs = []
+    for folder_name in folder_names:
+        if folder_name in [f"CYP_2020_{PROJECT_ACRONYM}", f"MLT_2020_{PROJECT_ACRONYM}"]:
+            continue
+        folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
+        print(f"calculating shited energy per appliance for {country} {year}")
+    
+        df = get_shifted_energy_per_appliance_type(folder, perc_cooling, price_id)
+        df["country"] = country
+        df["year"] = year
+
+        # shifted energy through the thermal mass is the difference in Q_RoomHeating:
+        df["thermal_mass_shift"] = df["Q_RoomHeating_stock"] - df["Q_RoomHeating_stock_ref"]
+        df["thermal_mass_shift_increase"] = df["thermal_mass_shift"].clip(lower=0)
+        df["thermal_mass_shift_decrease"] = df["thermal_mass_shift"].clip(upper=0)
+
+        # shift in DHW is the difference of the DHW Tank input (before losses) and DHW Tank bypass
+        df["DHW_shift"] = df["Q_DHWTank_in_stock"] + df["Q_DHWTank_bypass_stock"] - df["Q_DHWTank_in_stock_ref"] - df["Q_DHWTank_bypass_stock_ref"] 
+        df["DHW_shift_increase"] = df["DHW_shift"].clip(lower=0)
+        df["DHW_shift_decrease"] = df["DHW_shift"].clip(upper=0)
+
+        # shift in Buffer Tank is the energy that goes into the tank as it is not used in the reference:
+        df["Buffer_shift_increase"] = df["Q_HeatingTank_in_stock"]
+        df["Buffer_shift_decrease"] = -df["Q_HeatingTank_out_stock"]
+
+        df["space_cooling_shift"] = df["Q_RoomCooling_stock"] - df["Q_RoomCooling_stock_ref"]
+        df["space_cooling_shift_increase"] = df["space_cooling_shift"].clip(lower=0)
+        df["space_cooling_shift_decrease"] = df["space_cooling_shift"].clip(upper=0)
+
+        cols = ["Q_HeatingTank_bypass", "Q_HeatingTank_in", "Q_HeatingTank_out", "Q_DHWTank_in", "Q_DHWTank_bypass", "Q_DHWTank_out", "Q_RoomCooling"]# "Q_RoomHeating"]
+        cols_opt = [f"{c}_stock" for c in cols]
+        cols_ref = [f"{c}_stock_ref" for c in cols]
+        df.drop(columns=cols+cols_ref+cols_opt+["number_of_buildings"], inplace=True)
+
+        dfs.append(df)
+    
+    big_df = pd.concat(dfs, axis=0)
+    big_df.columns = [str(col) for col in big_df.columns]
+    return big_df
 
 def define_tech_scenario(prob_cooling: float, df_scenarios: pd.DataFrame, df_hp: pd.DataFrame) -> pd.DataFrame:
     """Based on the adaption values (0 to 1) the buildings having the technology are randomly selected"""
 
     price_dfs = []
-    for price_id in [1, 2]:
+    for price_id in df_scenarios["ID_EnergyPrice"].unique():
         scenarios_with_numbers = []
 
         scenarios_price = df_scenarios.query(f"ID_EnergyPrice=={price_id}")
-
+        # b_ids = scenarios_price["ID_Building"]
+        # np.array([df_hp.loc[df_hp["ID_Building"]==i, "number_of_buildings"] for i in b_ids]).flatten().sum() / 2  # kommt was anderes raus als mit der berechnung die hier steht
         for building_id, group in scenarios_price.groupby("ID_Building"):
             # change the number of buildings in the scenario table by multiplying with the cooling proabability
             group.loc[group["ID_SpaceCoolingTechnology"]==1, "number_of_buildings"] = group.loc[group["ID_SpaceCoolingTechnology"]==1, "number_of_buildings"] * (1 - prob_cooling)
@@ -342,6 +618,59 @@ def get_country_specific_heating_demand(folder_name: Path, perc_cooling: float, 
 
     return df
 
+def get_country_load_profiles_for_PV_buidlings(folder_name: Path, perc_cooling: float):
+    db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
+    scenario_table = db.read_dataframe(table_name="OperationScenario")
+
+    # filter out only buildings with air HP and ground HP
+    building_table = db.read_dataframe(table_name="OperationScenario_Component_Building")
+
+    # return 0 for those..
+    if building_table.empty:
+        return pd.DataFrame.from_dict({"opt_grid_demand_stock_MW": np.zeros(8760), 
+                                       "ref_grid_demand_stock_MW": np.zeros(8760),
+                                       "Hour": np.arange(1, 8761)},  orient="index").T
+    else:
+
+        scenario_df = define_tech_scenario(
+            prob_cooling=perc_cooling,
+            df_scenarios=scenario_table,
+            df_hp=building_table
+        )
+        # define scenario ids that have PV
+        ids = [i for i in scenario_df.loc[scenario_df["ID_PV"]!=1, "ID_Scenario"]]
+        opt_loads, ref_loads = load_electricity_demand_profiles(scenario_ids=ids, folder=folder_name / "output")
+         
+        # merge the numbers of each building scenario with the opt and ref loads:
+        building_numbers = scenario_df.loc[:, ["ID_Scenario", "number_of_buildings", "ID_EnergyPrice"]].copy().set_index("ID_Scenario").sort_index()
+        opt_stock = opt_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers) 
+        opt_stock["opt_grid_demand_stock_MW"] = opt_stock["Grid"] * opt_stock["number_of_buildings"] / 1_000_000  # MW
+        opt_stock["opt_PV2Grid_MW"] = opt_stock["PV2Grid"] * opt_stock["number_of_buildings"] / 1_000_000 # MW
+        opt_stock["opt_PhotovoltaicProfile_MW"] = opt_stock["PhotovoltaicProfile"] * opt_stock["number_of_buildings"] / 1_000_000 # MW
+        opt_stock["opt_PV2Load_MW"] = opt_stock["PV2Load"] * opt_stock["number_of_buildings"] / 1_000_000 # MW
+
+        ref_stock = ref_loads.sort_values(by=["ID_Scenario", "Hour"]).set_index("ID_Scenario").join(building_numbers)
+        ref_stock["ref_grid_demand_stock_MW"] = ref_stock["Grid"] * ref_stock["number_of_buildings"] / 1_000_000  # MW
+        ref_stock["ref_PV2Grid_MW"] = ref_stock["PV2Grid"] * ref_stock["number_of_buildings"] / 1_000_000 # MW
+        ref_stock["ref_PhotovoltaicProfile_MW"] = ref_stock["PhotovoltaicProfile"] * ref_stock["number_of_buildings"] / 1_000_000 # MW
+        ref_stock["ref_PV2Load_MW"] = ref_stock["PV2Load"] * ref_stock["number_of_buildings"] / 1_000_000 # MW
+        
+        opt_stock_grouped = opt_stock.reset_index().groupby(["ID_Scenario", "ID_EnergyPrice"])
+        ref_stock_grouped = ref_stock.reset_index().groupby(["ID_Scenario", "ID_EnergyPrice"])
+
+
+        self_consumption_ref = ref_stock_grouped["ref_PV2Load_MW"].sum() / ref_stock_grouped["ref_PhotovoltaicProfile_MW"].sum() 
+        self_consumption_opt = opt_stock_grouped["opt_PV2Load_MW"].sum() / opt_stock_grouped["opt_PhotovoltaicProfile_MW"].sum() 
+        self_consumption_ref = self_consumption_ref.reset_index().rename(columns={0: "self_consumption"})
+        self_consumption_opt = self_consumption_opt.reset_index().rename(columns={0: "self_consumption"})
+        self_consumption_ref["type"] = "simulation"
+        self_consumption_opt["type"] = "optimization"
+
+
+        country_load_df = pd.concat([self_consumption_opt, self_consumption_ref], axis=0)
+
+        return country_load_df
+
 def get_country_load_profiles(folder_name: Path, perc_cooling: float):
     db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
     scenario_table = db.read_dataframe(table_name="OperationScenario")
@@ -386,19 +715,19 @@ def get_country_load_profiles(folder_name: Path, perc_cooling: float):
 
 def get_price_profile(folder_name: Path):
     db = DB(path=folder_name / "output" / f"{folder_name.name}.sqlite")
-    price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1", "electricity_2"])
+    price_table = db.read_dataframe(table_name="OperationScenario_EnergyPrice", column_names=["electricity_1", "electricity_2", "electricity_3", "electricity_4", "electricity_5"])
     return price_table
 
 def create_national_temperature_df():
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         df = get_country_temperature_profile(
             folder_name=folder,
         )
@@ -412,14 +741,14 @@ def create_national_temperature_df():
 
 def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         df = get_total_number_of_buildings_with_HP(
             folder_name=folder,
             perc_cooling=percentage_cooling
@@ -430,19 +759,22 @@ def create_number_of_HPs_df(percentage_cooling: float) -> pd.DataFrame:
         
     big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
     big_df.columns = [str(col) for col in big_df.columns]
+    big_df["ID_EnergyPrice"] = big_df["ID_EnergyPrice"].map({i: f"Price {i}" for i in range(1, len(big_df["ID_EnergyPrice"].unique())+1)})
+    big_df["year"] = big_df["year"].astype(int)
+    big_df.rename(columns={"number_of_buildings": "number of HPs in country"}, inplace=True)
     return big_df
 
 def read_ref_2020_national_heat_demand(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         df = get_country_specific_heating_demand(
             folder_name=folder,
             perc_cooling=percentage_cooling,
@@ -459,14 +791,14 @@ def read_ref_2020_national_heat_demand(percentage_cooling: float) -> pd.DataFram
 def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
         if folder_name in ["CYP_2020", "MLT_2020"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         print(f"analysing {country} {year}")
 
         df = get_country_specific_heating_demand(
@@ -483,17 +815,44 @@ def create_national_heat_demand_df(percentage_cooling: float) -> pd.DataFrame:
     return big_df
 
 
+def load_only_PV_building_profiles(percentage_cooling: float, parquet_file: Path, project_acronym):
+    path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
+    folder_names = [f"{country}_{year}_{project_acronym}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
+    dfs = []
+    for folder_name in folder_names:
+        if folder_name in [f"CYP_2020_{PROJECT_ACRONYM}", f"MLT_2020_{PROJECT_ACRONYM}"]:
+            continue
+        folder = path_2_model_results / folder_name
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
+        print(f"getting PV {country} {year}")
+
+        country_loads = get_country_load_profiles_for_PV_buidlings(
+            folder_name=folder,
+            perc_cooling=percentage_cooling,
+        )
+       
+
+        country_loads["country"] = country
+        country_loads["year"] = year
+
+        dfs.append(country_loads)
+        
+    big_df = pd.concat(dfs, axis=0).reset_index(drop=True)
+    big_df.columns = [str(col) for col in big_df.columns]
+    big_df.to_parquet(parquet_file)
+
 def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_file: Path):
     path_2_model_results = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/FLEX/projects/")
     
-    folder_names = [f"{country}_{year}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2020, 2030, 2040, 2050]]
+    folder_names = [f"{country}_{year}_{PROJECT_ACRONYM}" for country in list(EUROPEAN_COUNTRIES.keys()) for year in [2030, 2050]]
     dfs = []
     for folder_name in folder_names:
-        if folder_name in ["CYP_2020", "MLT_2020"]:
+        if folder_name in [f"CYP_2020_{PROJECT_ACRONYM}", f"MLT_2020_{PROJECT_ACRONYM}"]:
             continue
         folder = path_2_model_results / folder_name
-        country = folder.name.split("_")[-2]
-        year = folder.name.split("_")[-1]
+        country = folder.name.split("_")[0]
+        year = folder.name.split("_")[1]
         print(f"analysing {country} {year}")
 
         country_loads = get_country_load_profiles(
@@ -526,16 +885,16 @@ def create_national_demand_profiles_parquet(percentage_cooling: float, parquet_f
 
 
 
-def main(percentage_cooling: float):
+def main(percentage_cooling: float,):
     print(f"creating parquet file for {percentage_cooling} cooling percentage")
-    parquet_file = Path(__file__).parent / f"EU27_loads_cooling-{percentage_cooling}.parquet.gzip"
+    parquet_file = Path(__file__).parent / f"EU27_loads_{PROJECT_ACRONYM}_cooling-{percentage_cooling}.parquet.gzip"
 
     create_national_demand_profiles_parquet(percentage_cooling,  parquet_file)
 
 
 
 
-
+PROJECT_ACRONYM = "grid_fees"
 if __name__ == "__main__":
     main(
         percentage_cooling=0.1,
