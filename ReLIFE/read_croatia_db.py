@@ -95,9 +95,26 @@ def read_accdb_database(path2db: str) -> pd.DataFrame:
     )
     # Establish connection
     conn = pyodbc.connect(conn_str)
+    
+    # Get list of all tables
+    cursor = conn.cursor()
+    tables = cursor.tables(tableType='TABLE')
+    print("\nAvailable tables in the database:")
+    for table in tables:
+        table_name = table.table_name
+        # Get row count for each table
+        cursor.execute(f"SELECT COUNT(*) FROM [{table_name}]")
+        row_count = cursor.fetchone()[0]
+        print(f"Table: {table_name}, Row count: {row_count:,}")
+    
     table_name = "TAN_ANALYSIS" 
     query = f"SELECT * FROM [{table_name}]"
     df = pd.read_sql(query, conn)
+    
+    # Print DataFrame info
+    print(f"\nDataFrame shape: {df.shape}")
+    print(f"DataFrame memory usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+    
     # Close the connection
     conn.close()
     return df
@@ -181,7 +198,7 @@ if __name__ == "__main__":
     database_path = r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\ReLIFE\data\ISGE_potrošnja_2020-2024.accdb"
     df = translate_db(read_accdb_database(path2db=database_path))
     save_to_sqlite(df=df, 
-                   db_path=Path(r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\ReLIFE\data") / "Croatia_public_buildings_data.db", 
+                   db_path=Path(r"C:\Users\mascherbauer\OneDrive\EEG_Projekte\ReLIFE\data") / "Croatia_public_buildings_data.sqlite", 
                    table_name="Energy_data")
 
 
