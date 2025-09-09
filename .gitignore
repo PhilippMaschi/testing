@@ -20,6 +20,13 @@ idea/
 *.json
 *.zip
 *.txt
+*.npy
+*.db
+*.pt.zst
+*.pkl
+*.sqlite
+*.pt
+
 
 !PVGIS_data/NUTS1.json
 !PVGIS_data/NUTS2.json
