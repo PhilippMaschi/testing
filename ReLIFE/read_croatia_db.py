@@ -369,17 +369,28 @@ def plot_outliers(out_df: pd.DataFrame, col: str):
     plt.tight_layout()
     plt.show()
 
+def remove_zero_area(df: pd.DataFrame):
+    # drop all buildigns where the area is 0:
+    df_without_zero = df.loc[df["Useful surface area Ak"]!=0, :]
+    # drop all rows where the Useful surface area is not available:
+    df_without_zero = df_without_zero.dropna(subset=["Useful surface area Ak"])
+    return df_without_zero
+
+def normalize_columns(df: pd.DataFrame):
+    numeric_cols = [i for i in df.select_dtypes(include='number').columns if not "area" in i]
+    for col in numeric_cols:
+        if col != "Month" and col != "Year" and col != "Useful surface area Ak":
+            df[f"{col}"] = df[col] / df["Useful surface area Ak"]
+    return df
+
 def clean_dataset(df: pd.DataFrame):
     # before removing outliers, the data has to be normalized using the floor area to make it comparable
     numeric_cols = [i for i in df.select_dtypes(include='number').columns if not "area" in i]
     new_df = df.copy()
-    # drop all buildigns where the area is 0:
-    df_without_zero = new_df.loc[new_df["Useful surface area Ak"]!=0, :]
-    # drop all rows where the Useful surface area is not available:
 
-    df_without_zero_no_na = df_without_zero.dropna(subset=["Useful surface area Ak"])
-    df_without_zero_no_na["outlier"] = False
-    df_without_zero_no_na["year_month"] = df_without_zero_no_na['Year'].astype(str) + '-' + df_without_zero_no_na['Month'].astype(str).str.zfill(2)
+    df_without_zero = remove_zero_area(new_df)
+    df_without_zero["outlier"] = False
+    df_without_zero["year_month"] = df_without_zero['Year'].astype(str) + '-' + df_without_zero['Month'].astype(str).str.zfill(2)
     # now remove outliers of the Usefule surface area:
     area_outlier_df = mark_outliers_from_group(df_without_zero_no_na, col="Useful surface area Ak")
     print(f"{round(len(area_outlier_df) / len(df_without_zero_no_na)  * 100, 2)}% are outliers based on the floor area")
@@ -510,9 +521,92 @@ def create_stackplot(df: pd.DataFrame, y_axis: str):
     plt.show()
     plt.close()
 
+def plot_energy_source_consumption(df):
+    """Create time series plots of mean and median consumption for each energy source.
+    
+    Args:
+        df: DataFrame containing columns 'Energy source', 'kWh', 'Quantity', 'Year', and 'Month'
+    """
+    # Set font sizes
+    plt.rcParams.update({
+        'font.size': 10,
+        'axes.titlesize': 12,
+        'axes.labelsize': 10,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 8
+    })
+    
+    # Get unique energy sources
+    energy_sources = df['Energy source'].unique()
+    
+    # Calculate number of rows and columns for subplot grid
+    n_sources = len(energy_sources)
+    n_cols = 3
+    n_rows = (n_sources + n_cols - 1) // n_cols  # Ceiling division
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 4*n_rows))
+    axes = axes.flatten()
+    
+    # Create time series for each energy source
+    for idx, source in enumerate(energy_sources):
+        # Filter data for current energy source
+        source_data = df[df['Energy source'] == source].copy()
+        
+        # Create datetime index
+        source_data['Date'] = pd.to_datetime(source_data[['Year', 'Month']].assign(day=1))
+        
+        # Choose column based on energy source
+        value_column = 'Quantity' if source == 'Water' else 'kWh'
+        
+        # Calculate mean and median for each month
+        monthly_stats = source_data.groupby('Date').agg({
+            value_column: ['mean', 'median']
+        }).reset_index()
+        
+        # Plot
+        ax = axes[idx]
+        ax.plot(monthly_stats['Date'], monthly_stats[(value_column, 'mean')], 
+                label='Mean', color='blue', linewidth=1.5)
+        ax.plot(monthly_stats['Date'], monthly_stats[(value_column, 'median')], 
+                label='Median', color='red', linewidth=1.5)
+        
+        # Customize plot
+        ax.set_title(f'{source}', pad=10)
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Quantity' if source == 'Water' else 'kWh')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        # Rotate x-axis labels for better readability
+        ax.tick_params(axis='x', rotation=45)
+        
+        # Format y-axis to show values in thousands
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1000:.0f}k'))
+    
+    # Remove empty subplots
+    for idx in range(len(energy_sources), len(axes)):
+        fig.delaxes(axes[idx])
+    
+    plt.tight_layout()
+    return fig
+
 def plot_statistics(db_path: Path):
 
     df = read_sqlite_db(db_path=db_path)
+    figure = plot_energy_source_consumption(df)
+    figure.savefig(FIGURE_FOLDER / "energy_source_consumption_raw.svg",)# dpi=300)
+    plt.close(figure)
+
+    figure = plot_energy_source_consumption(remove_zero_area(df))
+    figure.savefig(FIGURE_FOLDER / "energy_source_consumption_no_zero_area.svg",)# dpi=300)
+    plt.close(figure)
+
+    df_normalized = normalize_columns(remove_zero_area(df))
+    figure = plot_energy_source_consumption(df_normalized)
+    figure.savefig(FIGURE_FOLDER / "energy_source_consumption_normalized.svg",)# dpi=300)
+    plt.close(figure)
     # isge_groups = df.groupby(["ISGE object code", "Energy source"])
     # group = isge_groups.get_group(("HR-51410-0018-0", "Electric energy"))
     # profile = ProfileReport(df, title="Profiling Report")

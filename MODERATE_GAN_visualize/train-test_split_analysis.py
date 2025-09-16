@@ -26,105 +26,6 @@ def calculate_overall_metrics(real_data, synthetic_data):
     
     return metrics
 
-def plot_distribution_comparison(test_data, synthetic_datasets, save_path=None):
-    """Create distribution comparison plots with histograms and CDFs."""
-    # Set font sizes
-    plt.rcParams.update({
-        'font.size': 14,
-        'axes.titlesize': 16,
-        'axes.labelsize': 14,
-        'xtick.labelsize': 12,
-        'ytick.labelsize': 12,
-        'legend.fontsize': 12
-    })
-    
-    # Flatten test data
-    test_values = test_data.values.flatten()
-    
-    # Create figure for histogram
-    plt.figure(figsize=(8, 6))
-    sns.histplot(data=test_values, label='Test Data (size 261)', alpha=0.6, stat='density')
-    
-    # Plot histograms for each synthetic dataset
-    for size, synthetic_data in synthetic_datasets.items():
-        if size in [261, 261*2, 261*4, 4000]:
-            synth_values = synthetic_datasets[261].values.flatten()
-            sns.histplot(data=synth_values, label=f'Synthetic Data (size {size})', alpha=0.3, stat='density')
-    
-    plt.xlabel('electricity consumption (kWh/h)')
-    plt.ylabel('probability density')
-    plt.legend()
-    plt.xlim(0, 2)  
-    plt.ylim(0, 3)   
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=600)
-    plt.show()
-    plt.close()
-    
-    # Create separate figure for CDF
-    plt.figure(figsize=(8, 6))
-    
-    # Plot test data CDF
-    x = np.sort(test_values)
-    y = np.arange(1, len(x) + 1) / len(x)
-    plt.plot(x, y, label='Test Data', linewidth=2)
-    
-    # Plot CDFs for each synthetic dataset
-    for size, synthetic_data in synthetic_datasets.items():
-        if size in [261, 261*2, 261*4, 4000]:
-            synth_values = synthetic_data.values.flatten()
-            x = np.sort(synth_values)
-            y = np.arange(1, len(x) + 1) / len(x)
-            plt.plot(x, y, label=f'Synthetic Data (size {size})', alpha=0.7)
-    
-    plt.xlabel('electricity consumption (kWh/h)')
-    plt.ylabel('Cumulative Probability')
-    plt.legend()
-    plt.xlim(0, 2.5)  # Zoom in on x-axis
-    
-    plt.tight_layout()
-    if save_path:
-        cdf_save_path = str(save_path).replace('.png', '_cdf.png')
-        plt.savefig(cdf_save_path, dpi=600)
-    plt.show()
-    plt.close()
-
-def plot_train_test_comparison(train_data, test_data, save_path=None):
-    """Create histogram comparison plot for training and test data."""
-    # Set font sizes
-    plt.rcParams.update({
-        'font.size': 14,
-        'axes.titlesize': 16,
-        'axes.labelsize': 14,
-        'xtick.labelsize': 12,
-        'ytick.labelsize': 12,
-        'legend.fontsize': 12
-    })
-    
-    # Flatten data
-    train_values = train_data.values.flatten()
-    test_values = test_data.values.flatten()
-    
-    # Create figure
-    plt.figure(figsize=(8, 6))
-    
-    # Plot histograms
-    sns.histplot(data=train_values, label='Training data', alpha=0.6, stat='density')
-    sns.histplot(data=test_values, label='Test data', alpha=0.6, stat='density')
-    
-    plt.xlabel('electricity consumption (kWh/h)')
-    plt.ylabel('probability density')
-    plt.legend()
-    plt.xlim(0, 2)
-    plt.ylim(0, 3)
-    
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=600)
-    plt.show()
-    plt.close()
-
 def analyze_profile_patterns(real_data, synthetic_data):
     """Analyze profile-specific patterns and variations."""
     # Set font sizes
@@ -241,9 +142,18 @@ def plot_dataset_distributions(train_data, test_data, synthetic_data, save_path=
     
     # Create figure for histogram
     fig = plt.figure(figsize=(8, 6))
-    sns.histplot(data=train_values, label='Training Data', alpha=0.6, stat='density', color='blue')
-    sns.histplot(data=test_values, label='Test Data', alpha=0.6, stat='density', color='red')
-    sns.histplot(data=synth_values, label='Synthetic Data', alpha=0.6, stat='density', color='green')
+    
+    
+    # Plot histograms with step style to ensure visibility
+    sns.histplot(data=train_values, label='Training Data', 
+                stat='density', color='blue', 
+                common_norm=False, element='step', fill=False, linewidth=2)
+    sns.histplot(data=test_values, label='Test Data', 
+                stat='density', color='red', 
+                common_norm=False, element='step', fill=False, linewidth=2)
+    sns.histplot(data=synth_values, label='Synthetic Data', 
+                stat='density', color='green', 
+                common_norm=False, element='step', fill=False, linewidth=2)
     
     plt.xlabel('electricity consumption (kWh/h)')
     plt.ylabel('probability density')
@@ -294,7 +204,7 @@ def plot_wasserstein_by_size(overall_metrics):
     return fig
 
 
-def main():
+def train_test_comparison():
     data_dir = Path(r"/home/users/pmascherbauer/projects4/workspace_philippm/GAN/data/Fluvius_processed/")
     train_file = data_dir / "train_data.csv"
     test_file = data_dir / "test_data.csv"
@@ -306,11 +216,7 @@ def main():
     # Create output directory for plots
     output_dir = Path(__file__).parent / "distribution_analysis"
     output_dir.mkdir(exist_ok=True)
-    
-    # Create train-test comparison plot
-    train_test_plot_path = output_dir / "train_test_comparison.png"
-    plot_train_test_comparison(train_df, test_df, train_test_plot_path)
-    
+        
     # Load synthetic datasets of different sizes
     synthetic_sizes = [261, 261*2, 261*4, 1500, 2000, 2500, 3000, 3500, 4000]
     synthetic_datasets = {}
@@ -330,35 +236,35 @@ def main():
     profile_patterns_path = output_dir / f"profile_patterns_{261}.png"
     profile_patterns_fig = analyze_profile_patterns(test_df, synthetic_datasets[261])
     profile_patterns_fig.savefig(profile_patterns_path, dpi=600)
-    profile_patterns_fig.close()
+    plt.close(profile_patterns_fig)
     
     # Create PCA plot
     pca_comparison_path = output_dir / f"pca_comparison_{261}.png"
     pca_comparison_fig = analyze_pca_comparison(train_df, test_df, synthetic_datasets[261])
     pca_comparison_fig.savefig(pca_comparison_path, dpi=600)
-    pca_comparison_fig.close()
+    plt.close(pca_comparison_fig)
     
     # Create distribution comparison plot
     synthetic_df = synthetic_datasets[261]
     plot_path = output_dir / "dataset_distributions.png"
     hist_plot = plot_dataset_distributions(train_df, test_df, synthetic_df, plot_path)
     hist_plot.savefig(plot_path, dpi=600)
-    hist_plot.close()
+    plt.close(hist_plot)
     
     # Create CDF plot
     cdf_plot_path = output_dir / "cdf_plot.png"
     cdf_plot = plot_cdf(train_df, test_df, synthetic_df, cdf_plot_path)
     cdf_plot.savefig(cdf_plot_path, dpi=600)
-    cdf_plot.close()
+    plt.close(cdf_plot)
 
     # Create Wasserstein plot
     wasserstein_plot_path = output_dir / "wasserstein_by_size.png"
     wasserstein_plot = plot_wasserstein_by_size(overall_metrics)
     wasserstein_plot.savefig(wasserstein_plot_path, dpi=600)
-    wasserstein_plot.close()
+    plt.close(wasserstein_plot)
 
-    
+
 if __name__ == "__main__":
-    main()
+    train_test_comparison()
 
 
