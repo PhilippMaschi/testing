@@ -948,6 +948,87 @@ def show_flexibility_factor(loads: pd.DataFrame):
     plt.close()
 
 
+def show_flexibility_factor_national_demand(loads: pd.DataFrame, national: pd.DataFrame):
+    """
+    Compute and plot the change in flexibility factor on a national-demand basis.
+
+    Steps:
+    - Merge `loads` with `national` demand by country/year/Hour
+    - Build `demand_opt = national_demand - ref_grid + opt_grid`
+    - Compute flexibility factor for reference (national demand) and prosumager (demand_opt)
+      using the same price-quartile method as in `show_flexibility_factor`
+    - Plot a boxplot of the change (opt - ref) across countries, with x=year and hue=ID_EnergyPrice
+    """
+    # Merge national demand and construct national prosumager demand
+    merged = pd.merge(
+        left=loads,
+        right=national[["country", "demand MW", "year", "Hour"]],
+        on=["year", "Hour", "country"],
+    )
+    merged["demand_opt"] = (
+        merged["demand MW"]
+        - merged["ref_grid_demand_stock_MW"]
+        + merged["opt_grid_demand_stock_MW"]
+    )
+
+    # Group by country/year/price scenario
+    groups = merged.groupby(["year", "country", "ID_EnergyPrice"]) 
+
+    # Flexibility factor (same quartile-based formula) for national demand
+    factor_ref = groups[["demand MW", "price (cent/kWh)"]].apply(
+        lambda g: (
+            g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "demand MW"].sum()
+            - g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "demand MW"].sum()
+        )
+        /
+        (
+            g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "demand MW"].sum()
+            + g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "demand MW"].sum()
+        )
+    ).reset_index(name="flexibility factor reference (national)")
+
+    factor_opt = groups[["demand_opt", "price (cent/kWh)"]].apply(
+        lambda g: (
+            g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "demand_opt"].sum()
+            - g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "demand_opt"].sum()
+        )
+        /
+        (
+            g.loc[g["price (cent/kWh)"] <= g["price (cent/kWh)"].quantile(0.25), "demand_opt"].sum()
+            + g.loc[g["price (cent/kWh)"] >= g["price (cent/kWh)"].quantile(0.75), "demand_opt"].sum()
+        )
+    ).reset_index(name="flexibility factor prosumager (national)")
+
+    plot_df = pd.merge(
+        left=factor_opt,
+        right=factor_ref,
+        on=["year", "country", "ID_EnergyPrice"],
+        how="inner",
+    )
+    plot_df["flexibility factor change (national)"] = (
+        plot_df["flexibility factor prosumager (national)"]
+        - plot_df["flexibility factor reference (national)"]
+    )
+
+    # Boxplot over countries: x=year, hue=price scenario, y=change in flexibility factor
+    plt.figure(figsize=(8, 6))
+    sns.boxplot(
+        data=plot_df,
+        x="year",
+        y="flexibility factor change (national)",
+        hue="ID_EnergyPrice",
+        orient="x",
+        palette=sns.color_palette(),
+    )
+    plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
+    plt.xlabel("year")
+    plt.ylabel("change in flexibility factor (national)")
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Flexibility_factor_change_national_cooling{COOLING_PERCENTAGE}.svg")
+    # plt.show()
+    plt.close()
+
+
 def calculate_GSC(loads: pd.DataFrame)-> pd.DataFrame:
 # from https://www.sciencedirect.com/science/article/pii/S0306261915013434
 
@@ -2386,6 +2467,33 @@ def plot_shifted_electricity_per_appliance_EU(price_id: int):
         for col, percentage in year_percentages.items():
             print(f"{col}: {percentage}%  -  {year_data[col]}GWh")
 
+    # Short bar plot of percentages (same colors as legend labels)
+    label_map = {
+        "thermal_mass_shift_increase": ("Thermal Mass", color_dict_negative["thermal_mass_shift_decrease"]),
+        "DHW_shift_increase": ("DHW Tank", color_dict_negative["DHW_shift_decrease"]),
+        "Buffer_shift_increase": ("Heating Tank", color_dict_negative["Buffer_shift_decrease"]),
+        "thermal_mass_shift_cooling_increase": ("Cooling", color_dict_negative["thermal_mass_shift_cooling_decrease"]),
+    }
+    fig, axes = plt.subplots(1, 2, figsize=(6, 3), sharey=True)
+    for ax, yr in zip(axes, [2030, 2050]):
+        yr_vals = (total_sum.loc[yr] / total_sum.loc[yr].sum() * 100)
+        cats = [label_map[c][0] for c in columns_positive]
+        cols = [label_map[c][1] for c in columns_positive]
+        ax.bar(cats, [yr_vals[c] for c in columns_positive], color=cols)
+        ax.set_title(str(yr))
+        ax.set_xticklabels(cats, rotation=45, ha='right')
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=100))
+        ax.set_ylim(0, 50)
+        ax.set_ylabel("share of shifted electricity")
+    # Ensure y-ticks are shown on both subplots
+    yticks = axes[0].get_yticks()
+    for ax in axes:
+        ax.set_yticks(yticks)
+        ax.tick_params(axis='y', which='both', left=True, labelleft=True)
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Shifted_electricity_percentages_Appliances_price{price_id}_{COOLING_PERCENTAGE}_cooling.svg")
+    plt.close()
+
     # make the same plot only for HP heating and HP DHW and Cooling
     columns_positive_HP = [
         "space_cooling_shift_increase",
@@ -2421,6 +2529,38 @@ def plot_shifted_electricity_per_appliance_EU(price_id: int):
         print(f"\nYear {year}:")
         for col, percentage in year_percentages.items():
             print(f"{col}: {percentage}%  -  {year_data[col]}GWh")
+
+    # Short bar plot of percentages for HP (same colors as legend labels)
+    label_map_hp = {
+        "heating_HP_shift_increase": ("Heating", color_dict_negative_HP["heating_HP_shift_decrease"]),
+        "DHW_HP_shift_increase": ("DHW", color_dict_negative_HP["DHW_HP_shift_decrease"]),
+        "space_cooling_shift_increase": ("Cooling", color_dict_negative_HP["space_cooling_shift_decrease"]),
+    }
+    fig, axes = plt.subplots(1, 2, figsize=(6, 3), sharey=True)
+    for ax, yr in zip(axes, [2030, 2050]):
+        yr_vals = (total_sum_HP.loc[yr] / total_sum_HP.loc[yr].sum() * 100)
+        # Order bars to match legend order: Heating, DHW, Cooling
+        hp_plot_order = [
+            "heating_HP_shift_increase",
+            "DHW_HP_shift_increase",
+            "space_cooling_shift_increase",
+        ]
+        cats = [label_map_hp[c][0] for c in hp_plot_order]
+        cols = [label_map_hp[c][1] for c in hp_plot_order]
+        ax.bar(cats, [yr_vals[c] for c in hp_plot_order], color=cols)
+        ax.set_title(str(yr))
+        ax.set_xticklabels(cats, rotation=45, ha='right')
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=100))
+        ax.set_ylim(0, 50)
+        ax.set_ylabel("share of shifted electricity")
+    # Ensure y-ticks are shown on both subplots
+    yticks = axes[0].get_yticks()
+    for ax in axes:
+        ax.set_yticks(yticks)
+        ax.tick_params(axis='y', which='both', left=True, labelleft=True)
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Shifted_electricity_percentages_Appliances_HP_price{price_id}_{COOLING_PERCENTAGE}_cooling.svg")
+    plt.close()
 
 def plot_shifted_demand_per_appliance_EU(price_id: int):
     df = Cp.calculate_shifted_energy_per_appliance_type(COOLING_PERCENTAGE, price_id=price_id)
@@ -2508,7 +2648,38 @@ def plot_shifted_demand_per_appliance_EU(price_id: int):
         print(f"\nYear {year}:")
         for col, percentage in year_percentages.items():
             print(f"{col}: {percentage}%  -  {year_data[col]}TWh")
-
+    # Short bar plot of percentages for HP (same colors as legend labels)
+    label_map_hp = {
+        "thermal_mass_shift_increase": ("Thermal Mass", color_dict_negative["thermal_mass_shift_decrease"]),
+        "DHW_shift_increase": ("DHW", color_dict_negative["DHW_shift_decrease"]),
+        "Buffer_shift_increase": ("Heating Tank", color_dict_negative["Buffer_shift_decrease"]),
+        "space_cooling_shift_increase": ("Cooling", color_dict_negative["space_cooling_shift_decrease"]),
+    }
+    fig, axes = plt.subplots(1, 2, figsize=(6, 3), sharey=True)
+    for ax, yr in zip(axes, [2030, 2050]):
+        yr_vals = (total_sum.loc[yr] / total_sum.loc[yr].sum() * 100)
+        # Order bars to match legend order: Heating, DHW, Cooling
+        hp_plot_order = [
+            "thermal_mass_shift_increase",
+            "DHW_shift_increase",
+            "Buffer_shift_increase",
+            "space_cooling_shift_increase",
+        ]
+        cats = [label_map_hp[c][0] for c in hp_plot_order]
+        cols = [label_map_hp[c][1] for c in hp_plot_order]
+        ax.bar(cats, [yr_vals[c] for c in hp_plot_order], color=cols)
+        ax.set_title(str(yr))
+        ax.set_xticklabels(cats, rotation=45, ha='right')
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=100))
+        ax.set_ylim(0, 50)
+        ax.set_ylabel("share of shifted thermal energy")
+    yticks = axes[0].get_yticks()
+    for ax in axes:
+        ax.set_yticks(yticks)
+        ax.tick_params(axis='y', which='both', left=True, labelleft=True)
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Shifted_thermal_energy_percentages_Appliances_price{price_id}_{COOLING_PERCENTAGE}_cooling.svg")
+    plt.close()
 
 def plot_daily_load_comparison_between_peak_and_fees(percentage_cooling):
     df_fees = load_project_files(percentage_cooling, project_acronym="grid_fees")
@@ -3016,7 +3187,7 @@ def main(percentage_cooling: float):
     national_demand = Cp.get_national_demand_profiles()
     # compare_peak_pricing_with_fixed_grid_fees(percentage_cooling, national_demand)
     
-    plot_shifted_electricity_per_appliance_EU(price_id=4)
+    # plot_shifted_electricity_per_appliance_EU(price_id=4)
     # plot_shifted_demand_per_appliance_EU(price_id=4)
     # plot_daily_load_factor(loads=df, national=national_demand)
     # show_shifted_demand_over_year_in_days_stacked(df)
