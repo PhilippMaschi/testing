@@ -948,78 +948,270 @@ def show_flexibility_factor(loads: pd.DataFrame):
     plt.close()
 
 
-def calculate_GSC(loads: pd.DataFrame)-> pd.DataFrame:
-# from https://www.sciencedirect.com/science/article/pii/S0306261915013434
+# def calculate_GSC(loads: pd.DataFrame)-> pd.DataFrame:
+# # from https://www.sciencedirect.com/science/article/pii/S0306261915013434
 
-    # GSC absolute is the sum of consumption times price in every hour divided by the sum of consumption times thes average price
+#     # GSC absolute is the sum of consumption times price in every hour divided by the sum of consumption times thes average price
+#     loads["demand_price_ref"] = loads["ref_grid_demand_stock_MW"] * loads["price (cent/kWh)"]
+#     loads["demand_price_opt"] = loads["opt_grid_demand_stock_MW"] * loads["price (cent/kWh)"]
+#     loads["day"] = (loads["Hour"]-1) // 24 +1
+#     # we calculate the GSC relative also on daily basis and take the mean over the year
+#     day_groups = loads.groupby(["day", "ID_EnergyPrice", "country", "year"])
+#     P_max = loads["opt_grid_demand_stock_MW"].max()
+#     dfs= []
+#     for (day, price_id, country, year), group in day_groups:
+#         demand_ref_sum = group["ref_grid_demand_stock_MW"].sum()
+#         demand_opt_sum = group["opt_grid_demand_stock_MW"].sum()
+
+#         full_load_h_ref = demand_ref_sum / P_max
+#         last_hour_weights_ref = full_load_h_ref - int(full_load_h_ref)
+#         full_load_h_opt = demand_opt_sum / P_max
+#         last_hour_weights_opt = full_load_h_opt - int(full_load_h_opt)
+
+#         # full_load_h = int(min([full_load_h_ref, full_load_h_opt]))
+#         demand_in_full_load_h_ref = demand_ref_sum / full_load_h_ref
+#         demand_in_full_load_h_opt= demand_ref_sum / full_load_h_opt
+
+#         best_hours_indices_ref = group["price (cent/kWh)"].sort_values().iloc[:int(np.ceil(full_load_h_ref))].index
+#         best_hours_indices_opt = group["price (cent/kWh)"].sort_values().iloc[:int(np.ceil(full_load_h_opt))].index
+
+#         worst_hours_indices_ref = group["price (cent/kWh)"].sort_values().iloc[-int(np.ceil(full_load_h_ref)):].index
+#         worst_hours_indices_opt = group["price (cent/kWh)"].sort_values().iloc[-int(np.ceil(full_load_h_opt)):].index
+
+#         mean_price =  group["price (cent/kWh)"].mean()
+#         ref_hour_weights = np.array([1 if i!=len(best_hours_indices_ref)-1 else last_hour_weights_ref for i in range(len(best_hours_indices_ref))])
+#         opt_hour_weights = np.array([1 if i!=len(best_hours_indices_opt)-1 else last_hour_weights_opt for i in range(len(best_hours_indices_opt))])
+
+#         # calculate GSC abs for worst and best case:
+#         GSC_ref_worst = (demand_in_full_load_h_ref * group["price (cent/kWh)"].loc[worst_hours_indices_ref].values * ref_hour_weights).sum() / (mean_price * demand_ref_sum)
+#         GSC_ref_best = (demand_in_full_load_h_ref * group["price (cent/kWh)"].loc[best_hours_indices_ref].values * ref_hour_weights).sum() / (mean_price * demand_ref_sum)
+#         GSC_ref_achieved = (group["ref_grid_demand_stock_MW"] * group["price (cent/kWh)"]).sum() / (mean_price * demand_ref_sum)
+
+#         GSC_opt_worst = (demand_in_full_load_h_opt * group["price (cent/kWh)"].loc[worst_hours_indices_opt].values * opt_hour_weights).sum() / (mean_price * demand_opt_sum)
+#         GSC_opt_best = (demand_in_full_load_h_opt * group["price (cent/kWh)"].loc[best_hours_indices_opt].values * opt_hour_weights).sum() / (mean_price * demand_opt_sum)
+#         GSC_opt_achieved = (group["opt_grid_demand_stock_MW"] * group["price (cent/kWh)"]).sum() / (mean_price * demand_opt_sum)
+
+#         if GSC_ref_worst - GSC_ref_best == 0:
+#             GSC_rel_ref = 0
+#             GSC_rel_opt = 0
+#         else:
+#             GSC_rel_ref = 200 * (GSC_ref_worst - GSC_ref_achieved) / (GSC_ref_worst - GSC_ref_best) - 100
+#             GSC_rel_opt = 200 * (GSC_opt_worst - GSC_opt_achieved) / (GSC_opt_worst - GSC_opt_best) - 100
+        
+#         GSC_rel_ref = max(min(100, GSC_rel_ref), -100)
+#         GSC_rel_opt = max(min(100, GSC_rel_opt), -100)
+
+#         GSC_rel_ref_weighted = GSC_rel_ref * (mean_price * demand_ref_sum)
+#         GSC_rel_opt_weighted = GSC_rel_opt * (mean_price * demand_opt_sum)
+
+
+#         dfs.append(pd.DataFrame(data=[[day, country, year, price_id, GSC_ref_achieved, GSC_opt_achieved, GSC_rel_ref, GSC_rel_opt, GSC_rel_ref_weighted, GSC_rel_opt_weighted, (mean_price * demand_opt_sum)]], 
+#                      columns=["day", "country", "year", "ID_EnergyPrice", "GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt", "GSC_rel_ref_weighted", "GSC_rel_opt_weighted", "mean_price*demand"]))
+    
+#     GSC_df = pd.concat(dfs, axis=0).reset_index(drop=True)
+#     GSC_weighted = GSC_df.groupby(["ID_EnergyPrice", "country", "year"])[["GSC_rel_ref_weighted", "GSC_rel_opt_weighted", "mean_price*demand"]].sum().reset_index()
+#     GSC_weighted["GSC_rel_ref_weighted"] = GSC_weighted["GSC_rel_ref_weighted"] / GSC_weighted["mean_price*demand"]
+#     GSC_weighted["GSC_rel_opt_weighted"] = GSC_weighted["GSC_rel_opt_weighted"] / GSC_weighted["mean_price*demand"]
+
+#     GSC_mean = GSC_df.groupby(["ID_EnergyPrice", "country", "year"])[["GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt"]].mean().reset_index()
+#     GSC = pd.merge(left=GSC_mean, right=GSC_weighted[["ID_EnergyPrice", "country", "year", "GSC_rel_ref_weighted", "GSC_rel_opt_weighted"]], on=["ID_EnergyPrice", "country", "year"])
+
+#     copy = GSC.loc[GSC["ID_EnergyPrice"]=="Price 1", :].copy()
+#     copy["ID_EnergyPrice"] = "reference"
+#     eu_df = pd.concat([GSC[["ID_EnergyPrice", "country", "year", "GSC_rel_opt", "GSC_rel_opt_weighted"]].rename(columns={"GSC_rel_opt": "GSC_rel", "GSC_rel_opt_weighted": "GSC_rel_weighted"}), 
+#                        copy[["ID_EnergyPrice", "country", "year", "GSC_rel_ref", "GSC_rel_ref_weighted"]].rename(columns={"GSC_rel_ref": "GSC_rel", "GSC_rel_ref_weighted": "GSC_rel_weighted"})], axis=0)
+#     return eu_df
+
+
+
+
+def calculate_GSC(loads: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute GSC_abs and GSC_rel (reference & opt) per day, then average over the year.
+    Returns eu_df with:
+      - rows for each OPT price scenario (ID_EnergyPrice as in input)
+      - plus rows for the REFERENCE scenario (ID_EnergyPrice == 'reference')
+    Columns: ["ID_EnergyPrice", "country", "year", "GSC_rel"]
+    (No weighted variants.)
+    """
+
+    # ---- Helper: build best/worst stacks and weights for given h_fl ----
+    def boundary_indices_and_weights(prices: pd.Series, h_fl: float):
+        """
+        prices: Series indexed by hour (length 24 for a day)
+        h_fl: full-load hours = W_day / P_max (may be fractional)
+        Returns (best_idx, worst_idx, weights) where:
+          - best_idx are the indices of the cheapest hours
+          - worst_idx are the indices of the most expensive hours
+          - weights is a vector of ones except the last element equals the fractional part (if any)
+        """
+        if h_fl <= 0:
+            # No energy to allocate
+            return prices.index[:0], prices.index[:0], np.zeros(0, dtype=float)
+
+        k_int = int(h_fl)
+        frac = h_fl - k_int
+        k = k_int if frac == 0 else k_int + 1
+
+        # Sort prices ascending for "best" (cheapest), descending for "worst" (dearest)
+        order_asc = prices.sort_values().index
+        best_idx = order_asc[:k]
+        worst_idx = prices.sort_values(ascending=False).index[:k]
+
+        weights = np.ones(k, dtype=float)
+        if frac > 0:
+            weights[-1] = frac
+
+        return best_idx, worst_idx, weights
+
+    # ---- Precompute per-(country,year) P_max that is invariant across scenarios ----
+    # Candidate Pmax per row is the max across REF and OPT in that hour
+    loads = loads.copy()
+    loads["pmax_candidate"] = loads[["ref_grid_demand_stock_MW", "opt_grid_demand_stock_MW"]].max(axis=1)
+
+    # Take the maximum across all hours and all price IDs for each (country, year)
+    Pmax_by_portfolio = (
+        loads.groupby(["country", "year"])["pmax_candidate"]
+        .max()
+        .to_dict()
+    )
+
+    # Prepare per-hour intermediates
     loads["demand_price_ref"] = loads["ref_grid_demand_stock_MW"] * loads["price (cent/kWh)"]
     loads["demand_price_opt"] = loads["opt_grid_demand_stock_MW"] * loads["price (cent/kWh)"]
-    loads["day"] = (loads["Hour"]-1) // 24 +1
-    # we calculate the GSC relative also on daily basis and take the mean over the year
-    day_groups = loads.groupby(["day", "ID_EnergyPrice", "country", "year"])
-    P_max = loads["opt_grid_demand_stock_MW"].max()
-    dfs= []
+
+    # Day index (1..365/366)
+    loads["day"] = (loads["Hour"] - 1) // 24 + 1
+
+    # Group by day + scenario identifiers
+    day_groups = loads.groupby(["day", "ID_EnergyPrice", "country", "year"], sort=False)
+
+    rows = []
     for (day, price_id, country, year), group in day_groups:
-        demand_ref_sum = group["ref_grid_demand_stock_MW"].sum()
-        demand_opt_sum = group["opt_grid_demand_stock_MW"].sum()
+        # Portfolio capacity (fixed for this country-year across scenarios)
+        P_max = Pmax_by_portfolio.get((country, year), 0.0)
 
-        full_load_h_ref = demand_ref_sum / P_max
-        last_hour_weights_ref = full_load_h_ref - int(full_load_h_ref)
-        full_load_h_opt = demand_opt_sum / P_max
-        last_hour_weights_opt = full_load_h_opt - int(full_load_h_opt)
+        demand_ref_sum = float(group["ref_grid_demand_stock_MW"].sum())
+        demand_opt_sum = float(group["opt_grid_demand_stock_MW"].sum())
+        mean_price = float(group["price (cent/kWh)"].mean())
 
-        # full_load_h = int(min([full_load_h_ref, full_load_h_opt]))
-        demand_in_full_load_h_ref = demand_ref_sum / full_load_h_ref
-        demand_in_full_load_h_opt= demand_ref_sum / full_load_h_opt
+        # Guard against degenerate cases
+        if P_max <= 0 or mean_price == 0:
+            # Nothing to do; define neutral scores
+            rows.append([day, country, year, price_id, np.nan, np.nan, 0.0, 0.0])
+            continue
 
-        best_hours_indices_ref = group["price (cent/kWh)"].sort_values().iloc[:int(np.ceil(full_load_h_ref))].index
-        best_hours_indices_opt = group["price (cent/kWh)"].sort_values().iloc[:int(np.ceil(full_load_h_opt))].index
+        # Full-load hours (can be fractional)
+        hfl_ref = demand_ref_sum / P_max if demand_ref_sum > 0 else 0.0
+        hfl_opt = demand_opt_sum / P_max if demand_opt_sum > 0 else 0.0
 
-        worst_hours_indices_ref = group["price (cent/kWh)"].sort_values().iloc[-int(np.ceil(full_load_h_ref)):].index
-        worst_hours_indices_opt = group["price (cent/kWh)"].sort_values().iloc[-int(np.ceil(full_load_h_opt)):].index
+        # Build best/worst hour sets + weights for REF and OPT separately
+        prices_series = group["price (cent/kWh)"]
 
-        mean_price =  group["price (cent/kWh)"].mean()
-        ref_hour_weights = np.array([1 if i!=len(best_hours_indices_ref)-1 else last_hour_weights_ref for i in range(len(best_hours_indices_ref))])
-        opt_hour_weights = np.array([1 if i!=len(best_hours_indices_opt)-1 else last_hour_weights_opt for i in range(len(best_hours_indices_opt))])
+        best_idx_ref, worst_idx_ref, w_ref = boundary_indices_and_weights(prices_series, hfl_ref)
+        best_idx_opt, worst_idx_opt, w_opt = boundary_indices_and_weights(prices_series, hfl_opt)
 
-        # calculate GSC abs for worst and best case:
-        GSC_ref_worst = (demand_in_full_load_h_ref * group["price (cent/kWh)"].loc[worst_hours_indices_ref].values * ref_hour_weights).sum() / (mean_price * demand_ref_sum)
-        GSC_ref_best = (demand_in_full_load_h_ref * group["price (cent/kWh)"].loc[best_hours_indices_ref].values * ref_hour_weights).sum() / (mean_price * demand_ref_sum)
-        GSC_ref_achieved = (group["ref_grid_demand_stock_MW"] * group["price (cent/kWh)"]).sum() / (mean_price * demand_ref_sum)
-
-        GSC_opt_worst = (demand_in_full_load_h_opt * group["price (cent/kWh)"].loc[worst_hours_indices_opt].values * opt_hour_weights).sum() / (mean_price * demand_opt_sum)
-        GSC_opt_best = (demand_in_full_load_h_opt * group["price (cent/kWh)"].loc[best_hours_indices_opt].values * opt_hour_weights).sum() / (mean_price * demand_opt_sum)
-        GSC_opt_achieved = (group["opt_grid_demand_stock_MW"] * group["price (cent/kWh)"]).sum() / (mean_price * demand_opt_sum)
-
-        if GSC_ref_worst - GSC_ref_best == 0:
-            GSC_rel_ref = 0
-            GSC_rel_opt = 0
+        # Boundary per-hour energy (constant within the chosen hours)
+        # demand_sum / h_fl = P_max (by construction), but handle h_fl == 0 robustly.
+        if hfl_ref > 0:
+            e_per_hour_ref = demand_ref_sum / hfl_ref  # equals P_max
         else:
-            GSC_rel_ref = 200 * (GSC_ref_worst - GSC_ref_achieved) / (GSC_ref_worst - GSC_ref_best) - 100
-            GSC_rel_opt = 200 * (GSC_opt_worst - GSC_opt_achieved) / (GSC_opt_worst - GSC_opt_best) - 100
-        
-        GSC_rel_ref = max(min(100, GSC_rel_ref), -100)
-        GSC_rel_opt = max(min(100, GSC_rel_opt), -100)
+            e_per_hour_ref = 0.0
 
-        GSC_rel_ref_weighted = GSC_rel_ref * (mean_price * demand_ref_sum)
-        GSC_rel_opt_weighted = GSC_rel_opt * (mean_price * demand_opt_sum)
+        if hfl_opt > 0:
+            e_per_hour_opt = demand_opt_sum / hfl_opt  # equals P_max
+        else:
+            e_per_hour_opt = 0.0
 
+        # ---- Compute GSC_abs for REF (best/worst/achieved) ----
+        # Achieved:
+        if demand_ref_sum > 0:
+            GSC_ref_achieved = float(group["demand_price_ref"].sum() / (mean_price * demand_ref_sum))
+        else:
+            GSC_ref_achieved = np.nan  # no consumption that day
 
-        dfs.append(pd.DataFrame(data=[[day, country, year, price_id, GSC_ref_achieved, GSC_opt_achieved, GSC_rel_ref, GSC_rel_opt, GSC_rel_ref_weighted, GSC_rel_opt_weighted, (mean_price * demand_opt_sum)]], 
-                     columns=["day", "country", "year", "ID_EnergyPrice", "GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt", "GSC_rel_ref_weighted", "GSC_rel_opt_weighted", "mean_price*demand"]))
-    
-    GSC_df = pd.concat(dfs, axis=0).reset_index(drop=True)
-    GSC_weighted = GSC_df.groupby(["ID_EnergyPrice", "country", "year"])[["GSC_rel_ref_weighted", "GSC_rel_opt_weighted", "mean_price*demand"]].sum().reset_index()
-    GSC_weighted["GSC_rel_ref_weighted"] = GSC_weighted["GSC_rel_ref_weighted"] / GSC_weighted["mean_price*demand"]
-    GSC_weighted["GSC_rel_opt_weighted"] = GSC_weighted["GSC_rel_opt_weighted"] / GSC_weighted["mean_price*demand"]
+        # Best / Worst:
+        if hfl_ref > 0 and len(w_ref) > 0:
+            prices_best_ref = prices_series.loc[best_idx_ref].to_numpy()
+            prices_worst_ref = prices_series.loc[worst_idx_ref].to_numpy()
 
-    GSC_mean = GSC_df.groupby(["ID_EnergyPrice", "country", "year"])[["GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt"]].mean().reset_index()
-    GSC = pd.merge(left=GSC_mean, right=GSC_weighted[["ID_EnergyPrice", "country", "year", "GSC_rel_ref_weighted", "GSC_rel_opt_weighted"]], on=["ID_EnergyPrice", "country", "year"])
+            GSC_ref_best = float((e_per_hour_ref * prices_best_ref * w_ref).sum() / (mean_price * demand_ref_sum))
+            GSC_ref_worst = float((e_per_hour_ref * prices_worst_ref * w_ref).sum() / (mean_price * demand_ref_sum))
+        else:
+            GSC_ref_best = np.nan
+            GSC_ref_worst = np.nan
 
-    copy = GSC.loc[GSC["ID_EnergyPrice"]=="Price 1", :].copy()
-    copy["ID_EnergyPrice"] = "reference"
-    eu_df = pd.concat([GSC[["ID_EnergyPrice", "country", "year", "GSC_rel_opt", "GSC_rel_opt_weighted"]].rename(columns={"GSC_rel_opt": "GSC_rel", "GSC_rel_opt_weighted": "GSC_rel_weighted"}), 
-                       copy[["ID_EnergyPrice", "country", "year", "GSC_rel_ref", "GSC_rel_ref_weighted"]].rename(columns={"GSC_rel_ref": "GSC_rel", "GSC_rel_ref_weighted": "GSC_rel_weighted"})], axis=0)
+        # ---- Compute GSC_abs for OPT (best/worst/achieved) ----
+        if demand_opt_sum > 0:
+            GSC_opt_achieved = float(group["demand_price_opt"].sum() / (mean_price * demand_opt_sum))
+        else:
+            GSC_opt_achieved = np.nan
+
+        if hfl_opt > 0 and len(w_opt) > 0:
+            prices_best_opt = prices_series.loc[best_idx_opt].to_numpy()
+            prices_worst_opt = prices_series.loc[worst_idx_opt].to_numpy()
+
+            GSC_opt_best = float((e_per_hour_opt * prices_best_opt * w_opt).sum() / (mean_price * demand_opt_sum))
+            GSC_opt_worst = float((e_per_hour_opt * prices_worst_opt * w_opt).sum() / (mean_price * demand_opt_sum))
+        else:
+            GSC_opt_best = np.nan
+            GSC_opt_worst = np.nan
+
+        # ---- Relative scores (map worst -> -100, best -> +100) ----
+        def rel_score(g_ach, g_best, g_worst):
+            if any(np.isnan([g_ach, g_best, g_worst])):
+                return np.nan
+            denom = (g_worst - g_best)
+            if abs(denom) < 1e-12:
+                return 0.0
+            return 200.0 * (g_worst - g_ach) / denom - 100.0
+
+        GSC_rel_ref = rel_score(GSC_ref_achieved, GSC_ref_best, GSC_ref_worst)
+        GSC_rel_opt = rel_score(GSC_opt_achieved, GSC_opt_best, GSC_opt_worst)
+
+        # Clamp to [-100, 100] only if they are finite numbers
+        if np.isfinite(GSC_rel_ref):
+            GSC_rel_ref = float(np.clip(GSC_rel_ref, -100.0, 100.0))
+        if np.isfinite(GSC_rel_opt):
+            GSC_rel_opt = float(np.clip(GSC_rel_opt, -100.0, 100.0))
+
+        rows.append([day, country, year, price_id,
+                     GSC_ref_achieved, GSC_opt_achieved,
+                     GSC_rel_ref, GSC_rel_opt])
+
+    # Daily results DataFrame
+    GSC_df = pd.DataFrame(rows, columns=[
+        "day", "country", "year", "ID_EnergyPrice",
+        "GSC_abs_ref", "GSC_abs_opt",
+        "GSC_rel_ref", "GSC_rel_opt"
+    ])
+
+    # Mean over days (simple average across available days)
+    GSC_mean = (
+        GSC_df.groupby(["ID_EnergyPrice", "country", "year"], as_index=False)[
+            ["GSC_abs_ref", "GSC_abs_opt", "GSC_rel_ref", "GSC_rel_opt"]
+        ].mean()
+    )
+
+    # Build final eu_df in your original layout:
+    # - OPT rows keep their price IDs, using GSC_rel_opt as GSC_rel
+    # - REF rows are labeled "reference", using GSC_rel_ref as GSC_rel
+    copy_ref = GSC_mean.loc[GSC_mean["ID_EnergyPrice"] == "Price 1", :].copy()
+    copy_ref["ID_EnergyPrice"] = "reference"
+
+    eu_df = pd.concat(
+        [
+            GSC_mean[["ID_EnergyPrice", "country", "year", "GSC_rel_opt"]]
+            .rename(columns={"GSC_rel_opt": "GSC_rel"}),
+            copy_ref[["ID_EnergyPrice", "country", "year", "GSC_rel_ref"]]
+            .rename(columns={"GSC_rel_ref": "GSC_rel"})
+        ],
+        axis=0,
+        ignore_index=True
+    )
+
+    # Optional: sort for readability
+    eu_df = eu_df.sort_values(["country", "year", "ID_EnergyPrice"]).reset_index(drop=True)
     return eu_df
 
 
@@ -3032,7 +3224,7 @@ def main(percentage_cooling: float):
 
     # show_average_day_profile(loads=df)
     # show_flexibility_factor(loads=df)
-    # show_GSCrel_and_GSC_abs(loads=df)
+    show_GSCrel_and_GSC_abs(loads=df)
     # plot_grid_demand_increase(loads=df, national=national_demand)
     # compare_heat_demand_with_invert_2020()
 
