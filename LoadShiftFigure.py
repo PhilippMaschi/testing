@@ -88,28 +88,97 @@ def load_shifting_allgemein():
 
     time = np.arange(1, 25)
 
-    plt.plot(time, consumer_load, label='$P_{consumer}$', color="blue")
-    plt.plot(time, prosumager_load, label='$P_{prosumager}$', color="black", linewidth=2)
-    plt.fill_between(time, consumer_load, prosumager_load, where=(consumer_load > prosumager_load),
-                    color='forestgreen', interpolate=True, label='$E_{shifted}$')
-    plt.fill_between(time, consumer_load, prosumager_load, where=(consumer_load <= prosumager_load),
-                    color='crimson', interpolate=True, label='$E_{increased}$')
+    # Create figure/axes for finer control
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    plt.legend(loc='upper left')
-    plt.xticks([])  # Hide x-axis ticks
-    plt.yticks([])  # Hide primary y-axis ticks
-    # Create a secondary y-axis for price
-    ax = plt.gca()
+    # Main series with clearer distinction
+    ax.plot(
+        time,
+        consumer_load,
+        label='$P_{simulation}$',
+        color="#1f77b4",  # tab:blue
+        linewidth=2.0,
+        marker='o',
+        markersize=4,
+        markerfacecolor='white',
+        markeredgewidth=1,
+        markevery=3,
+        zorder=3,
+    )
+    ax.plot(
+        time,
+        prosumager_load,
+        label='$P_{optimization}$',
+        color="#222222",
+        linewidth=2.8,
+        marker='s',
+        markersize=4,
+        markerfacecolor='white',
+        markeredgewidth=1,
+        markevery=3,
+        zorder=4,
+    )
+
+    # Pleasant green/red for shifted/increased energy with gentle transparency
+    shifted_color = "#4CAF50"   # green
+    increased_color = "#E53935"  # red
+
+    f1 = ax.fill_between(
+        time,
+        consumer_load,
+        prosumager_load,
+        where=(consumer_load > prosumager_load),
+        color=shifted_color,
+        alpha=0.3,
+        interpolate=True,
+        label='$E_{shifted}$',
+        zorder=2,
+    )
+    f2 = ax.fill_between(
+        time,
+        consumer_load,
+        prosumager_load,
+        where=(consumer_load <= prosumager_load),
+        color=increased_color,
+        alpha=0.3,
+        interpolate=True,
+        label='$E_{increased}$',
+        zorder=1,
+    )
+
+    # Hide ticks as before for a clean look
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    # Secondary y-axis for price with a calmer accent color
     ax2 = ax.twinx()
-    ax2.plot(time, price, color='magenta', linestyle='--', label='Price')
-    ax2.set_ylabel('Price')
-    ax2.legend(loc='upper right')
-    ax2.yaxis.set_ticks([])  # Hide secondary y-axis ticks
-    # Set primary y-axis label
+    price_line = ax2.plot(
+        time,
+        price,
+        color='tab:orange',
+        linestyle='--',
+        linewidth=1.8,
+        label='Price',
+        zorder=3,
+    )[0]
+    ax2.set_ylabel('Price', color='tab:orange', fontsize=16)
+    ax2.tick_params(axis='y', colors='tab:orange')
+    ax2.spines['right'].set_color('tab:orange')
+    ax2.set_yticks([])
 
-    ax.set_ylabel('Load')
-    ax.set_xlabel('Time')
-    plt.savefig(Path(__file__).parent / "LoadShifting.svg")
+    # Labels
+    ax.set_ylabel('Load', fontsize=16)
+    ax.set_xlabel('Time', fontsize=16)
+
+    # Single combined legend to avoid duplication/clutter
+    handles1, labels1 = ax.get_legend_handles_labels()
+    handles2, labels2 = ax2.get_legend_handles_labels()
+    all_handles = handles1 + handles2
+    all_labels = labels1 + labels2
+    ax.legend(all_handles, all_labels, loc='upper left', frameon=False, ncol=1, fontsize=13)
+
+    fig.tight_layout()
+    fig.savefig(Path(__file__).parent / "LoadShifting.svg")
     plt.show()
 
 
@@ -166,5 +235,5 @@ def load_shifting_thermal_loss():
 
 
 if __name__ == "__main__":
-    load_shifting_thermal_loss()
+    load_shifting_allgemein()
 
