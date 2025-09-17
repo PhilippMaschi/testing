@@ -1344,19 +1344,19 @@ def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     plt.close()
 
     # gewichteter GSC
-    sns.boxplot(
-        data=eu_df,
-        x="GSC_rel_weighted",
-        y="year",
-        hue="ID_EnergyPrice",
-        orient="y",
-        palette=sns.color_palette()
-    )
-    plt.xlabel("GSC relative weighted")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(SAVING_PATH / f"GSC_relative_weighted_EU_cooling{COOLING_PERCENTAGE}.svg")
-    plt.close()
+    # sns.boxplot(
+    #     data=eu_df,
+    #     x="GSC_rel_weighted",
+    #     y="year",
+    #     hue="ID_EnergyPrice",
+    #     orient="y",
+    #     palette=sns.color_palette()
+    # )
+    # plt.xlabel("GSC relative weighted")
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.savefig(SAVING_PATH / f"GSC_relative_weighted_EU_cooling{COOLING_PERCENTAGE}.svg")
+    # plt.close()
 
 
 def show_day_with_peak_deamand(loads: pd.DataFrame, national: pd.DataFrame):

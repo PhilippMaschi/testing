@@ -273,7 +273,7 @@ def show_building_attributes():
     plt.title("")
     plt.ylabel("floor area (m$^2$)")
     plt.tight_layout()
-    plt.savefig(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") / "ECEMF_building_areas_boxplot.png")
+    plt.savefig(Path(__file__).parent / "ECEMF_building_areas_boxplot.png")
     plt.close()
 
     df.boxplot(by="region", column="percentage attached surface area")
@@ -281,7 +281,7 @@ def show_building_attributes():
     plt.title("")
     plt.ylabel("percentage of attached wall area")
     plt.tight_layout()
-    plt.savefig(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") / "ECEMF_attached_wall_boxplot.png")
+    plt.savefig(Path(__file__).parent / "ECEMF_attached_wall_boxplot.png")
     plt.close()
 
     category1_pct = calculate_percentage_of_categorial_data(df, 'type')
@@ -289,7 +289,7 @@ def show_building_attributes():
     plt.ylabel("percentage share")
     plt.xticks(rotation="horizontal")
     plt.tight_layout()
-    plt.savefig(Path(r"C:\Users\mascherbauer\PycharmProjects\Z_Testing\Diss Graphiken") / "ECEMF_SFH_MFH_percentage_barplot.png")
+    plt.savefig(Path(__file__).parent / "ECEMF_SFH_MFH_percentage_barplot.png")
     plt.close()
 
 
