@@ -1296,6 +1296,224 @@ def calculate_GSC(loads: pd.DataFrame) -> pd.DataFrame:
     return eu_df
 
 
+
+
+def price_responsiveness(sim_load: pd.Series,
+                         hems_load: pd.Series,
+                         price: pd.Series,
+                         price_unit: str = "EUR_per_MWh",
+                         hac_lags: int = 24,
+                         min_abs_resp: float = 0.0) -> dict:
+    """
+    Estimate price-responsiveness from reference vs. optimized load and a price signal.
+
+    Parameters
+    ----------
+    sim_load : pd.Series
+        Reference (no-HEMS) grid load P_ref[t] in kW (or same consistent unit).
+    hems_load : pd.Series
+        Optimized (HEMS) grid load P_hems[t] in kW (same unit as sim_load).
+    price : pd.Series
+        Price signal p[t]. Units declared via `price_unit`.
+        Common cases: "EUR_per_MWh", "EUR_per_kWh", "cent_per_kWh".
+    price_unit : str
+        Unit of `price` for reporting. Only affects annotation of the slope's unit string.
+        (No numeric conversion is applied here—pass a converted price if needed.)
+    hac_lags : int
+        Max lags for Newey–West HAC covariance (e.g., 24 for hourly data).
+    min_abs_resp : float
+        Optional: drop hours with very small |response| (e.g., 0.01 kW) to reduce noise.
+
+    Returns
+    -------
+    results : dict
+        {
+          'n_obs': int,
+          'slope_beta': float,                # dR/dp [kW per price unit]
+          'slope_se': float,                  # HAC standard error
+          'slope_pvalue': float,
+          'intercept': float,                 # kW
+          'r_squared': float,
+          'mean_price': float,
+          'mean_response': float,             # mean R_t
+          'mean_abs_response': float,         # mean |R_t|
+          'elasticity_at_mean': float,        # beta * (mean_price / mean_response)
+          'elasticity_abs_response': float,   # beta * (mean_price / mean_abs_response)
+          'units': {
+              'load': 'kW',
+              'price': price_unit,
+              'slope': f'kW per {price_unit}'
+          }
+        }
+    """
+    import statsmodels.api as sm
+    # Align and clean
+    df = pd.concat({
+        'P_ref': sim_load,
+        'P_hems': hems_load,
+        'price': price
+    }, axis=1).dropna()
+
+    # Responsive component R_t
+    df['R'] = df['P_hems'] - df['P_ref']
+
+    # Optional trimming of near-zero responses to reduce attenuation bias
+    if min_abs_resp > 0:
+        df = df.loc[df['R'].abs() >= min_abs_resp].copy()
+        if df.empty:
+            raise ValueError("All observations removed by min_abs_resp filter.")
+
+    # Add constant and fit OLS with HAC errors
+    X = sm.add_constant(df['price'].values, has_constant='add')
+    y = df['R'].values
+    model = sm.OLS(y, X, missing='drop')
+    fit = model.fit(cov_type='HAC', cov_kwds={'maxlags': hac_lags})
+
+    intercept = float(fit.params[0])
+    beta = float(fit.params[1])  # kW per price unit
+    se_beta = float(fit.bse[1])
+    p_beta = float(fit.pvalues[1])
+
+    # Descriptives for elasticity scaling
+    p_bar = float(df['price'].mean())
+    R_bar = float(df['R'].mean())
+    R_abs_bar = float(df['R'].abs().mean())
+
+    # Guard against division by ~0
+    def safe_div(num, den):
+        den = den if abs(den) > 1e-12 else np.nan
+        return num / den
+
+    elasticity_at_mean = safe_div(beta * p_bar, R_bar)
+    elasticity_abs = safe_div(beta * p_bar, R_abs_bar)
+
+    results = {
+        'n_obs': int(df.shape[0]),
+        'slope_beta': beta,
+        'slope_se': se_beta,
+        'slope_pvalue': p_beta,
+        'intercept': intercept,
+        'r_squared': float(fit.rsquared),
+        'mean_price': p_bar,
+        'mean_response': R_bar,
+        'mean_abs_response': R_abs_bar,
+        'elasticity_at_mean': elasticity_at_mean,
+        'elasticity_abs_response': elasticity_abs,
+        'units': {
+            'load': 'kW',
+            'price': price_unit,
+            'slope': f'kW per {price_unit}'
+        }
+    }
+    return results
+
+
+def plot_elasticity_abs_response(loads: pd.DataFrame,
+                                 hac_lags: int = 24,
+                                 min_abs_resp: float = 0.0) -> None:
+    """Compute and plot absolute price-responsiveness elasticity per country/year/price.
+
+    Uses reference vs. optimized grid demand and the price series in ``loads``
+    to estimate the regression-based responsiveness and plots
+    ``elasticity_abs_response`` as a bar chart per country, faceted by year.
+
+    Expected columns in ``loads``:
+    - "ref_grid_demand_stock_MW"
+    - "opt_grid_demand_stock_MW"
+    - "price (cent/kWh)"
+    - "country"
+    - "year"
+    - "ID_EnergyPrice" (e.g., "Price 1", ...)
+    """
+    results = []
+    required_cols = {
+        "ref_grid_demand_stock_MW",
+        "opt_grid_demand_stock_MW",
+        "price (cent/kWh)",
+        "country",
+        "year",
+        "ID_EnergyPrice",
+    }
+    missing = required_cols - set(loads.columns)
+    if missing:
+        raise ValueError(f"loads is missing required columns: {sorted(missing)}")
+
+    # Ensure types are friendly
+    df = loads.copy()
+    df["year"] = df["year"].astype(int)
+    df["country"] = df["country"].astype(str)
+
+    for (year, country, price_id), g in df.groupby(["year", "country", "ID_EnergyPrice"]):
+        try:
+            res = price_responsiveness(
+                sim_load=g["ref_grid_demand_stock_MW"],
+                hems_load=g["opt_grid_demand_stock_MW"],
+                price=g["price (cent/kWh)"],
+                price_unit="cent_per_kWh",
+                hac_lags=hac_lags,
+                min_abs_resp=min_abs_resp,
+            )
+            results.append({
+                "year": year,
+                "country": country,
+                "ID_EnergyPrice": price_id,
+                "elasticity_abs_response": res["elasticity_abs_response"],
+                "slope_beta": res["slope_beta"],
+                "slope_pvalue": res["slope_pvalue"],
+                "n_obs": res["n_obs"],
+            })
+        except Exception as exc:  # pragma: no cover
+            LOGGER.warning(f"Skipping {country} {year} {price_id} due to: {exc}")
+
+    if not results:
+        LOGGER.warning("No valid groups to plot for elasticity_abs_response.")
+        return
+
+    plot_df = pd.DataFrame(results)
+    # Map price labels for readability if function exists
+    try:
+        price_map = add_price_information()
+        plot_df["ID_EnergyPrice"] = plot_df["ID_EnergyPrice"].map(price_map).fillna(plot_df["ID_EnergyPrice"])
+    except Exception:  # fall back silently if mapping not available
+        pass
+
+    # Consistent country order by mean elasticity
+    x_order = (
+        plot_df.groupby("country")["elasticity_abs_response"]
+        .mean()
+        .sort_values()
+        .index
+    )
+
+    g = sns.FacetGrid(
+        plot_df,
+        col="year",
+        col_wrap=2,
+        height=6,
+        aspect=1.2,
+        sharey=True,
+        sharex=True,
+    )
+    g.map_dataframe(
+        sns.barplot,
+        x="country",
+        y="elasticity_abs_response",
+        hue="ID_EnergyPrice",
+        order=x_order,
+        palette=sns.color_palette(),
+    )
+
+    g.set_axis_labels("country", "absolute price-responsiveness elasticity (unitless)")
+    g.add_legend(title="")
+    g.set_titles("{col_name}")
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+
+    plt.tight_layout()
+    plt.savefig(SAVING_PATH / f"Price_responsiveness_elasticity_abs_cooling{COOLING_PERCENTAGE}.svg")
+    plt.close()
+
+
 def show_GSCrel_and_GSC_abs(loads: pd.DataFrame):
     eu_df = calculate_GSC(loads=loads)
     eu_df["ID_EnergyPrice"] = eu_df["ID_EnergyPrice"].map(add_price_information())
@@ -3362,6 +3580,227 @@ def compare_peak_pricing_with_fixed_grid_fees(percentage_cooling, national):
     plt.close()
 
 
+def _gini_from_series(x: pd.Series) -> float:
+    """Compute the Gini coefficient for a non-negative series.
+
+    If the sum is zero (all zeros), returns 0. Uses the standard
+    definition with values sorted ascending.
+    """
+    v = np.asarray(x, dtype=float)
+    if v.size == 0:
+        return np.nan
+    if np.all(v == 0):
+        return 0.0
+    v = np.sort(v)
+    n = v.size
+    cum = np.cumsum(v)
+    g = (n + 1 - 2 * np.sum(cum) / cum[-1]) / n
+    return float(g)
+
+
+def compute_and_plot_synchronization_metrics(percentage_cooling: float) -> None:
+    """Compute and plot synchronization metrics comparing grid_fees vs peak_price.
+
+    Metrics (per country, per year, per price ID; averaged over 365 days):
+    - Hourly shift magnitude (MW): mean over days of the daily mean of |P_opt - P_ref|.
+    - Gini coefficient (0..1): mean over days of the daily Gini of the optimized load
+      distribution across the 24 hours (normalized to daily shares to capture shape).
+
+    Plots:
+    - Boxplots for both metrics (color = ID_EnergyPrice, hatch = scenario).
+    - Barplots of Gini per country (averaged over price IDs), side-by-side per scenario.
+    """
+    # Load both scenarios
+    df_fees = load_project_files(percentage_cooling, project_acronym="grid_fees")
+    df_peak = load_project_files(percentage_cooling, project_acronym="peak_price")
+
+    def prepare_metrics(df: pd.DataFrame, scenario: str) -> pd.DataFrame:
+        tmp = df.copy()
+        # Day index (1..365) from Hour (1..8760)
+        tmp["day"] = (tmp["Hour"] - 1) // 24 + 1
+        # Hourly shift magnitude
+        tmp["shift_abs"] = (tmp["opt_grid_demand_stock_MW"] - tmp["ref_grid_demand_stock_MW"]).abs()
+
+        # Mean hourly shift magnitude over all hours (no daily averaging)
+        mean_shift = (
+            tmp.groupby(["year", "country", "ID_EnergyPrice"])  # all hours in year
+            ["shift_abs"].mean()
+            .reset_index(name="hourly_shift_magnitude_MW")
+        )
+
+        # Daily Gini of optimized load distribution across 24h
+        # Use normalized hourly shares of absolute response per day so Gini reflects
+        # concentration/synchronization of demand response timing (sign-agnostic).
+        def daily_response_gini(group: pd.DataFrame) -> float:
+            r = (group["opt_grid_demand_stock_MW"].to_numpy(dtype=float)
+                 - group["ref_grid_demand_stock_MW"].to_numpy(dtype=float))
+            vals = np.abs(r)
+            s = vals.sum()
+            if s <= 0:
+                return 0.0
+            shares = vals / s
+            return _gini_from_series(pd.Series(shares))
+
+        daily_gini_df = (
+            tmp.groupby(["year", "country", "ID_EnergyPrice", "day"])
+            .apply(daily_response_gini)
+            .reset_index(name="daily_response_gini")
+        )
+
+        # Average across 365 days for the response Gini per (country, year, price)
+        gini_yearly = (
+            daily_gini_df.groupby(["year", "country", "ID_EnergyPrice"])
+            ["daily_response_gini"].mean().reset_index(name="response_gini")
+        )
+
+        metrics = pd.merge(mean_shift, gini_yearly,
+                           on=["year", "country", "ID_EnergyPrice"], how="inner")
+        metrics["scenario"] = scenario
+        # Pretty price labels
+        metrics["ID_EnergyPrice"] = metrics["ID_EnergyPrice"].map(add_price_information())
+        return metrics
+
+    m_fees = prepare_metrics(df_fees, scenario="grid_fees")
+    m_peak = prepare_metrics(df_peak, scenario="peak_price")
+    metrics_all = pd.concat([m_fees, m_peak], axis=0, ignore_index=True)
+
+    plt.rcParams.update({
+        'axes.labelsize': 14,
+        'axes.titlesize': 14,
+        'xtick.labelsize': 14,
+        'ytick.labelsize': 14,
+        'legend.fontsize': 14,
+    })
+
+    # Build price-offsets per year and scenario to avoid overlap
+    price_labels_sorted = sorted(metrics_all["ID_EnergyPrice"].dropna().unique())
+    n_prices = len(price_labels_sorted)
+    # symmetric offsets centred around 0
+    step = 0.4
+    offsets = np.linspace(-(n_prices-1)/2*step, (n_prices-1)/2*step, n_prices)
+    price_to_offset = {p: offsets[i] for i, p in enumerate(price_labels_sorted)}
+    scenario_delta = {"grid_fees": -0.1, "peak_price": 0.1}
+    year_base = {2030: 0.0, 2050: 4.0}
+
+    def add_offsets(df_plot: pd.DataFrame) -> pd.DataFrame:
+        d = df_plot.copy()
+        d["price_offset"] = (
+            d["ID_EnergyPrice"].map(price_to_offset).astype(float)
+            + d["scenario"].map(scenario_delta).astype(float)
+            + d["year"].map(year_base).astype(float)
+        )
+        return d
+
+    metrics_all = add_offsets(metrics_all)
+
+    # Helper to draw offset boxplots with proper hatching and year labels
+    def _plot_metric(value_col: str, xlabel: str, filename: str):
+        fig, ax = plt.subplots(figsize=(10, 8))
+        palette = sns.color_palette()
+        order_y_all = sorted(metrics_all["price_offset"].unique())
+
+        # Single seaborn boxplot with hue, then reposition and hatch like your example
+        bp = sns.boxplot(
+            data=metrics_all,
+            x=value_col,
+            y="price_offset",
+            hue="ID_EnergyPrice",
+            orient="h",
+            palette=palette,
+            dodge=False,
+            width=0.9,
+            order=order_y_all,
+            ax=ax,
+        )
+
+        # Reposition each rectangle (box) to the numeric y = price_offset
+        n_hue = len(price_labels_sorted)
+        for i, thisbar in enumerate(bp.artists):
+            y_offset = order_y_all[i // n_hue]
+            thisbar.set_y(y_offset - thisbar.get_height() / 2.0)
+
+        # Hatch every second box (assumes order grid fees, then peak price)
+        for i, thisbar in enumerate(bp.patches):
+            if i % 2 == 1:
+                thisbar.set_hatch("///")
+
+        # Legend: prices (colors) + scenarios (hatch)
+        if ax.legend_ is not None:
+            ax.legend_.remove()
+        legend_elements = [
+            mpatches.Patch(color=palette[i], label=p)
+            for i, p in enumerate(price_labels_sorted)
+        ]
+        legend_elements.extend([
+            mpatches.Patch(facecolor="lightgray", edgecolor="black", label="Grid Fees"),
+            mpatches.Patch(facecolor="lightgray", edgecolor="black", hatch="///", label="Peak Pricing"),
+        ])
+        ax.legend(handles=legend_elements, title="", loc="lower right")
+
+        # Year labels centered on their cluster
+        year_ticks = []
+        year_labels = []
+        for yr, base in year_base.items():
+            idxs = [i for i, v in enumerate(order_y_all) if abs(v - base) < 2.0]
+            if idxs:
+                center = (min(idxs) + max(idxs)) / 2.0
+                year_ticks.append(center)
+                year_labels.append(str(yr))
+        ax.set_yticks(year_ticks)
+        ax.set_yticklabels(year_labels)
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("year")
+        plt.tight_layout()
+        plt.savefig(SAVING_PATH.parent / filename)
+        plt.show()
+        plt.close()
+
+    # 1) Hourly shift magnitude
+    _plot_metric(
+        value_col="hourly_shift_magnitude_MW",
+        xlabel="Hourly shift magnitude (MW)",
+        filename=f"Synchronization_hourly_shift_magnitude_cooling{COOLING_PERCENTAGE}.svg",
+    )
+
+    # 2) Response Gini
+    _plot_metric(
+        value_col="response_gini",
+        xlabel="Response Gini (0..1) based on |opt − ref| shares per day",
+        filename=f"Synchronization_gini_boxplot_cooling{COOLING_PERCENTAGE}.svg",
+    )
+
+    # 3) Barplots: Gini per country (averaged across price IDs), side-by-side per scenario
+    avg_gini = (
+        metrics_all.groupby(["year", "country", "scenario"])["response_gini"]
+        .mean()
+        .reset_index()
+    )
+    years = sorted(avg_gini["year"].unique())
+    for yr in years:
+        sub = avg_gini.loc[avg_gini["year"] == yr, :].copy()
+        # Keep consistent country order
+        countries = sorted(sub["country"].unique())
+        pos = np.arange(len(countries))
+        width = 0.4
+
+        fig, ax = plt.subplots(figsize=(max(10, len(countries) * 0.35), 6))
+        fees_vals = sub.loc[sub["scenario"] == "grid_fees"].set_index("country").reindex(countries)["response_gini"].values
+        peak_vals = sub.loc[sub["scenario"] == "peak_price"].set_index("country").reindex(countries)["response_gini"].values
+
+        bars1 = ax.bar(pos - width/2, fees_vals, width=width, color="#808080", edgecolor="black", label="Grid Fees")
+        bars2 = ax.bar(pos + width/2, peak_vals, width=width, color="#808080", edgecolor="black", label="Peak Pricing", hatch="///")
+
+        ax.set_xticks(pos)
+        ax.set_xticklabels(countries, rotation=90)
+        ax.set_ylabel("Gini coefficient (0..1)")
+        ax.set_title(f"Gini of daily optimized load per country (year {yr})")
+        ax.legend(title="")
+        plt.tight_layout()
+        plt.savefig(SAVING_PATH.parent / f"Synchronization_gini_per_country_{yr}_cooling{COOLING_PERCENTAGE}.svg")
+        plt.show()
+        plt.close()
+
 
 def load_project_files(percentage_cooling, project_acronym):
     path_2_demand_file = Path(__file__).parent / f"EU27_loads_{project_acronym}_cooling-{percentage_cooling}.parquet.gzip"
@@ -3395,7 +3834,7 @@ def main(percentage_cooling: float):
 
     # show_average_day_profile(loads=df)
     # show_flexibility_factor(loads=df)
-    show_GSCrel_and_GSC_abs(loads=df)
+    # show_GSCrel_and_GSC_abs(loads=df)
     # plot_grid_demand_increase(loads=df, national=national_demand)
     # compare_heat_demand_with_invert_2020()
 
@@ -3410,7 +3849,8 @@ def main(percentage_cooling: float):
     # show_day_with_peak_deamand(loads=df, national=national_demand) # not done yet
 
     # plot_flexible_storage_efficiency(loads=df) # makes no sense
-
+    # plot_elasticity_abs_response(loads=df)
+    compute_and_plot_synchronization_metrics(percentage_cooling)
 
 if __name__ == "__main__":
     COOLING_PERCENTAGE = 0.1
