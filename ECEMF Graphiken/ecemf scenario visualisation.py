@@ -3,7 +3,7 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 from pathlib import Path
-from matplotlib.ticker import PercentFormatter, FuncFormatter
+from matplotlib.ticker import PercentFormatter, FuncFormatter, MultipleLocator
 import matplotlib
 import plotly.express as px
 import matplotlib.colors as mcolors
@@ -314,7 +314,7 @@ def prepare_final_df(path_2_file, sheetname):
 
 def plot_murcia_results():
     path2data = Path(__file__).parent / "Comillas_results_Murica.xlsx"
-    for name in ["Low Voltage", "Medium Voltage", "Transformers", "Power losses", "LV MV grid"]:
+    for name in ["LV MV grid"]:#["Low Voltage", "Medium Voltage", "Transformers", "Power losses", "LV MV grid"]:
         final_df = prepare_final_df(path_2_file=path2data, sheetname=name)
         barplot_comillas_results(df=final_df, region="Murcia", data_path=path2data, name=name)
 
@@ -469,6 +469,8 @@ def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, nam
     else:
         y_label = f'Incremental cost increase in {name} {add} (%)'.replace("MV-LV", "")
     ax.set_ylabel(y_label)
+    ax.set_ylim(0, 1.8)
+    ax.yaxis.set_major_locator(MultipleLocator(0.25))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
     legend_elements = [
         Patch(facecolor=palette[0], label="2050"),
@@ -484,6 +486,7 @@ def barplot_comillas_results(df: pd.DataFrame, region: str, data_path: Path, nam
     ax2.set_xticklabels(["without EV", "with EV"])
     plt.tight_layout()
     plt.savefig(data_path.parent / f"{region}_results_{name}.svg".replace(" ", "_"))
+    plt.show()
     plt.close()
 
 def plot_leeuwarden_results():
@@ -814,8 +817,8 @@ def plot_peak_total_and_peak_feed_with_EV():
 
 
 # plot_leeuwarden_results()
-# plot_murcia_results()
+plot_murcia_results()
 
-plot_peak_total_and_peak_feed_with_EV()
+# plot_peak_total_and_peak_feed_with_EV()
 
 
