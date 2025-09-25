@@ -6,6 +6,7 @@ from pathlib import Path
 import os
 import pickle
 import numpy as np
+import seaborn as sns
 
 # Set the environment variable to increase the timeout to 5 seconds
 os.environ['PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT'] = '5'
@@ -358,10 +359,84 @@ else:
                     "Demand": "yearly electricity demand (kWh)", 
                     "Cooling_e": "yearly cooling demand (kWh)"}
     
-v_dict = vamx_for_density_maps(scenario_dict=scenario_dict_leeuwarden, region="Leeuwarden", normed=normed, metric_dict=metric_dict)
-create_big_subplot_with_density_maps(region="Leeuwarden", region_gdf=leeuwarden_gdf, scenario_dict=scenario_dict_leeuwarden, v_dict=v_dict, metric_dict=metric_dict)
+# v_dict = vamx_for_density_maps(scenario_dict=scenario_dict_leeuwarden, region="Leeuwarden", normed=normed, metric_dict=metric_dict)
+# create_big_subplot_with_density_maps(region="Leeuwarden", region_gdf=leeuwarden_gdf, scenario_dict=scenario_dict_leeuwarden, v_dict=v_dict, metric_dict=metric_dict)
 
-v_dict = vamx_for_density_maps(scenario_dict=scenario_dict_murcia, region="Murcia", normed=normed, metric_dict=metric_dict)
-create_big_subplot_with_density_maps(region="Murcia", region_gdf=murcia_gdf, scenario_dict=scenario_dict_murcia, v_dict=v_dict, metric_dict=metric_dict)
+# v_dict = vamx_for_density_maps(scenario_dict=scenario_dict_murcia, region="Murcia", normed=normed, metric_dict=metric_dict)
+# create_big_subplot_with_density_maps(region="Murcia", region_gdf=murcia_gdf, scenario_dict=scenario_dict_murcia, v_dict=v_dict, metric_dict=metric_dict)
 
 
+def plot_total_heat_demand_barplot():
+    """Create a barplot of total heat demand for Leeuwarden and Murcia.
+
+    - x-axis: years
+    - hue: policy scenario (Strong policy, Weak policy)
+    - two facets: region (Leeuwarden, Murcia)
+
+    Uses parquet files named like f"{metric}_{get_file_name(scen)}.parquet.gzip".
+    Totals are shown in GWh (sum over buildings).
+    """
+    metric = "Heating_q"
+    variable_name = "yearly heat demand (kWh)"
+    years = [2020, 2030, 2040, 2050]
+
+    # Helper to pick a representative sub-scenario per policy (use Prosumager-medium)
+    def pick_policy_scenarios(scen_dict: dict):
+        chosen = {}
+        for key, val in scen_dict.items():
+            key_low = key.lower()
+            if "strong policy" in key_low and "prosumager-medium" in key_low:
+                chosen["Strong policy"] = val
+            if "weak policy" in key_low and "prosumager-medium" in key_low:
+                chosen["Weak policy"] = val
+        return chosen
+
+    records = []
+    for region, scen_dict in [("Leeuwarden", scenario_dict_leeuwarden), ("Murcia", scenario_dict_murcia)]:
+        selected = pick_policy_scenarios(scen_dict)
+        for policy, year_scen in selected.items():
+            # Expand yearly scenario to single scenarios per year
+            scenarios = create_single_scenarios_from_year_scenarios(year_scens=year_scen)
+            for scen in scenarios:
+                if scen["year"] not in years:
+                    continue
+                parquet_file = f"{metric}_{get_file_name(scen)}.parquet.gzip"
+                try:
+                    df = load_summed_profiles(region=region, filename=parquet_file, variable_name=variable_name)
+                except Exception as exc:
+                    print(f"Skipping {region} {policy} {scen['year']} due to: {exc}")
+                    continue
+                total_kwh = df[variable_name].sum()
+                total_gwh = total_kwh / 1_000_000.0
+                records.append({
+                    "region": region,
+                    "year": int(scen["year"]),
+                    "policy": policy,
+                    "total_heat_demand_GWh": total_gwh,
+                })
+
+    if not records:
+        print("No data found to plot.")
+        return
+
+    plot_df = pd.DataFrame(records)
+    plot_df.sort_values(["region", "year", "policy"], inplace=True)
+
+    fontsize = 18
+    g = sns.FacetGrid(
+        plot_df, col="region", col_wrap=2, height=5, aspect=1.4, sharey=True
+    )
+    g.map_dataframe(
+        sns.barplot, x="year", y="total_heat_demand_GWh", hue="policy", palette=sns.color_palette()
+    )
+    g.add_legend(title="", loc="upper right", bbox_to_anchor=(0.98, 0.98), prop={"size": fontsize})
+    g.set_axis_labels("year", "total heat demand (GWh)", fontsize=fontsize)
+    g.set_titles("{col_name}", size=fontsize)
+    for ax in g.axes.flat:
+        ax.tick_params(axis='both', labelsize=fontsize)
+    plt.tight_layout()
+    out_path = Path(__file__).parent / "Total_heat_demand_Leeuwarden_Murcia.svg"
+    plt.savefig(out_path)
+    plt.close()
+
+plot_total_heat_demand_barplot()
