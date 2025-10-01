@@ -93,6 +93,25 @@ translation_dict = {
     "Ostale zgrade za promet i komunikacije": "Other buildings for transport and communications"
 }
 
+ENERGY_SOURCE_COLORS: Dict[str, str] = {
+    "Electric energy": "#FFD54F",  # warm yellow
+    "Water": "#1F78B4",  # clear blue
+    "Extra light fuel oil": "#D3D3D3",  # light grey
+    "Natural gas": "#E6550D",  # deep orange
+    "Wood chips": "#2E8B57",  # forest green
+    "Heat": "#D73027",  # vivid red
+    "LPG (Liquefied Petroleum Gas)": "#F28E2B",  # amber orange
+    "Pellets": "#8C6D31",  # warm brown
+    "Firewood": "#654321",  # dark brown
+    "Medium fuel oil": "#A9A9A9",  # medium grey
+    "Steam": "#9467BD",  # soft purple
+    "Bottled gas": "#F4A259",  # light orange
+    "Briquettes": "#556B2F",  # olive green
+    "Light fuel oil": "#BEBEBE",  # silver grey
+    "Diesel": "#000000",  # black
+}
+
+
 class SQLITE_DB:
     def __init__(self, path: Path):
         self.engine = sqlalchemy.create_engine(f'sqlite:///{path}')
@@ -203,50 +222,6 @@ def save_to_sqlite(df: pd.DataFrame, db_path: Path, table_name: str, if_exists: 
         print(f"Error saving DataFrame to SQLite: {e}")
 
 
-def show_monthly_total_consumption(df):
-    import matplotlib.pyplot as plt
-    import pandas as pd
-    grouped = df.groupby(["Year", "Month", "Energy source"])["kWh"].sum().reset_index()
-    pd.options.display.float_format = '{:,.0f}'.format
-
-    grouped = grouped.sort_values(by=['Energy source', 'Year', 'Month'])
-    grouped['Date'] = pd.to_datetime(grouped['Year'].astype(str) + '-' + grouped['Month'].astype(str) + '-01')
-
-    # Plot
-    plt.figure(figsize=(14, 8))
-
-    for energy_source, group in grouped.groupby('Energy source'):
-        plt.plot(group['Date'], group['kWh'], label=energy_source)
-
-    plt.xlabel('Date')
-    plt.ylabel('Energy Consumption (kWh)')
-    plt.title('Monthly Energy Consumption by Source')
-    plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))  # Legend outside the plot
-    plt.tight_layout()
-    plt.grid(True)
-    plt.show()
-
-def convert_floating_point_commas(val):
-    if isinstance(val, str):
-        if "," in val and "." in val:
-            # If both present, decide based on last position
-            if val.rfind(",") > val.rfind("."):
-                # Comma is decimal
-                val = val.replace(".", "").replace(",", ".")
-            else:
-                # Dot is decimal
-                val = val.replace(",", "")
-        elif "," in val:
-            # Assume comma is decimal
-            val = val.replace(".", "").replace(",", ".")
-        elif "." in val:
-            # Assume dot is decimal
-            val = val.replace(",", "")
-    try:
-        return float(val)
-    except ValueError:
-        return None  # or np.nan
-
 
 def read_sqlite_db(db_path: Path):
     print(f"Attempting to open database at: {db_path}")
@@ -263,131 +238,6 @@ def read_sqlite_db(db_path: Path):
     print(f"DataFrame shape: {df.shape}")
     return df
 
-def mark_outliers_from_group(group, col):
-    Q1 = group[col].quantile(0.25)
-    Q3 = group[col].quantile(0.75)
-    IQR = Q3 - Q1
-    if "area" in col.lower():
-        lower = 0
-    else:
-        lower = Q1 - 1.5 * IQR
-    upper = Q3 + 1.5 * IQR
-    return group.loc[(group[col] < lower) | (group[col] > upper), [col, "ISGE object code", "Energy source", "year_month"]]
-     
-
-def count_outliers(df_original, df_cleaned, columns):
-    """
-    Count the number of outliers marked in each column.
-    
-    Parameters:
-        df_original (pd.DataFrame): Original DataFrame before outlier removal
-        df_cleaned (pd.DataFrame): DataFrame after outlier removal
-        columns (list): List of columns to check for outliers
-        
-    Returns:
-        dict: Dictionary with column names as keys and number of outliers as values
-    """
-    outlier_counts = {}
-    for col in columns:
-        original_na = df_original[col].isna().sum()
-        cleaned_na = df_cleaned[col].isna().sum()
-        outlier_counts[col] = cleaned_na - original_na
-    
-    return outlier_counts
-
-def analyze_building_outliers(df_original, normalized_cols, building_id_col="ISGE object code"):
-    """
-    Analyze how buildings' outlier status changes across different months.
-    
-    Parameters:
-        df_original (pd.DataFrame): Original DataFrame before outlier removal
-        df_cleaned (pd.DataFrame): DataFrame after outlier removal
-        building_id_col (str): Name of the column containing building IDs
-        
-    Returns:
-        tuple: (total_outlier_buildings, monthly_outlier_buildings, building_outlier_frequency)
-    """
-    outlier_df = df_original.loc[df_original["outlier"]==True, normalized_cols + [building_id_col] + ["Energy source"] + ["year_month"]]
-    
-    for i in normalized_cols:
-        sns.boxplot(
-            data=outlier_df,
-            x="year_month",
-            y=i,
-
-        )
-        plt.show()
-
-    # Filter out rows where only one of normalized Quantity or kWh is NA
-    quantity_kwh_mask = (
-        (outlier_buildings["normalized Quantity"].isna() & outlier_buildings["normalized kWh"].notna()) |
-        (outlier_buildings["normalized Quantity"].notna() & outlier_buildings["normalized kWh"].isna())
-    )
-    outlier_buildings = outlier_buildings[~quantity_kwh_mask]
-
-    for year_month, group in outlier_buildings.groupby(["year_month", building_id_col]):
-        if len(group)>1:
-            break
-    
-    # Remove the last digits after the last "-" and get unique values
-    outlier_buildings_short = list(set(["-".join(building.split("-")[:-1]) for building in outlier_buildings[building_id_col]]))
-    total_outlier_buildings = len(outlier_buildings_short)
-    
-    # Count how many months each building was an outlier in each energy column
-    building_outlier_frequency = {}
-    
-#     for col in normalized_cols:
-#         building_outlier_frequency[col] = {}
-#         for building in outlier_buildings_short:
-#             # Match buildings with the same prefix (ignoring the last digits)
-#             building_prefix = building
-#             building_data = df_cleaned[df_cleaned[building_id_col].str.startswith(building_prefix)]
-#             # Count months where this building was an outlier for this column
-#             months_as_outlier = building_data[outlier_mask[col]].sum()
-#             building_outlier_frequency[col][building] = months_as_outlier
-    
-#     # Count how many buildings were outliers in each month
-#     monthly_outlier_buildings = {}
-#     for year_month in df_cleaned['year_month'].unique():
-#         month_data = df_cleaned[df_cleaned['year_month'] == year_month]
-#         month_mask = outlier_mask.loc[month_data.index]
-#         # Get unique building prefixes for this month
-#         month_outliers = month_data.loc[month_mask.any(axis=1), building_id_col].unique()
-#         month_outliers = ["-".join(building.split("-")[:-1]) for building in month_outliers]
-#         monthly_outlier_buildings[year_month] = len(set(month_outliers))
-    
-#     return total_outlier_buildings, monthly_outlier_buildings, building_outlier_frequency
-
-# def plot_outliers(df: pd.DataFrame, columns: list, percentage: dict):
-#     for col in columns:
-#         df["is_outlier"] = df[col].isna()
-#         outlier = df["is_outlier"].value_counts(normalize=True).get(True, 0)
-#         percentage[col] = outlier * 100
-
-#     outlier_df = pd.DataFrame.from_dict(percentage, orient="index", columns=["Outlier (%)"]).reset_index()
-#     plt.figure(figsize=(6,8))
-#     sns.barplot(
-#         data=outlier_df,
-#         x="index",
-#         y="Outlier (%)",
-#         hue="index"
-#     )
-
-#     plt.xlabel("")
-#     plt.xticks(rotation=90)
-#     plt.tight_layout()
-#     plt.show()
-
-def plot_outliers(out_df: pd.DataFrame, col: str):
-    sns.scatterplot(
-        data=out_df,
-        x="year_month",
-        y=col
-
-    )
-
-    plt.tight_layout()
-    plt.show()
 
 def remove_low_area_rows(df: pd.DataFrame, min_area: float = 20.0):
     # drop all buildigns where the area is 0:
@@ -403,12 +253,6 @@ def normalize_columns(df: pd.DataFrame):
             df[f"{col} per m2"] = df[col] / df["Useful surface area Ak"]
     return df
 
-NORMALIZED_COLUMN_MAP: Dict[str, str] = {
-    "Quantity": "normalized Quantity",
-    "kWh": "normalized kWh",
-    "Primary energy": "normalized Primary energy",
-}
-
 
 def remove_based_on_yearly_kWh_consumption_per_square_meter(df: pd.DataFrame, max_value: float = 300, monthly_percentage: float = 0.25) -> pd.DataFrame:
     # now remove outliers based on the kWh consumption per m2 per year: max consumption is 300kWh/m2/year
@@ -416,14 +260,15 @@ def remove_based_on_yearly_kWh_consumption_per_square_meter(df: pd.DataFrame, ma
     df = df.copy()
     df['annual_kwh_m2'] = (df['kWh per m2']).groupby([df['ISGE object code'], df['Year']]).transform('sum')
     #  remove rows where the monthly consumption is higher the 25% of the annual consumption
-    df = df.loc[df["kWh per m2"] <= df["annual_kwh_m2"] * monthly_percentage, :]
+    df_no_outlier = df.loc[df["kWh per m2"] <= df["annual_kwh_m2"] * monthly_percentage, :].copy()
 
     # re-calculate the annual kWh consumption per m2 per year so a monthly outlier does not kick the whole year
-    df.drop(columns=["annual_kwh_m2"], inplace=True)
-    df['annual_kwh_m2'] = (df['kWh per m2']).groupby([df['ISGE object code'], df['Year']]).transform('sum')
+    df_no_outlier.drop(columns=["annual_kwh_m2"], inplace=True)
+    df_no_outlier['annual_kwh_m2'] = (df_no_outlier['kWh per m2']).groupby([df_no_outlier['ISGE object code'], df_no_outlier['Year']]).transform('sum')
 
     # drop buildings that have a higher annual kWh consumption per m2 than the max value
-    out = df.loc[df["annual_kwh_m2"] < max_value, :].drop(columns=["annual_kwh_m2"]).copy()
+    out = df_no_outlier.loc[df_no_outlier["annual_kwh_m2"] < max_value, :].copy()
+    out.drop(columns=["annual_kwh_m2"], inplace=True)
     return out
 
 def choose_factor(r, low, high, target):
@@ -677,229 +522,6 @@ def fix_conversion_errors_and_remove_outliers(df: pd.DataFrame, ) -> pd.DataFram
     return cleaned_df
 
 
-
-
-
-
-
-
-def save_normalized_comparison_html(
-    before_df: pd.DataFrame,
-    after_df: pd.DataFrame,
-    output_path: Path,
-    top_n_sources: int = 8,
-) -> None:
-    """Persist a lightweight HTML figure that compares summary stats before/after filtering."""
-
-    metrics = [
-        (NORMALIZED_COLUMN_MAP["kWh"], "kWh per area"),
-        (NORMALIZED_COLUMN_MAP["Quantity"], "Quantity per area"),
-        (NORMALIZED_COLUMN_MAP["Primary energy"], "Primary energy per area"),
-    ]
-
-    before_norm = add_normalized_columns(before_df)
-    after_norm = add_normalized_columns(after_df)
-
-    if top_n_sources:
-        top_sources = (
-            before_norm["Energy source"]
-            .value_counts()
-            .head(top_n_sources)
-            .index
-            .tolist()
-        )
-    else:
-        top_sources = before_norm["Energy source"].dropna().unique().tolist()
-
-    def _summarise_metric(df: pd.DataFrame, metric_col: str) -> pd.DataFrame:
-        filtered = df[df["Energy source"].isin(top_sources)][["Energy source", metric_col]].copy()
-        filtered[metric_col] = filtered[metric_col].replace([np.inf, -np.inf], np.nan)
-        filtered = filtered.dropna(subset=[metric_col])
-
-        if filtered.empty:
-            return pd.DataFrame(
-                columns=["Energy source", "median", "p25", "p75", "p95", "count"]
-            )
-
-        def _percentile(series: pd.Series, q: float) -> float:
-            arr = series.dropna().values
-            if arr.size == 0:
-                return float("nan")
-            return float(np.percentile(arr, q))
-
-        summary = (
-            filtered.groupby("Energy source")[metric_col]
-            .agg(
-                median=lambda s: float(np.median(s.dropna())) if s.dropna().size else float("nan"),
-                p25=lambda s: _percentile(s, 25),
-                p75=lambda s: _percentile(s, 75),
-                p95=lambda s: _percentile(s, 95),
-                count=lambda s: int(s.dropna().size),
-            )
-            .reset_index()
-        )
-
-        if not summary.empty:
-            summary["Energy source"] = pd.Categorical(
-                summary["Energy source"], categories=top_sources, ordered=True
-            )
-            summary = summary.sort_values("Energy source").reset_index(drop=True)
-        return summary
-
-    subplot_titles = [label for _, label in metrics]
-    fig = make_subplots(
-        rows=len(metrics),
-        cols=1,
-        shared_xaxes=False,
-        subplot_titles=subplot_titles,
-        vertical_spacing=0.1,
-    )
-
-    for row_idx, (metric_col, metric_label) in enumerate(metrics, start=1):
-        before_summary = _summarise_metric(before_norm, metric_col)
-        after_summary = _summarise_metric(after_norm, metric_col)
-
-        combined = before_summary.merge(
-            after_summary,
-            on="Energy source",
-            how="outer",
-            suffixes=("_before", "_after"),
-        )
-
-        if combined.empty:
-            continue
-
-        combined["Energy source"] = pd.Categorical(
-            combined["Energy source"], categories=top_sources, ordered=True
-        )
-        combined = combined.sort_values("Energy source").reset_index(drop=True)
-
-        combined = combined.fillna({
-            "count_before": 0,
-            "count_after": 0,
-        })
-
-        x_values = combined["Energy source"].astype(str)
-
-        before_custom = combined[["p25_before", "p75_before", "p95_before", "count_before"]].to_numpy()
-        after_custom = combined[["p25_after", "p75_after", "p95_after", "count_after"]].to_numpy()
-
-        before_error_upper = np.nan_to_num(
-            (combined["p75_before"] - combined["median_before"]).to_numpy(), nan=0.0, posinf=0.0, neginf=0.0
-        )
-        before_error_lower = np.nan_to_num(
-            (combined["median_before"] - combined["p25_before"]).to_numpy(), nan=0.0, posinf=0.0, neginf=0.0
-        )
-        after_error_upper = np.nan_to_num(
-            (combined["p75_after"] - combined["median_after"]).to_numpy(), nan=0.0, posinf=0.0, neginf=0.0
-        )
-        after_error_lower = np.nan_to_num(
-            (combined["median_after"] - combined["p25_after"]).to_numpy(), nan=0.0, posinf=0.0, neginf=0.0
-        )
-
-        fig.add_trace(
-            go.Bar(
-                x=x_values,
-                y=combined["median_before"],
-                name="Before (median)",
-                marker_color="#636EFA",
-                legendgroup="before",
-                offsetgroup="before",
-                customdata=before_custom,
-                error_y=dict(
-                    type="data",
-                    array=before_error_upper,
-                    arrayminus=before_error_lower,
-                    visible=True,
-                ),
-                hovertemplate=(
-                    "Energy source: %{x}<br>" +
-                    "Median: %{y:.3f}<br>" +
-                    "P25: %{customdata[0]:.3f}<br>" +
-                    "P75: %{customdata[1]:.3f}<br>" +
-                    "P95: %{customdata[2]:.3f}<br>" +
-                    "Count: %{customdata[3]}<extra></extra>"
-                ),
-                showlegend=row_idx == 1,
-            ),
-            row=row_idx,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Bar(
-                x=x_values,
-                y=combined["median_after"],
-                name="After (median)",
-                marker_color="#EF553B",
-                legendgroup="after",
-                offsetgroup="after",
-                customdata=after_custom,
-                error_y=dict(
-                    type="data",
-                    array=after_error_upper,
-                    arrayminus=after_error_lower,
-                    visible=True,
-                ),
-                hovertemplate=(
-                    "Energy source: %{x}<br>" +
-                    "Median: %{y:.3f}<br>" +
-                    "P25: %{customdata[0]:.3f}<br>" +
-                    "P75: %{customdata[1]:.3f}<br>" +
-                    "P95: %{customdata[2]:.3f}<br>" +
-                    "Count: %{customdata[3]}<extra></extra>"
-                ),
-                showlegend=row_idx == 1,
-            ),
-            row=row_idx,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=x_values,
-                y=combined["p95_before"],
-                name="Before p95",
-                mode="markers",
-                marker=dict(color="#1F77B4", symbol="triangle-up", size=8),
-                legendgroup="before",
-                hovertemplate="Energy source: %{x}<br>P95: %{y:.3f}<extra></extra>",
-                showlegend=row_idx == 1,
-            ),
-            row=row_idx,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=x_values,
-                y=combined["p95_after"],
-                name="After p95",
-                mode="markers",
-                marker=dict(color="#D62728", symbol="triangle-up", size=8),
-                legendgroup="after",
-                hovertemplate="Energy source: %{x}<br>P95: %{y:.3f}<extra></extra>",
-                showlegend=row_idx == 1,
-            ),
-            row=row_idx,
-            col=1,
-        )
-
-        fig.update_yaxes(title_text=metric_label, row=row_idx, col=1)
-        fig.update_xaxes(tickangle=-45, row=row_idx, col=1)
-
-    fig.update_layout(
-        height=350 * len(metrics),
-        width=1200,
-        template="plotly_white",
-        barmode="group",
-        title="Area-normalised energy metrics summary (before vs after filtering)",
-    )
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.write_html(str(output_path))
-
-
 def create_stackplot_positive_negative_y(df, word: str):
     df["year_month"] = df['Year'].astype(str) + '-' + df['Month'].astype(str).str.zfill(2)
     energy = df.groupby(["year_month", "Energy source"])["kWh"].sum().reset_index()
@@ -991,6 +613,60 @@ def create_stackplot(df: pd.DataFrame, y_axis: str):
     plt.close()
 
 def plot_energy_source_consumption(df):
+    plt.rcParams.update({
+        'font.size': 12,
+        'axes.titlesize': 12,
+        'axes.labelsize': 12,
+        'xtick.labelsize': 10,
+        'ytick.labelsize': 10,
+        'legend.fontsize': 10
+    })
+   # Get unique energy sources
+    energy_sources = df['Energy source'].unique()
+    
+    # Calculate number of rows and columns for subplot grid
+    n_sources = len(energy_sources)
+    n_cols = 2
+    n_rows = (n_sources + n_cols - 1) // n_cols  # Ceiling division
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(20, 8*n_rows))
+    axes = axes.flatten()
+    palette = {source: ENERGY_SOURCE_COLORS.get(source, "black") for source in energy_sources}
+    # Create time series for each energy source
+    for idx, source in enumerate(energy_sources):
+        # Filter data for current energy source
+        source_data = df[df['Energy source'] == source].copy()
+        
+        # Create datetime index
+        source_data['Date'] = pd.to_datetime(source_data[['Year', 'Month']].assign(day=1))
+        
+        # Choose column based on energy source
+        value_column = 'Quantity per m2' if source == 'Water' else 'kWh per m2'
+                
+        # Plot
+        ax = axes[idx]
+        sns.boxplot(data=source_data, x='Date', y=value_column, ax=ax, color=palette[source], showfliers=False)
+
+        # Customize plot
+        ax.set_title(f'{source}', pad=10)
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Quantity per m2' if source == 'Water' else 'kWh per m2')
+        
+        # Rotate x-axis labels for better readability
+        ax.tick_params(axis='x', rotation=45)
+        
+        # Format y-axis to show values in thousands
+        # ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0f}'))
+    
+    # Remove empty subplots
+    for idx in range(len(energy_sources), len(axes)):
+        fig.delaxes(axes[idx])
+    
+    plt.tight_layout()
+    return fig
+
+def plot_mean_median_energy_source_consumption(df):
     """Create time series plots of mean and median consumption for each energy source.
     
     Args:
@@ -998,12 +674,12 @@ def plot_energy_source_consumption(df):
     """
     # Set font sizes
     plt.rcParams.update({
-        'font.size': 10,
+        'font.size': 12,
         'axes.titlesize': 12,
-        'axes.labelsize': 10,
-        'xtick.labelsize': 8,
-        'ytick.labelsize': 8,
-        'legend.fontsize': 8
+        'axes.labelsize': 12,
+        'xtick.labelsize': 10,
+        'ytick.labelsize': 10,
+        'legend.fontsize': 10
     })
     
     # Get unique energy sources
@@ -1061,12 +737,66 @@ def plot_energy_source_consumption(df):
     plt.tight_layout()
     return fig
 
+def plot_yearly_consumption_per_m2(df: pd.DataFrame):
+    plot_df = df.loc[~df["Energy source"].isin(["Electric energy", "Water"]), :].copy()
+    available_sources = sorted(plot_df["Energy source"].unique())
+
+    palette: Dict[str, str] = {}
+    for idx, source in enumerate(available_sources):
+        palette[source] = ENERGY_SOURCE_COLORS.get(source, "black")
+    plot_df.loc[plot_df["Energy source"]=="LPG (Liquefied Petroleum Gas)", "Energy source"] = "LPG"
+    palette["LPG"] = palette["LPG (Liquefied Petroleum Gas)"]
+    del palette["LPG (Liquefied Petroleum Gas)"]
+
+
+    fig_box, ax_box = plt.subplots(figsize=(12, 8))
+    sns.boxplot(
+        data=plot_df,
+        y="yearly_consumption_per_m2",
+        x="Energy source",
+        hue="Energy source",
+        palette=palette,
+        ax=ax_box,
+        fliersize=3,
+        linewidth=1.2,
+    )
+    ax_box.set_ylabel("Yearly consumption per m² [kWh]", fontsize=16)
+    ax_box.set_xlabel("Energy source", fontsize=16)
+    ax_box.tick_params(axis="x", labelsize=14, rotation=45)
+    ax_box.tick_params(axis="y", labelsize=14)
+    ax_box.grid(axis="x", color="0.85", linestyle="-", linewidth=0.8)
+
+    fig_box.tight_layout()
+    fig_box.savefig( FIGURE_FOLDER / "yearly_consumption_per_m2_by_energy_source_boxplot.svg" )
+    plt.show()
+    plt.close()
+
+def check_for_heating_system_switch(df: pd.DataFrame):
+
+    df_energy = df.loc[(~df["Energy source"].isin(["Electric energy", "Water", "Heat", "Steam"])) & (df["kWh"]!=0), :].copy()
+    buildings_with_heating_system_switch = []
+    heating_system_switch = {}
+    for _, group in df_energy.groupby(["ISGE object code"]):
+        if len(group["Energy source"].unique()) > 1:
+            # heating system has been switched
+            buildings_with_heating_system_switch.append(group["ISGE object code"].unique()[0])
+            sorted_group = group.sort_values(by=["Year", "Month"])
+            first_system = sorted_group["Energy source"].iloc[0]
+            last_system = sorted_group["Energy source"].iloc[-1]
+            heating_system_switch[group["ISGE object code"].unique()[0]] = {first_system: last_system}
+
+
+
+
+
+
+
 def plot_statistics(db_path: Path):
 
-    df = read_sqlite_db(db_path=db_path)
+    df_croatia = read_sqlite_db(db_path=db_path)
     # clean dataset
     # (1) remove buildings with zero area
-    df_no_small_area = remove_low_area_rows(df, min_area=20.0)
+    df_no_small_area = remove_low_area_rows(df_croatia, min_area=20.0)
     # (2) normalize consumption values by area
     df_normalized = normalize_columns(df_no_small_area)
     # (3) clean dataset by removing outliers: first the conversion errors from the measured quantity into kWh are fixed 
@@ -1076,13 +806,23 @@ def plot_statistics(db_path: Path):
     # If the water consumption is higher than 0.5 m3/m2 per month, the row is also removed. Heat is just removed based on the yearly consumption.
     df_clean = fix_conversion_errors_and_remove_outliers(df_normalized)
 
+    # add yearly consumption per m2 to the whole dataframe
+    df_clean["yearly_consumption_per_m2"] = df_clean.groupby(["ISGE object code", "Year", "Energy source"])["kWh per m2"].transform("sum")
+
+    plot_yearly_consumption_per_m2(df_clean)
+    # df_normalized["yearly_consumption_per_m2"] = df_clean.groupby(["ISGE object code", "Year", "Energy source"])["kWh per m2"].transform("sum")
+    # plot_yearly_consumption_per_m2(df_normalized)
 
 
+    # figure = plot_mean_median_energy_source_consumption(df_clean)
+    # figure.savefig(FIGURE_FOLDER / "energy_source_consumption_cleaned_mean_median.svg",)# dpi=300)
+    # plt.show()
+    # plt.close(figure)
 
-
-    figure = plot_energy_source_consumption(df_clean)
-    figure.savefig(FIGURE_FOLDER / "energy_source_consumption_cleaned.svg",)# dpi=300)
-    plt.close(figure)
+    # figure = plot_energy_source_consumption(df_clean)
+    # figure.savefig(FIGURE_FOLDER / "energy_source_consumption_cleaned_boxplot.svg",)# dpi=300)
+    # plt.show()
+    # plt.close(figure)
 
     # isge_groups = df.groupby(["ISGE object code", "Energy source"])
     # group = isge_groups.get_group(("HR-51410-0018-0", "Electric energy"))
@@ -1092,16 +832,16 @@ def plot_statistics(db_path: Path):
     # profile.to_widgets()
     # print("saved y data profiling report")
 
-    for source in ["Water", "Electric energy"]:
-        filtered = df.loc[df["Energy source"] == source, :]
-        create_stackplot(filtered, source)
+    # for source in ["Water", "Electric energy"]:
+    #     filtered = df.loc[df["Energy source"] == source, :]
+    #     create_stackplot(filtered, source)
 
     # create_stackplot(df.loc[~df["Energy source"].isin(["Water","Electric energy", "Heat"]), :], y_axis="primary energy")
     # create_stackplot(df.loc[df["Energy source"].isin(["Heat"]), :], y_axis="heating energy")
 
 
-    create_stackplot_positive_negative_y(df, "original")
-    create_stackplot_positive_negative_y(df_clean, "clean")
+    # create_stackplot_positive_negative_y(df, "original")
+    # create_stackplot_positive_negative_y(df_clean, "clean")
 
 
 
