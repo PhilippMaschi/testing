@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import sqlite3
+from collections import Counter
 from pathlib import Path
 import sqlalchemy
 from typing import Dict, List, Tuple
@@ -771,6 +772,101 @@ def plot_yearly_consumption_per_m2(df: pd.DataFrame):
     plt.show()
     plt.close()
 
+def create_sankey_diagram_for_heating_system_switch(switches: dict):
+    if not switches:
+        raise ValueError("No heating system switches provided.")
+
+    # Collect individual switches as (from_source, to_source) pairs
+    flows = []
+    for mapping in switches.values():
+        if not isinstance(mapping, dict):
+            continue
+        for source, target in mapping.items():
+            if source is None or target is None:
+                continue
+            flows.append((source, target))
+
+    if not flows:
+        raise ValueError("Switch data is empty after filtering.")
+
+    source_counts = Counter(src for src, _ in flows)
+    target_counts = Counter(dst for _, dst in flows)
+    link_counts = Counter(flows)
+
+    left_nodes = sorted(source_counts.keys())
+    right_nodes = sorted(target_counts.keys())
+
+    left_y = [0.5] if len(left_nodes) <= 1 else np.linspace(0.1, 0.9, len(left_nodes)).tolist()
+    right_y = [0.5] if len(right_nodes) <= 1 else np.linspace(0.1, 0.9, len(right_nodes)).tolist()
+
+    node_labels: List[str] = []
+    node_colors: List[str] = []
+    node_x: List[float] = []
+    node_y: List[float] = []
+
+    source_indices: Dict[str, int] = {}
+    for idx, source in enumerate(left_nodes):
+        source_indices[source] = idx
+        node_labels.append(source)
+        node_colors.append(ENERGY_SOURCE_COLORS.get(source, "#999999"))
+        node_x.append(0.0)
+        node_y.append(left_y[idx])
+
+    target_indices: Dict[str, int] = {}
+    offset = len(node_labels)
+    for idx, target in enumerate(right_nodes):
+        target_indices[target] = offset + idx
+        node_labels.append(target)
+        node_colors.append(ENERGY_SOURCE_COLORS.get(target, "#999999"))
+        node_x.append(1.0)
+        node_y.append(right_y[idx])
+
+    def _hex_to_rgba(hex_color: str, alpha: float = 0.4) -> str:
+        hex_value = hex_color.lstrip('#')
+        if len(hex_value) != 6:
+            return f"rgba(153, 153, 153, {alpha})"
+        r = int(hex_value[0:2], 16)
+        g = int(hex_value[2:4], 16)
+        b = int(hex_value[4:6], 16)
+        return f"rgba({r}, {g}, {b}, {alpha})"
+
+    link_sources: List[int] = []
+    link_targets: List[int] = []
+    link_values: List[int] = []
+    link_colors: List[str] = []
+
+    for (src, dst), value in link_counts.items():
+        if src not in source_indices or dst not in target_indices:
+            continue
+        link_sources.append(source_indices[src])
+        link_targets.append(target_indices[dst])
+        link_values.append(value)
+        link_colors.append(_hex_to_rgba(ENERGY_SOURCE_COLORS.get(src, "#999999")))
+
+    sankey = go.Sankey(
+        arrangement="fixed",
+        node=dict(
+            pad=20,
+            thickness=20,
+            label=node_labels,
+            color=node_colors,
+            x=node_x,
+            y=node_y,
+        ),
+        link=dict(
+            source=link_sources,
+            target=link_targets,
+            value=link_values,
+            color=link_colors,
+        ),
+    )
+
+    fig = go.Figure(sankey)
+    fig.update_layout(title_text="Heating System Switches", font_size=12)
+    fig.write_image(FIGURE_FOLDER / "heating_system_switches.png")
+    fig.write_image(FIGURE_FOLDER / "heating_system_switches.svg")
+
+
 def check_for_heating_system_switch(df: pd.DataFrame):
 
     df_energy = df.loc[(~df["Energy source"].isin(["Electric energy", "Water", "Heat", "Steam"])) & (df["kWh"]!=0), :].copy()
@@ -784,6 +880,18 @@ def check_for_heating_system_switch(df: pd.DataFrame):
             first_system = sorted_group["Energy source"].iloc[0]
             last_system = sorted_group["Energy source"].iloc[-1]
             heating_system_switch[group["ISGE object code"].unique()[0]] = {first_system: last_system}
+
+    # check if the buildings do not all belong to the same building cluster (last digit of the ISGE object code)
+    overall_building_codes = [b[:-1] for b in buildings_with_heating_system_switch]
+
+    duplicates = {x for x in overall_building_codes if overall_building_codes.count(x) > 1}
+    if len(duplicates) > 0:
+        if len(duplicates) > 0:
+            print("sub buildings are switched which would result in double countiny")
+            print(duplicates)
+    
+
+    create_sankey_diagram_for_heating_system_switch(heating_system_switch)
 
 
 
@@ -812,6 +920,8 @@ def plot_statistics(db_path: Path):
     plot_yearly_consumption_per_m2(df_clean)
     # df_normalized["yearly_consumption_per_m2"] = df_clean.groupby(["ISGE object code", "Year", "Energy source"])["kWh per m2"].transform("sum")
     # plot_yearly_consumption_per_m2(df_normalized)
+
+    check_for_heating_system_switch(df_clean)
 
 
     # figure = plot_mean_median_energy_source_consumption(df_clean)
