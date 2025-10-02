@@ -807,7 +807,7 @@ def create_sankey_diagram_for_heating_system_switch(switches: dict):
     source_indices: Dict[str, int] = {}
     for idx, source in enumerate(left_nodes):
         source_indices[source] = idx
-        node_labels.append(source)
+        node_labels.append(f"{source}")
         node_colors.append(ENERGY_SOURCE_COLORS.get(source, "#999999"))
         node_x.append(0.0)
         node_y.append(left_y[idx])
@@ -816,7 +816,7 @@ def create_sankey_diagram_for_heating_system_switch(switches: dict):
     offset = len(node_labels)
     for idx, target in enumerate(right_nodes):
         target_indices[target] = offset + idx
-        node_labels.append(target)
+        node_labels.append(f"{target}")
         node_colors.append(ENERGY_SOURCE_COLORS.get(target, "#999999"))
         node_x.append(1.0)
         node_y.append(right_y[idx])
@@ -877,8 +877,9 @@ def check_for_heating_system_switch(df: pd.DataFrame):
             # heating system has been switched
             buildings_with_heating_system_switch.append(group["ISGE object code"].unique()[0])
             sorted_group = group.sort_values(by=["Year", "Month"])
-            first_system = sorted_group["Energy source"].iloc[0]
-            last_system = sorted_group["Energy source"].iloc[-1]
+            sources = sorted_group["Energy source"].unique()
+            first_system = sources[0]
+            last_system = sources[-1]
             heating_system_switch[group["ISGE object code"].unique()[0]] = {first_system: last_system}
 
     # check if the buildings do not all belong to the same building cluster (last digit of the ISGE object code)
