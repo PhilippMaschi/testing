@@ -886,6 +886,122 @@ def create_sankey_diagram_for_heating_system_switch(switches: dict):
     fig.write_image(FIGURE_FOLDER / "heating_system_switches.svg")
 
 
+def plot_phase_in_and_out_time_of_heating_systems(df: pd.DataFrame):
+    df_energy = df.loc[(~df["Energy source"].isin(["Electric energy", "Water", "Heat", "Steam"])) & (df["kWh"]!=0), :].copy()
+    heating_system_switch_time = []
+    for _, group in df_energy.groupby(["ISGE object code"]):
+        if len(group["Energy source"].unique()) > 1:
+            # heating system has been switched
+            sorted_group = group.sort_values(by=["Year", "Month"])
+            sources = sorted_group["Energy source"].unique()
+            first_system = sources[0]
+            last_system = sources[-1]
+            change_mask = sorted_group["Energy source"].ne(sorted_group["Energy source"].shift())
+            year_of_switch = sorted_group.loc[change_mask, "Year"].iloc[0] 
+            heating_system_switch_time.append((first_system, year_of_switch, last_system))
+
+    # determine the time of the switch for each building by year and energy source
+    heating_system_switch_time_df = pd.DataFrame(heating_system_switch_time, columns=["init_system", "Year", "end_system"])
+
+    year_min, year_max = 2020, 2024
+    plot_years = list(range(year_min, year_max + 1))
+
+    counts = (
+        heating_system_switch_time_df
+        .loc[heating_system_switch_time_df["Year"].between(year_min, year_max), ["init_system", "Year"]]
+        .value_counts()
+        .rename("count")
+        .reset_index()
+    )
+
+    energy_sources = sorted(counts["init_system"].unique())
+    grid = pd.MultiIndex.from_product([energy_sources, plot_years], names=["init_system", "Year"])
+    counts = counts.set_index(["init_system", "Year"]).reindex(grid, fill_value=0).reset_index()
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    bar_width = 0.8
+    gap = 0.6
+    positions: List[float] = []
+    labels: List[str] = []
+
+    current_pos = 0.0
+    for source in energy_sources:
+        source_counts = counts[counts["init_system"] == source]
+        color = ENERGY_SOURCE_COLORS.get(source, "#999999")
+        for _, row in source_counts.iterrows():
+            positions.append(current_pos)
+            labels.append(str(int(row["Year"])))
+            ax.bar(current_pos, row["count"], color=color, width=bar_width)
+            current_pos += bar_width
+        current_pos += gap
+
+    ax.set_xticks(positions)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.set_ylabel("Number of switches")
+    ax.set_title("Phased out heating systems")
+
+    handles = []
+    for source in energy_sources:
+        handles.append(plt.Rectangle((0, 0), 1, 1, color=ENERGY_SOURCE_COLORS.get(source, "#999999")))
+    ax.legend(handles, energy_sources, bbox_to_anchor=(1.05, 1), loc="upper left")
+
+    ax.margins(x=0.01)
+    ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+    plt.tight_layout()
+    plt.savefig(FIGURE_FOLDER / "phased_out_heating_systems_time.png", dpi=300)
+    plt.show()
+    plt.close(fig)
+
+
+    # plot the time of phase in of heating systems
+    counts2 = (
+        heating_system_switch_time_df
+        .loc[heating_system_switch_time_df["Year"].between(year_min, year_max), ["end_system", "Year"]]
+        .value_counts()
+        .rename("count")
+        .reset_index()
+    )
+    energy_sources = sorted(counts2["end_system"].unique())
+    grid = pd.MultiIndex.from_product([energy_sources, plot_years], names=["end_system", "Year"])
+    counts2 = counts2.set_index(["end_system", "Year"]).reindex(grid, fill_value=0).reset_index()
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    bar_width = 0.8
+    gap = 0.6
+    positions: List[float] = []
+    labels: List[str] = []
+
+    current_pos = 0.0
+    for source in energy_sources:
+        source_counts = counts2[counts2["end_system"] == source]
+        color = ENERGY_SOURCE_COLORS.get(source, "#999999")
+        for _, row in source_counts.iterrows():
+            positions.append(current_pos)
+            labels.append(str(int(row["Year"])))
+            ax.bar(current_pos, row["count"], color=color, width=bar_width)
+            current_pos += bar_width
+        current_pos += gap
+
+    ax.set_xticks(positions)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.set_ylabel("Number of switches")
+    ax.set_title("Phased in heating systems")
+
+    handles = []
+    for source in energy_sources:
+        handles.append(plt.Rectangle((0, 0), 1, 1, color=ENERGY_SOURCE_COLORS.get(source, "#999999")))
+    ax.legend(handles, energy_sources, bbox_to_anchor=(1.05, 1), loc="upper left")
+
+    ax.margins(x=0.01)
+    ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+    plt.tight_layout()
+    plt.savefig(FIGURE_FOLDER / "phased_in_heating_systems_time.png", dpi=300)
+    plt.show()
+    plt.close(fig)
+
+
 def check_for_heating_system_switch(df: pd.DataFrame):
 
     df_energy = df.loc[(~df["Energy source"].isin(["Electric energy", "Water", "Heat", "Steam"])) & (df["kWh"]!=0), :].copy()
@@ -916,9 +1032,6 @@ def check_for_heating_system_switch(df: pd.DataFrame):
 
 
 
-
-
-
 def plot_statistics(db_path: Path):
 
     df_croatia = read_sqlite_db(db_path=db_path)
@@ -941,8 +1054,8 @@ def plot_statistics(db_path: Path):
     # df_normalized["yearly_consumption_per_m2"] = df_clean.groupby(["ISGE object code", "Year", "Energy source"])["kWh per m2"].transform("sum")
     # plot_yearly_consumption_per_m2(df_normalized)
 
-    check_for_heating_system_switch(df_clean)
-
+    check_for_heating_system_switch(df_croatia)
+    plot_phase_in_and_out_time_of_heating_systems(df_croatia)
 
     # figure = plot_mean_median_energy_source_consumption(df_clean)
     # figure.savefig(FIGURE_FOLDER / "energy_source_consumption_cleaned_mean_median.svg",)# dpi=300)
