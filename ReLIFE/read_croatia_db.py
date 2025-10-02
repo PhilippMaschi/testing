@@ -793,11 +793,30 @@ def create_sankey_diagram_for_heating_system_switch(switches: dict):
     target_counts = Counter(dst for _, dst in flows)
     link_counts = Counter(flows)
 
-    left_nodes = sorted(source_counts.keys())
-    right_nodes = sorted(target_counts.keys())
+    left_nodes = sorted(source_counts.keys(), key=lambda s: source_counts[s], reverse=True)
+    right_nodes = sorted(target_counts.keys(), key=lambda s: target_counts[s], reverse=True)
 
-    left_y = [0.5] if len(left_nodes) <= 1 else np.linspace(0.1, 0.9, len(left_nodes)).tolist()
-    right_y = [0.5] if len(right_nodes) <= 1 else np.linspace(0.1, 0.9, len(right_nodes)).tolist()
+    def _compute_vertical_positions(weights: List[int]) -> List[float]:
+        if not weights:
+            return []
+        if len(weights) == 1:
+            return [0.5]
+        total_weight = sum(weights)
+        min_gap = 0.02
+        total_gap = min_gap * (len(weights) - 1)
+        available = 1.0 - total_gap
+        if available <= 0:
+            return np.linspace(0.1, 0.9, len(weights)).tolist()
+        centers = []
+        offset = 0.0
+        for weight in weights:
+            height = (weight / total_weight) * available
+            centers.append(offset + height / 2)
+            offset += height + min_gap
+        return centers
+
+    left_y = _compute_vertical_positions([source_counts[node] for node in left_nodes])
+    right_y = _compute_vertical_positions([target_counts[node] for node in right_nodes])
 
     node_labels: List[str] = []
     node_colors: List[str] = []
